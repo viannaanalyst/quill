@@ -67,6 +67,7 @@ montado (próxima montagem: a do commit da documentação).
 |---|---|---|
 | Onboarding | Apresentação em 6 passos, animada, claro e escuro | Mac |
 | Login Google | Página oficial no navegador, várias contas, tokens nas Chaves | Mac |
+| Login Google na janela do macOS | Página do Google na janela de login do sistema (ASWebAuthenticationSession), com o navegador de reserva | Mac (parcial: abrir, fechar e cancelar; login completo falta) |
 | Caixa de entrada e leitura (texto) | E-mails reais das contas Google; marcar como lido | Mac |
 | Menu do avatar | Contas, conectar conta Google, Aparência, Sair | Mac |
 | Login (melhorias) | Cancelar, Abrir de novo e Copiar link; onboarding uma vez só; Sair sem voltar ao onboarding | Mac (parcial: cancelar o login foi pedido depois do teste) |

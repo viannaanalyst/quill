@@ -1299,7 +1299,7 @@
   box-shadow: inset 0 1px 0 var(--bhl);
 }
 
-/* ---------- esperando o login no navegador ---------- */
+/* ---------- esperando o login do Google ---------- */
 .lw {
   display: flex;
   flex-direction: column;

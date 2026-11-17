@@ -5,7 +5,9 @@
 
 mod dock;
 mod touchid;
+mod websheet;
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use quill_core::dav_client::{Creds, DavError, ICloudDav};
@@ -75,9 +77,40 @@ fn now_ms() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
 }
 
+/// Número do login do Google mais recente: só ele fecha a folha de login (um login novo encerra o anterior).
+static LOGIN_SEQ: AtomicU64 = AtomicU64::new(0);
+
+/// Abre a página de login do Google na folha do macOS por cima do Quill; se a folha não abrir
+/// (ou fora do Mac), cai para o navegador. Fechar a folha antes do fim cancela a espera.
+fn open_login_page(app: &tauri::AppHandle, url: &str, owner: u64) -> Result<(), String> {
+    let handle = app.clone();
+    let on_user_close = move || {
+        if let Some(g) = handle.state::<AppState>().google.as_ref() {
+            g.cancel_sign_in();
+        }
+    };
+    match websheet::open(app, url, owner, on_user_close) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            eprintln!("folha de login indisponível ({e}); abrindo no navegador");
+            quill_core::files::open_link(url)
+        }
+    }
+}
+
 #[tauri::command]
-async fn google_sign_in(state: State<'_, AppState>, login_hint: Option<String>) -> Result<AccountInfo, String> {
-    let (account, profile) = google(&state)?.sign_in(login_hint).await.map_err(err)?;
+async fn google_sign_in(app: tauri::AppHandle, state: State<'_, AppState>, login_hint: Option<String>) -> Result<AccountInfo, String> {
+    let owner = LOGIN_SEQ.fetch_add(1, Ordering::SeqCst) + 1;
+    let (open_app, close_app) = (app.clone(), app.clone());
+    let (account, profile) = google(&state)?
+        .sign_in_with(
+            login_hint,
+            move |url| open_login_page(&open_app, url, owner),
+            // o código chegou (ou a espera acabou): fecha a folha antes de trocar o código pelos tokens
+            move || websheet::close(&close_app, owner),
+        )
+        .await
+        .map_err(err)?;
     Ok(AccountInfo { email: account.email, provider: account.provider, messages_total: Some(profile.messages_total) })
 }
 
@@ -88,10 +121,12 @@ fn google_sign_in_cancel(state: State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
-/// Abre de novo a página de login do Google em andamento.
+/// Abre de novo a página de login do Google em andamento (na folha do Mac ou no navegador).
+/// Assíncrono de propósito: comando síncrono roda na linha principal, e a folha espera por ela.
 #[tauri::command]
-fn google_sign_in_reopen(state: State<'_, AppState>) -> Result<(), String> {
-    google(&state)?.reopen_auth_url().map_err(err)
+async fn google_sign_in_reopen(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    let url = google(&state)?.auth_url().ok_or_else(|| err(LoginError::Cancelled))?;
+    open_login_page(&app, &url, LOGIN_SEQ.load(Ordering::SeqCst))
 }
 
 /// Endereço da página de login em andamento (para copiar e colar em outro navegador).

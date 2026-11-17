@@ -1,4 +1,4 @@
-//! Sessão das contas Google no app de computador: login pelo navegador, tokens no cofre do sistema
+//! Sessão das contas Google no app de computador: login pela página oficial (navegador ou folha do macOS), tokens no cofre do sistema
 //! (Chaves do macOS / Credential Manager do Windows) e acesso renovado sozinho.
 
 use std::collections::HashMap;
@@ -51,8 +51,7 @@ impl GoogleSession {
         self.tokens.lock().expect("trava dos tokens").insert(email.to_lowercase(), (token, until));
     }
 
-    /// Abre a página oficial do Google no navegador e espera a pessoa autorizar.
-    /// Para o login em andamento (a pessoa fechou o navegador ou desistiu).
+    /// Para o login em andamento (a pessoa fechou a janela de login ou desistiu).
     pub fn cancel_sign_in(&self) {
         self.cancel.notify_waiters();
     }
@@ -68,7 +67,20 @@ impl GoogleSession {
         open::that_detached(&url).map_err(|e| LoginError::Network(format!("não consegui abrir o navegador: {e}")))
     }
 
+    /// Login com a página do Google aberta no navegador padrão.
     pub async fn sign_in(&self, login_hint: Option<String>) -> Result<(Account, Profile), LoginError> {
+        self.sign_in_with(login_hint, |url| open::that_detached(url).map_err(|e| e.to_string()), || {}).await
+    }
+
+    /// Login abrindo a página do Google com `open` (ex.: a folha de login do macOS). `wait_ended` é chamado
+    /// assim que a espera pelo código termina (chegou, foi recusado, cancelado ou deu tempo), antes de trocar
+    /// o código pelos tokens: é a hora de fechar a janela que `open` abriu.
+    pub async fn sign_in_with(
+        &self,
+        login_hint: Option<String>,
+        open: impl FnOnce(&str) -> Result<(), String>,
+        wait_ended: impl FnOnce(),
+    ) -> Result<(Account, Profile), LoginError> {
         // um login por vez: um pedido novo encerra o anterior
         self.cancel.notify_waiters();
         let loopback = Loopback::bind().await.map_err(|e| LoginError::Network(e.to_string()))?;
@@ -84,10 +96,14 @@ impl GoogleSession {
             login_hint,
         });
         *self.auth_url.lock().expect("trava do login") = Some(url.clone());
-        open::that_detached(&url).map_err(|e| LoginError::Network(format!("não consegui abrir o navegador: {e}")))?;
+        if let Err(e) = open(&url) {
+            *self.auth_url.lock().expect("trava do login") = None;
+            return Err(LoginError::Network(format!("não consegui abrir a página de login: {e}")));
+        }
 
         let waited = loopback.wait_for_code_or_cancel(&state, LOGIN_TIMEOUT, &self.cancel).await;
         *self.auth_url.lock().expect("trava do login") = None;
+        wait_ended();
         let code = waited?;
         let tokens = self.client.exchange_code(&code, &pkce.verifier, &redirect_uri).await?;
         let profile = self.client.profile(&tokens.access_token).await?;
@@ -276,4 +292,67 @@ impl GoogleSession {
 pub struct Agenda {
     pub calendars: Vec<crate::calendar::CalendarInfo>,
     pub events: Vec<crate::calendar::CalEvent>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    fn session() -> GoogleSession {
+        let file = std::env::temp_dir().join(format!("quill-test-{}.json", random_token(8)));
+        GoogleSession::new("id-teste", "segredo-teste", file)
+    }
+
+    #[tokio::test]
+    async fn sign_in_with_avisa_quando_nao_consegue_abrir() {
+        let s = session();
+        let ended = AtomicBool::new(false);
+        let got = s.sign_in_with(None, |_| Err("sem janela".into()), || ended.store(true, Ordering::SeqCst)).await;
+        assert!(matches!(got, Err(LoginError::Network(ref m)) if m.contains("sem janela")));
+        assert_eq!(s.auth_url(), None);
+        // a janela nem abriu, então não há o que fechar
+        assert!(!ended.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn cancelar_termina_a_espera_e_chama_wait_ended() {
+        let s = Arc::new(session());
+        let opened = Arc::new(Mutex::new(None::<String>));
+        let ended = Arc::new(AtomicBool::new(false));
+        let (s2, o2, e2) = (s.clone(), opened.clone(), ended.clone());
+        let task = tokio::spawn(async move {
+            s2.sign_in_with(
+                Some("ana@exemplo.com".into()),
+                move |url| {
+                    *o2.lock().unwrap() = Some(url.to_string());
+                    Ok(())
+                },
+                move || e2.store(true, Ordering::SeqCst),
+            )
+            .await
+        });
+        // espera a página "abrir" e o login ficar em andamento
+        for _ in 0..200 {
+            if s.auth_url().is_some() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        let url = opened.lock().unwrap().clone().expect("abriu a página");
+        assert!(url.starts_with("https://accounts.google.com/"));
+        assert!(url.contains("redirect_uri=http%3A%2F%2F127.0.0.1"));
+        assert_eq!(s.auth_url().as_deref(), Some(url.as_str()));
+
+        // o aviso só vale para quem já está esperando; repete até a espera pegar
+        while !task.is_finished() {
+            s.cancel_sign_in();
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        let got = task.await.unwrap();
+        assert!(matches!(got, Err(LoginError::Cancelled)));
+        assert!(ended.load(Ordering::SeqCst));
+        assert_eq!(s.auth_url(), None);
+    }
 }

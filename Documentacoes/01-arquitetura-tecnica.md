@@ -29,7 +29,7 @@ não entram aqui.
 
 | Sistema externo | Para quê | Como |
 |---|---|---|
-| Google OAuth | Login | Página oficial no navegador, PKCE, volta em `127.0.0.1` |
+| Google OAuth | Login | Página oficial na janela de login do macOS (ou no navegador), PKCE, volta em `127.0.0.1` |
 | Gmail API | Ler, organizar, enviar, rascunhos, anexos, contadores | HTTPS com token de acesso |
 | Google Agenda | Agendas, eventos, convites, criar/editar/apagar, Meet | HTTPS com token de acesso |
 | People API | Contatos e "Outros contatos" (só leitura) para sugestões | HTTPS com token de acesso |
@@ -108,13 +108,15 @@ src-tauri/
   src/main.rs               chama quill_lib::run()
   src/lib.rs                os 31 comandos e o estado do app
   src/touchid.rs            Touch ID (LocalAuthentication; só compila no Mac)
+  src/websheet.rs           janela de login do Google no Mac (ASWebAuthenticationSession)
   crates/quill-core/        a lógica (abaixo)
 ```
 
 ## Módulos da `quill-core` (C4 nível 3)
 
 A crate tem dois recursos (features): `net` liga a rede (reqwest, tokio, IMAP, SMTP); `desktop` liga também o cofre
-do sistema (`keyring`) e abrir o navegador (`open`). O app usa `desktop`; os testes rodam com `net`.
+do sistema (`keyring`) e abrir o navegador (`open`). O app usa `desktop`; os testes rodam com `net` (199) ou com
+`desktop` (201, inclui os de `session`).
 
 | Módulo | Recurso | O que faz | Testes |
 |---|---|---|---|
@@ -132,9 +134,9 @@ do sistema (`keyring`) e abrir o navegador (`open`). O app usa `desktop`; os tes
 | `google` | `net` | Conversa com o Google: volta do navegador, troca e renovação de tokens, Gmail, Agenda, People | 26 |
 | `imap_client` | `net` | Conversa com servidores IMAP e SMTP (TLS com rustls), palpite de servidores | 17 |
 | `dav_client` | `net` | CalDAV/CardDAV com o iCloud: HTTP Basic só em HTTPS e só para `*.icloud.com`; redirecionamentos à mão | 14 |
-| `session` | `desktop` | Sessão das contas Google: login (tempo máximo de 4 min, cancelável), tokens nas Chaves, renovação, ações | 0 |
+| `session` | `desktop` | Sessão das contas Google: login (tempo máximo de 4 min, cancelável, com o jeito de abrir a página escolhido pelo app), tokens nas Chaves, renovação, ações | 2 |
 | `imap_session` | `desktop` | Contas iCloud/IMAP: senha de app nas Chaves, servidores no `accounts.json` | 0 |
-| **Total** | | | **199** |
+| **Total** | | | **201** |
 
 `session` e `imap_session` só juntam o cofre do sistema e a rede; a lógica que eles usam está testada nos outros
 módulos.
@@ -199,9 +201,11 @@ Na prévia do navegador, `mailbox.ts` e `calendar.ts` usam dados de exemplo; no 
 
 **Login Google**
 1. A tela chama `google_sign_in`.
-2. A `quill-core` gera o PKCE, abre um servidor só em `127.0.0.1` numa porta livre e abre o navegador na página do
-   Google.
-3. O Google devolve o código para `127.0.0.1`; a `quill-core` troca por tokens.
+2. A `quill-core` (`sign_in_with`) gera o PKCE e abre um servidor só em `127.0.0.1` numa porta livre. No Mac, o app
+   abre a página do Google na janela de login do sistema (`ASWebAuthenticationSession`, `src-tauri/src/websheet.rs`);
+   se ela não abrir, ou fora do Mac, abre o navegador ([ADR-022](02-decisoes-adrs/ADR-022-login-google-na-folha-do-macos.md)).
+3. O Google devolve o código para `127.0.0.1`; o app fecha a janela de login e a `quill-core` troca o código por
+   tokens. Se a pessoa fechar a janela antes, a espera é cancelada.
 4. O token de renovação vai para as Chaves (serviço `app.quill.desktop.google`); a conta entra no `accounts.json`.
 5. Tempo máximo de espera: 4 minutos. Cancelar ou começar outro login encerra o anterior.
 

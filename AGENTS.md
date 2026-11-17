@@ -52,6 +52,7 @@ App de e-mail e calendário, **macOS primeiro**, depois Windows. Começou como u
 - Agenda e contatos do iCloud: CalDAV/CardDAV em `quill-core/src/{ical,dav,caldav,carddav,dav_client}.rs` (só para `*.icloud.com`, mesma senha de app).
 - iCloud e "Outro e-mail": IMAP/SMTP em `quill-core/src/imap*.rs` (senha de app nas Chaves, serviço `app.quill.desktop.imap`); os comandos do `lib.rs` escolhem Google ou IMAP pelo provedor da conta. Microsoft ainda falta (precisa do ID do app registrado no Azure).
 - Touch ID: `src-tauri/src/touchid.rs` (LocalAuthentication, só compila no Mac).
+- Login do Google no Mac: janela de login do sistema (ASWebAuthenticationSession) em `src-tauri/src/websheet.rs`, volta ainda pelo `127.0.0.1`; cai para o navegador se não abrir (ADR-022).
 - Lógica do login e do Gmail em `src-tauri/crates/quill-core` (testes: `cargo test --features net` dentro dessa pasta; roda até na VPS). Tokens de acesso permanentes ficam nas Chaves do sistema (`keyring`), nunca em arquivo.
 
 ## Fluxo de trabalho

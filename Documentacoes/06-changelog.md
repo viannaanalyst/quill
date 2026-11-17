@@ -119,3 +119,17 @@ Baseado no `git log` e nas mensagens dos commits. Horários em Brasília (UTC−
 - Ajustes → Contas: saiu o botão "Adicionar conta" (os quatro cartões abrem o fluxo); "Cor da conta" ganhou o botão
   "+" com uma paleta de 60 cores, cinzas e código #RRGGBB. Apelido e cor escolhidos agora valem no app todo.
 - Regra registrada: nunca gerar ou instalar o app no Mac sem o Gabriel pedir.
+
+### Login do Google na janela de login do macOS
+
+- No Mac, conectar uma conta Google abre a página do Google na janela de login do sistema (ASWebAuthenticationSession,
+  `src-tauri/src/websheet.rs`) em vez do navegador. A volta continua pelo `127.0.0.1`; quando o código chega, o Quill
+  fecha a janela. Fechar a janela antes cancela o login, como o botão Cancelar. Se a janela não abrir (ou fora do
+  Mac), o navegador abre como antes. "Abrir de novo" também usa a janela
+  ([ADR-022](02-decisoes-adrs/ADR-022-login-google-na-folha-do-macos.md)).
+- `quill-core`: `GoogleSession::sign_in_with` deixa o app escolher como abrir a página e avisa quando a espera
+  termina; `sign_in` continua com o navegador. Dois testes novos (201 com `--features desktop`; 199 com `net`).
+- Telas: "Termine o login na janela que abriu" e "Esperando o login…".
+- Testado no Mac em 2026-11-17, sem fazer login: a janela abre (com o Safari como navegador, é uma janela do Safari
+  sem barra de endereço, não uma folha presa ao Quill); fechar a janela cancela a espera; Cancelar no Quill fecha a
+  janela. O login completo fica para o Gabriel testar.

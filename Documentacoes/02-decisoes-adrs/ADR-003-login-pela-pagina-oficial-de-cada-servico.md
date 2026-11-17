@@ -15,7 +15,8 @@ Google nem permite. Também não faz sentido criar uma "conta Quill" com servido
 **Decisão**
 - **Não existe conta Quill.** Cada conta entra direto no serviço dela.
 - Google: **OAuth 2.0 para apps de computador com PKCE** e volta para um endereço local (`127.0.0.1`, porta livre
-  escolhida pelo sistema). O navegador abre a página oficial do Google; o Quill nunca vê a senha.
+  escolhida pelo sistema). A página oficial do Google abre no navegador (no Mac, na janela de login do sistema, ver
+  ADR-022); o Quill nunca vê a senha.
 - O login pode ser cancelado, reaberto ou ter o link copiado; espera no máximo 4 minutos; um login novo encerra o
   anterior.
 - iCloud e outros provedores que não têm OAuth para apps de terceiros usam **senha de app** (ver ADR-015).

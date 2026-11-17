@@ -30,7 +30,7 @@ cada tarefa do dia a dia. Instalar, conectar contas e resolver o "Google descone
 ### Passo 1 — Conectar a conta
 1. Abra o Quill. Passe pela apresentação (botão de avançar ou as setas do teclado).
 2. Na tela de entrar, escolha **Continuar com Google** (ou iCloud).
-3. Entre na página oficial que abre no navegador e volte ao Quill.
+3. Entre na página oficial que abre na janela de login do macOS. Ela fecha sozinha no fim.
 
 O que acontece: a caixa de entrada aparece com os e-mails da conta. O cartão de contas, no alto, mostra quantos não
 lidos cada conta tem.

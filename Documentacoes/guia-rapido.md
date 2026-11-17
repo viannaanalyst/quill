@@ -38,16 +38,17 @@ por **Ajustes → Contas → Adicionar conta** ou pelo menu do avatar (canto sup
 ### Google (Gmail ou Google Workspace)
 
 1. Escolha **Continuar com Google**.
-2. O navegador abre a página do Google. Escolha a conta e aceite as permissões (ler e organizar e-mail, enviar, agenda
+2. Abre uma janela de login do macOS com a página do Google (fora do Mac, ou se ela não abrir, o navegador). Escolha
+   a conta e aceite as permissões (ler e organizar e-mail, enviar, agenda
    e contatos).
 3. Como o app do Google ainda está em modo de teste, pode aparecer o aviso "O Google não verificou este app". Clique em
    **Continuar**: só as contas do Gabriel estão liberadas como testadoras.
-4. Volte ao Quill. A conta aparece e os e-mails começam a chegar.
+4. A janela fecha sozinha. A conta aparece e os e-mails começam a chegar.
 
 Enquanto espera, a tela de login tem três botões:
-- **Abrir de novo:** reabre a página do Google, se você fechou a aba.
+- **Abrir de novo:** reabre a página do Google.
 - **Copiar link:** para colar em outro navegador.
-- **Cancelar:** desiste do login.
+- **Cancelar:** desiste do login (fechar a janela de login faz o mesmo).
 
 O login espera até 4 minutos. Começar um login novo encerra o anterior.
 

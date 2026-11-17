@@ -4,7 +4,7 @@ import { toast } from "./Toasts";
 import { api } from "../lib/api";
 
 /**
- * Enquanto o login do Google está aberto no navegador: explica o que fazer e deixa
+ * Enquanto o login do Google está aberto (folha do macOS ou navegador): explica o que fazer e deixa
  * abrir a página de novo, copiar o link (para colar em outro navegador) ou cancelar.
  */
 export function LoginWaiting({ className = "" }: { className?: string }) {
@@ -25,7 +25,7 @@ export function LoginWaiting({ className = "" }: { className?: string }) {
     <div className={`lw ${className}`} role="status">
       <p>
         <LoaderCircle size={14} className="spinning" aria-hidden />
-        Termine o login na janela do navegador que abriu. Depois, volte para cá.
+        Termine o login na janela que abriu. Depois, volte para cá.
       </p>
       <div className="lw-actions">
         <button type="button" onClick={() => void api.googleSignInReopen().catch(() => undefined)}>

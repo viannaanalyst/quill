@@ -5,7 +5,7 @@ import { friendlyError } from "../lib/api";
 import { signInWithGoogle } from "../state/mailbox";
 import { LoginWaiting } from "./LoginWaiting";
 
-/** Botão "Conectar com Google": abre o login no navegador e mostra o andamento ou o erro. */
+/** Botão "Conectar com Google": abre o login (folha do macOS ou navegador) e mostra o andamento ou o erro. */
 export function ConnectGoogleButton({
   label = "Conectar com Google",
   onConnected,
@@ -43,7 +43,7 @@ export function ConnectGoogleButton({
             <Logo name="gmail" size={14} />
           </span>
         )}
-        {busy ? "Esperando o navegador…" : label}
+        {busy ? "Esperando o login…" : label}
       </button>
       {busy && <LoginWaiting className="cg-note" />}
       {error && (

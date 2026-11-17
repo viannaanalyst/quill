@@ -238,7 +238,7 @@ export async function loadMailbox(currentFolder: FolderId = "inbox") {
   }
 }
 
-/** Entra com uma conta Google pelo navegador e recarrega tudo. */
+/** Entra com uma conta Google (folha de login do macOS ou navegador) e recarrega tudo. */
 export async function signInWithGoogle(loginHint?: string): Promise<AccountInfo> {
   const account = await api.googleSignIn(loginHint);
   set({ connected: [...state.connected.filter((a) => a.email !== account.email), account] });
