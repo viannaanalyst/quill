@@ -19,7 +19,8 @@ git, para arquivos comuns ou para o armazenamento das telas.
 - O `src-tauri/build.rs` embute as duas no programa na montagem, vindas das variáveis
   (`infisical run --env=prod -- npm run tauri build`) ou do arquivo `src-tauri/oauth.local.env` (fora do git).
 - Tokens e senhas de app ficam **só nas Chaves do sistema** (Chaves do macOS / Credential Manager do Windows), pela
-  biblioteca `keyring`, nos serviços `app.quill.desktop.google` e `app.quill.desktop.imap`.
+  biblioteca `keyring`, nos serviços `app.quill.desktop.google` e `app.quill.desktop.imap`. **Atualizado pelo
+  [ADR-024](ADR-024-cofre-unico-nas-chaves.md):** agora tudo fica num único item (`app.quill.desktop` / `cofre`).
 - O `accounts.json` guarda só e-mail, serviço e servidores. O `localStorage` guarda só preferências.
 
 **Consequências**

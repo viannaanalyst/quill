@@ -1,6 +1,10 @@
 import * as Popover from "@radix-ui/react-popover";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { api, friendlyError, type ChatAttachmentDto, type ChatMessageDto } from "../lib/api";
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import SmilePlus from "lucide-react/icons/smile-plus";
+import EllipsisVertical from "lucide-react/icons/ellipsis-vertical";
+import Copy from "lucide-react/icons/copy";
+import MessageSquareReply from "lucide-react/icons/message-square-reply";
+import { api, friendlyError, type ChatAttachmentDto, type ChatMessageDto, type ChatQuoteDto } from "../lib/api";
 import { isTauri } from "../lib/platform";
 import { FILE_LABEL, fileSize, fileType } from "../lib/files";
 import { FileIcon } from "../components/FileIcon";
@@ -8,31 +12,12 @@ import { AccountPhoto } from "../components/MyAvatar";
 import { previewAttachment } from "../components/AttachmentPreview";
 import { toast } from "../components/Toasts";
 import { askConfirm } from "../components/ConfirmHost";
-import {
-  Check,
-  Download,
-  Ellipsis,
-  ExternalLink,
-  Eye,
-  Hash,
-  LoaderCircle,
-  Maximize2,
-  Pause,
-  Pencil,
-  Play,
-  Plus,
-  Reply,
-  RotateCcw,
-  Smile,
-  Trash2,
-  Users,
-  Video,
-  X,
-} from "../components/icons";
-import { EMOJIS, QUICK_REACTIONS, emojiName } from "../lib/emojis";
-import { deleteMessage, discardOutgoing, editMessage, retryOutgoing, toggleReaction, useChat, type Outgoing, type PendingFile } from "../state/chat";
+import { Check, Download, ExternalLink, Eye, Hash, LoaderCircle, Maximize2, Pause, Pencil, Play, Reply, RotateCcw, Trash2, Users, Video, X } from "../components/icons";
+import { EMOJIS, emojiName } from "../lib/emojis";
+import { deleteMessage, discardOutgoing, editMessage, quickReactions, retryOutgoing, toggleReaction, useChat, type Outgoing, type PendingFile } from "../state/chat";
 import type { ChatPersonDto, ChatSpaceDto } from "../lib/api";
-import { ChatText, openLink } from "./chatText";
+import { ChatBlocks, ChatText, openLink } from "./chatText";
+import { emojiOnly, parseChat, plainChat } from "./format";
 import { blobToBase64, clock, kindOf, loadAttachment, waveOf } from "./media";
 
 /* ---------- avatar ---------- */
@@ -107,6 +92,15 @@ export function SpaceIcon({ s, size = 40 }: { s: ChatSpaceDto; size?: number }) 
 /* ---------- datas ---------- */
 const sameDay = (a: number, b: number) => new Date(a).toDateString() === new Date(b).toDateString();
 export const hhmm = (ms: number) => new Date(ms).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+/** Horário da mensagem: "agora" e "5 min" até 1 hora; depois o horário (14:35). */
+export function relTime(ms: number, now: number) {
+  const d = now - ms;
+  if (d >= 0 && d < 60_000) return "agora";
+  if (d >= 0 && d < 3_600_000) return `${Math.floor(d / 60_000)} min`;
+  return hhmm(ms);
+}
+/** Data e hora completas (dica ao passar o mouse na mensagem). */
+export const fullDate = (ms: number) => new Date(ms).toLocaleString("pt-BR", { dateStyle: "full", timeStyle: "short" });
 function dayLabel(ms: number, now: number) {
   if (sameDay(ms, now)) return "Hoje";
   if (sameDay(ms, now - 86_400_000)) return "Ontem";
@@ -321,7 +315,7 @@ export function AudioPlayer({ src, seed, mine, onError }: { src: string | null; 
 function AudioAttachment({ account, a, mine }: { account: string; a: ChatAttachmentDto; mine: boolean }) {
   const { ref, url, error } = useVisibleBlob(account, a);
   return (
-    <div ref={ref} className={mine ? "chat-bub chat-bub-aud" : "chat-aud-wrap"}>
+    <div ref={ref} className={mine ? "chat-bub is-mine chat-bub-aud" : "chat-aud-wrap"}>
       <AudioPlayer src={url} seed={a.resourceName ?? a.name} mine={mine} onError={error} />
     </div>
   );
@@ -392,6 +386,35 @@ function Attachments({ account, list, mine }: { account: string; list: ChatAttac
 }
 
 /* ---------- mensagens ---------- */
+/** O que as mensagens da lista compartilham (evita passar tudo de mão em mão). */
+interface ListContext {
+  account: string;
+  space: string;
+  now: number;
+  /** link da conversa no Google Chat */
+  uri: string;
+  /** mensagens carregadas, pelo nome (para a citação) */
+  byName: Map<string, ChatMessageDto>;
+  /** id → nome de quem aparece na conversa (menções sem nome) */
+  people: Map<string, string>;
+  /** id da própria conta no Chat (menção a você fica destacada) */
+  myId: string | null;
+  editing: string | null;
+  onEdit: (name: string | null) => void;
+  /** responder no fio: abre as respostas e foca a caixa de escrever */
+  reply: (m: ChatMessageDto) => void;
+  openThreads: Set<string>;
+  toggleThread: (thread: string) => void;
+  /** rola até a mensagem citada (abre o fio se ela for uma resposta) */
+  jumpTo: (name: string) => void;
+}
+const ListCtx = createContext<ListContext | null>(null);
+const useList = () => useContext(ListCtx)!;
+
+/** Nomes dos emojis rápidos que não estão na grade (para o leitor de tela). */
+const EXTRA_NAMES: Record<string, string> = { "🫡": "Continência", "🤣": "Rolando de rir" };
+const nameOfEmoji = (e: string) => EXTRA_NAMES[e] ?? emojiName(e);
+
 /** Emojis com que você reagiu nesta mensagem (guardados no app: a API só diz a contagem). */
 function useMine(m: ChatMessageDto): string[] {
   const raw = useChat((s) => s.reacted[`${s.account ?? ""}|${m.name}`]);
@@ -405,6 +428,17 @@ function Reactions({ space, m }: { space: string; m: ChatMessageDto }) {
   return (
     <div className="chat-rxs" role="group" aria-label="Reações">
       {m.reactions.map((r) => {
+        if (r.image) {
+          // emoji próprio da empresa: a API não deixa reagir com ele pelo nome
+          return (
+            <span key={r.emoji} className="chat-rx is-custom" role="img" aria-label={`${r.emoji}: ${r.count} ${r.count === 1 ? "reação" : "reações"}`}>
+              <img className="chat-cemo" src={r.image} alt="" referrerPolicy="no-referrer" />
+              <span className="chat-rx-n" aria-hidden>
+                {r.count}
+              </span>
+            </span>
+          );
+        }
         const isMine = mine.includes(r.emoji);
         return (
           <button
@@ -412,11 +446,11 @@ function Reactions({ space, m }: { space: string; m: ChatMessageDto }) {
             type="button"
             className={`chat-rx${isMine ? " is-mine" : ""}`}
             aria-pressed={isMine}
-            aria-label={`${emojiName(r.emoji)}: ${r.count} ${r.count === 1 ? "reação" : "reações"}${isMine ? ", uma é sua" : ""}`}
+            aria-label={`${nameOfEmoji(r.emoji)}: ${r.count} ${r.count === 1 ? "reação" : "reações"}${isMine ? ", uma é sua" : ""}`}
             data-tip={isMine ? "Tirar sua reação" : `Reagir com ${r.emoji}`}
             onClick={() => void toggleReaction(space, m, r.emoji)}
           >
-            <span className="chat-rx-e" aria-hidden>
+            <span className="chat-rx-e chat-emo" aria-hidden>
               {r.emoji}
             </span>
             <span className="chat-rx-n" aria-hidden>
@@ -429,99 +463,158 @@ function Reactions({ space, m }: { space: string; m: ChatMessageDto }) {
   );
 }
 
-/** Botão de reagir: faixa com 6 rápidas e "+" que abre todos os emojis. */
-function ReactButton({ space, m, onOpenChange }: { space: string; m: ChatMessageDto; onOpenChange: (open: boolean) => void }) {
-  const [open, setOpen] = useState(false);
-  const [all, setAll] = useState(false);
+/**
+ * Barra que aparece ao passar o mouse (ou com Tab) no canto de cima da mensagem, como a do Google Chat:
+ * 3 reações rápidas (as que você mais usa), adicionar reação, responder no fio e ⋮ (editar, copiar,
+ * abrir no Google Chat, apagar). Um só ponto de Tab; as setas andam entre os botões.
+ */
+function MessageBar({ m }: { m: ChatMessageDto }) {
+  const ctx = useList();
+  const use = useChat((s) => s.reactionUse);
+  const quick = useMemo(() => quickReactions(use), [use]);
   const mine = useMine(m);
-  const change = (v: boolean) => {
-    setOpen(v);
-    if (!v) setAll(false);
-    onOpenChange(v);
-  };
-  const pick = (e: string) => {
-    change(false);
-    void toggleReaction(space, m, e);
-  };
-  const item = ([e, name]: [string, string], cls: string) => (
-    <button key={e} type="button" className={`${cls}${mine.includes(e) ? " is-mine" : ""}`} aria-label={`${mine.includes(e) ? "Tirar" : "Reagir com"} ${name}`} aria-pressed={mine.includes(e)} onClick={() => pick(e)}>
-      <span aria-hidden>{e}</span>
-    </button>
-  );
-  return (
-    <Popover.Root open={open} onOpenChange={change}>
-      <Popover.Trigger asChild>
-        <button type="button" className="chat-tool" data-tip="Reagir" aria-label="Reagir">
-          <Smile size={15} aria-hidden />
-        </button>
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content className="qp-content chat-rx-pop" side="top" align={m.mine ? "end" : "start"} sideOffset={8} collisionPadding={12}>
-          <div className="chat-rx-quick" role="group" aria-label="Reações rápidas">
-            {QUICK_REACTIONS.map((q) => item(q, "chat-rx-q"))}
-            <button type="button" className="chat-rx-q chat-rx-more" aria-label="Mais emojis" aria-expanded={all} data-tip="Mais emojis" onClick={() => setAll(!all)}>
-              <Plus size={16} aria-hidden />
-            </button>
-          </div>
-          {all && (
-            <div className="chat-rx-grid" role="group" aria-label="Todos os emojis">
-              {EMOJIS.map((q) => item(q, "chat-rx-g"))}
-            </div>
-          )}
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
-  );
-}
-
-/** Ações que aparecem ao passar o mouse (ou com o foco do teclado): reagir, responder e, nas suas, editar e apagar. */
-function MessageTools({ space, m, onReply, onEdit }: { space: string; m: ChatMessageDto; onReply: (m: ChatMessageDto) => void; onEdit: (m: ChatMessageDto) => void }) {
-  const [reacting, setReacting] = useState(false);
+  const [picker, setPicker] = useState(false);
   const [menu, setMenu] = useState(false);
-  if (m.deleted) return null;
+  const [active, setActive] = useState(0);
+  const bar = useRef<HTMLDivElement>(null);
+  const text = m.formattedText || m.text;
+  const who = m.mine ? "sua mensagem" : `mensagem de ${m.sender.name}`;
+
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const btns = [...(bar.current?.querySelectorAll<HTMLButtonElement>("[data-bar]") ?? [])];
+    const i = btns.indexOf(document.activeElement as HTMLButtonElement);
+    if (i < 0) return;
+    const next = e.key === "ArrowRight" ? (i + 1) % btns.length : e.key === "ArrowLeft" ? (i - 1 + btns.length) % btns.length : e.key === "Home" ? 0 : e.key === "End" ? btns.length - 1 : -1;
+    if (next < 0) return;
+    e.preventDefault();
+    setActive(next);
+    btns[next].focus();
+  };
+  const tab = (i: number) => (i === active ? 0 : -1);
+  const react = (e: string) => void toggleReaction(ctx.space, m, e);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(plainChat(text, (id) => m.mentions?.find((x) => x.id === id)?.name ?? ctx.people.get(id)));
+      toast("Texto copiado");
+    } catch {
+      toast("Não consegui copiar o texto.", "error");
+    }
+  };
   const remove = async () => {
     const ok = await askConfirm({
       title: "Apagar mensagem?",
       text: "Ela some para todas as pessoas da conversa. Não dá para desfazer.",
       action: "Apagar",
     });
-    if (ok) void deleteMessage(space, m);
+    if (ok) void deleteMessage(ctx.space, m);
   };
+  let n = quick.length;
+  const pickerAt = n++;
+  const replyAt = m.thread ? n++ : -1;
+  const menuAt = n;
+
   return (
-    <div className={`chat-tools${reacting || menu ? " is-open" : ""}`} role="toolbar" aria-label="Ações da mensagem">
-      <ReactButton space={space} m={m} onOpenChange={setReacting} />
+    <div ref={bar} className={`chat-bar${picker || menu ? " is-open" : ""}`} role="toolbar" aria-label={`Ações da ${who}, ${fullDate(m.createMs)}`} onKeyDown={onKeyDown}>
+      {quick.map((e, i) => {
+        const on = mine.includes(e);
+        return (
+          <button
+            key={e}
+            type="button"
+            data-bar
+            tabIndex={tab(i)}
+            className={`chat-bar-btn chat-bar-emo${on ? " is-mine" : ""}`}
+            aria-pressed={on}
+            aria-label={`${on ? "Tirar reação" : "Reagir com"} ${nameOfEmoji(e)}`}
+            data-tip={on ? "Tirar sua reação" : nameOfEmoji(e)}
+            onFocus={() => setActive(i)}
+            onClick={() => react(e)}
+          >
+            <span className="chat-emo" aria-hidden>
+              {e}
+            </span>
+          </button>
+        );
+      })}
+      <Popover.Root open={picker} onOpenChange={setPicker}>
+        <Popover.Trigger asChild>
+          <button type="button" data-bar tabIndex={tab(pickerAt)} className="chat-bar-btn" aria-label="Adicionar reação" data-tip="Adicionar reação" onFocus={() => setActive(pickerAt)}>
+            <SmilePlus size={16} aria-hidden />
+          </button>
+        </Popover.Trigger>
+        <Popover.Portal>
+          <Popover.Content className="qp-content chat-rx-pop" side="top" align="end" sideOffset={8} collisionPadding={12}>
+            <div className="chat-rx-grid" role="group" aria-label="Escolha um emoji">
+              {EMOJIS.map(([e, name]) => {
+                const on = mine.includes(e);
+                return (
+                  <button
+                    key={e}
+                    type="button"
+                    className={`chat-rx-g${on ? " is-mine" : ""}`}
+                    aria-label={`${on ? "Tirar" : "Reagir com"} ${name}`}
+                    aria-pressed={on}
+                    onClick={() => {
+                      setPicker(false);
+                      react(e);
+                    }}
+                  >
+                    <span className="chat-emo" aria-hidden>
+                      {e}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </Popover.Content>
+        </Popover.Portal>
+      </Popover.Root>
       {m.thread && (
-        <button type="button" className="chat-tool" data-tip="Responder na conversa" aria-label="Responder na conversa" onClick={() => onReply(m)}>
-          <Reply size={15} aria-hidden />
+        <button type="button" data-bar tabIndex={tab(replyAt)} className="chat-bar-btn" aria-label="Responder no fio" data-tip="Responder no fio" onFocus={() => setActive(replyAt)} onClick={() => ctx.reply(m)}>
+          <MessageSquareReply size={16} aria-hidden />
         </button>
       )}
-      {m.mine && (
-        <Popover.Root open={menu} onOpenChange={setMenu}>
-          <Popover.Trigger asChild>
-            <button type="button" className="chat-tool" data-tip="Mais" aria-label="Mais ações da mensagem">
-              <Ellipsis size={15} aria-hidden />
-            </button>
-          </Popover.Trigger>
-          <Popover.Portal>
-            <Popover.Content className="qp-content chat-menu" side="bottom" align="end" sideOffset={6} collisionPadding={12}>
-              {m.text && (
-                <Popover.Close asChild>
-                  <button type="button" onClick={() => onEdit(m)}>
-                    <Pencil size={15} aria-hidden />
-                    Editar
-                  </button>
-                </Popover.Close>
-              )}
+      <Popover.Root open={menu} onOpenChange={setMenu}>
+        <Popover.Trigger asChild>
+          <button type="button" data-bar tabIndex={tab(menuAt)} className="chat-bar-btn" aria-label="Mais ações da mensagem" data-tip="Mais" onFocus={() => setActive(menuAt)}>
+            <EllipsisVertical size={16} aria-hidden />
+          </button>
+        </Popover.Trigger>
+        <Popover.Portal>
+          <Popover.Content className="qp-content chat-menu" side="bottom" align="end" sideOffset={6} collisionPadding={12}>
+            {m.mine && m.text && (
+              <Popover.Close asChild>
+                <button type="button" onClick={() => ctx.onEdit(m.name)}>
+                  <Pencil size={15} aria-hidden />
+                  Editar
+                </button>
+              </Popover.Close>
+            )}
+            {text && (
+              <Popover.Close asChild>
+                <button type="button" onClick={() => void copy()}>
+                  <Copy size={15} aria-hidden />
+                  Copiar texto
+                </button>
+              </Popover.Close>
+            )}
+            <Popover.Close asChild>
+              <button type="button" onClick={() => openLink(ctx.uri)}>
+                <ExternalLink size={15} aria-hidden />
+                Abrir no Google Chat
+              </button>
+            </Popover.Close>
+            {m.mine && (
               <Popover.Close asChild>
                 <button type="button" className="chat-menu-danger" onClick={() => void remove()}>
                   <Trash2 size={15} aria-hidden />
                   Apagar
                 </button>
               </Popover.Close>
-            </Popover.Content>
-          </Popover.Portal>
-        </Popover.Root>
-      )}
+            )}
+          </Popover.Content>
+        </Popover.Portal>
+      </Popover.Root>
     </div>
   );
 }
@@ -597,18 +690,49 @@ function EditBox({ space, m, onDone }: { space: string; m: ChatMessageDto; onDon
   );
 }
 
-interface BodyProps {
-  account: string;
-  space: string;
-  m: ChatMessageDto;
-  onReply: (m: ChatMessageDto) => void;
-  editing: string | null;
-  onEdit: (name: string | null) => void;
+/** Cartão da mensagem citada: barrinha, nome e começo do texto. Clicar leva até ela (se estiver carregada). */
+function Quote({ q, nameOf }: { q: ChatQuoteDto; nameOf: (id: string) => string | null | undefined }) {
+  const ctx = useList();
+  const loaded = ctx.byName.get(q.name);
+  const name = loaded?.mine ? "Você" : (q.sender?.name ?? loaded?.sender.name ?? "Mensagem citada");
+  const raw = q.text || (loaded ? loaded.formattedText || loaded.text : "");
+  const text = (raw ? plainChat(raw, nameOf) : "") || (loaded?.attachments[0] ? `Anexo: ${loaded.attachments[0].name}` : "");
+  const body = (
+    <>
+      <span className="chat-qn">{name}</span>
+      {text && <span className="chat-qt">{text}</span>}
+    </>
+  );
+  if (!loaded) return <div className="chat-quote">{body}</div>;
+  return (
+    <button type="button" className="chat-quote" aria-label={`Ir para a mensagem citada de ${name}: ${text.slice(0, 80)}`} onClick={() => ctx.jumpTo(q.name)}>
+      {body}
+    </button>
+  );
 }
 
-function MessageBody({ account, space, m, onReply, editing, onEdit }: BodyProps) {
+/** Horário ao lado do nome: relativo quando é recente; a dica mostra data e hora completas. */
+function Stamp({ ms, tipLeft }: { ms: number; tipLeft?: boolean }) {
+  const { now } = useList();
+  return (
+    <time className="chat-mtm" dateTime={new Date(ms).toISOString()} data-tip={fullDate(ms)} data-tip-pos={tipLeft ? "left" : undefined}>
+      {relTime(ms, now)}
+    </time>
+  );
+}
+
+/** Posição da mensagem no grupo (cantos do balão empilhado). */
+type Pos = "single" | "first" | "middle" | "last";
+const posOf = (i: number, len: number): Pos => (len === 1 ? "single" : i === 0 ? "first" : i === len - 1 ? "last" : "middle");
+
+function MessageBody({ m, pos }: { m: ChatMessageDto; pos: Pos }) {
+  const ctx = useList();
   const gone = useChat((s) => s.removing.includes(m.name));
-  const isEditing = editing === m.name && !m.deleted;
+  const isEditing = ctx.editing === m.name && !m.deleted;
+  const source = m.deleted ? "" : m.formattedText || m.text;
+  const blocks = useMemo(() => parseChat(source, m.customEmojis), [source, m.customEmojis]);
+  const jumbo = !m.quoted && emojiOnly(blocks);
+  const nameOf = (id: string) => m.mentions?.find((x) => x.id === id)?.name ?? ctx.people.get(id);
   const edited = m.edited && !m.deleted && (
     <span className="chat-edited" title={m.mine ? "Você editou esta mensagem" : "Mensagem editada"}>
       {" "}
@@ -616,48 +740,43 @@ function MessageBody({ account, space, m, onReply, editing, onEdit }: BodyProps)
     </span>
   );
   return (
-    <div className={`chat-msg${gone ? " chat-gone" : ""}${isEditing ? " is-editing" : ""}`} aria-hidden={gone || undefined}>
+    <div
+      className={`chat-msg is-${pos}${gone ? " chat-gone" : ""}${isEditing ? " is-editing" : ""}`}
+      data-msg={m.name}
+      data-when={isEditing ? undefined : fullDate(m.createMs)}
+      aria-hidden={gone || undefined}
+    >
       {m.deleted ? (
-        <div className="chat-mt is-deleted">Mensagem apagada</div>
+        <div className={`chat-bub is-deleted ${m.mine ? "is-mine" : "is-other"}`}>Mensagem apagada</div>
       ) : isEditing ? (
-        <EditBox space={space} m={m} onDone={() => onEdit(null)} />
+        <EditBox space={ctx.space} m={m} onDone={() => ctx.onEdit(null)} />
       ) : (
-        m.text && (
-          <div className={m.mine ? "chat-bub" : "chat-mt"}>
-            <ChatText text={m.text} />
+        (source || m.quoted) && (
+          <div className={`chat-bub ${m.mine ? "is-mine" : "is-other"}${jumbo ? " is-jumbo" : ""}`}>
+            {m.quoted && <Quote q={m.quoted} nameOf={nameOf} />}
+            <ChatBlocks blocks={blocks} ctx={{ nameOf, myId: ctx.myId }} />
             {edited}
           </div>
         )
       )}
-      <Attachments account={account} list={m.attachments} mine={m.mine} />
-      <Reactions space={space} m={m} />
-      {!isEditing && !gone && <MessageTools space={space} m={m} onReply={onReply} onEdit={(x) => onEdit(x.name)} />}
+      <Attachments account={ctx.account} list={m.attachments} mine={m.mine} />
+      <Reactions space={ctx.space} m={m} />
+      {!isEditing && !gone && !m.deleted && <MessageBar m={m} />}
     </div>
   );
 }
 
-function ThreadChip({
-  account,
-  space,
-  replies,
-  onReply,
-  root,
-}: {
-  account: string;
-  space: string;
-  replies: ChatMessageDto[];
-  root: ChatMessageDto;
-  onReply: (m: ChatMessageDto) => void;
-}) {
-  const [open, setOpen] = useState(false);
+function ThreadChip({ replies, root }: { replies: ChatMessageDto[]; root: ChatMessageDto }) {
+  const ctx = useList();
+  const open = !!root.thread && ctx.openThreads.has(root.thread);
   const people = [...new Map(replies.map((r) => [r.sender.id, r.sender])).values()].slice(0, 3);
   const mineIds = new Set(replies.filter((r) => r.mine).map((r) => r.sender.id));
   return (
     <>
-      <button type="button" className="chat-thr" aria-expanded={open} onClick={() => setOpen(!open)}>
+      <button type="button" className="chat-thr" aria-expanded={open} onClick={() => root.thread && ctx.toggleThread(root.thread)}>
         <span className="chat-mini">
           {people.map((p) => (
-            <ChatAvatar key={p.id} name={p.name} photo={p.photo} size={24} seed={p.id} me={mineIds.has(p.id) ? account : undefined} />
+            <ChatAvatar key={p.id} name={p.name} photo={p.photo} size={24} seed={p.id} me={mineIds.has(p.id) ? ctx.account : undefined} />
           ))}
         </span>
         <b>{replies.length === 1 ? "1 resposta" : `${replies.length} respostas`}</b>· última às {hhmm(replies.at(-1)!.createMs)}
@@ -666,28 +785,17 @@ function ThreadChip({
         <div className="chat-replies">
           {replies.map((r) => (
             <div className="chat-reply" key={r.name}>
-              <ChatAvatar name={r.sender.name} photo={r.sender.photo} size={26} seed={r.sender.id} me={r.mine ? account : undefined} />
+              <ChatAvatar name={r.sender.name} photo={r.sender.photo} size={26} seed={r.sender.id} me={r.mine ? ctx.account : undefined} />
               <div className="chat-mb">
                 <div className="chat-mh">
                   <span className="chat-mn">{r.mine ? "Você" : r.sender.name}</span>
-                  <span className="chat-mtm">{hhmm(r.createMs)}</span>
+                  <Stamp ms={r.createMs} />
                 </div>
-                {r.deleted ? (
-                  <div className="chat-mt is-deleted">Mensagem apagada</div>
-                ) : (
-                  r.text && (
-                    <div className="chat-mt">
-                      <ChatText text={r.text} />
-                      {r.edited && <span className="chat-edited"> (editada)</span>}
-                    </div>
-                  )
-                )}
-                <Attachments account={account} list={r.attachments} mine={false} />
-                <Reactions space={space} m={r} />
+                <MessageBody m={r} pos="single" />
               </div>
             </div>
           ))}
-          <button type="button" className="btn glass sm chat-reply-btn" onClick={() => onReply(root)}>
+          <button type="button" className="btn glass sm chat-reply-btn" onClick={() => ctx.reply(root)}>
             <Reply size={14} aria-hidden />
             Responder na conversa
           </button>
@@ -765,7 +873,7 @@ function OutgoingItem({ o }: { o: Outgoing }) {
         )}
       </div>
       {o.text && !o.textSent && (
-        <div className="chat-bub is-pending">
+        <div className="chat-bub is-mine is-pending">
           <ChatText text={o.text} />
         </div>
       )}
@@ -791,6 +899,7 @@ function OutgoingItem({ o }: { o: Outgoing }) {
 export function MessageList({
   account,
   space,
+  uri,
   messages,
   outgoing,
   now,
@@ -803,6 +912,7 @@ export function MessageList({
 }: {
   account: string;
   space: string;
+  uri: string;
   messages: ChatMessageDto[];
   outgoing: Outgoing[];
   now: number;
@@ -815,11 +925,13 @@ export function MessageList({
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState<string | null>(null);
-  // trocar de conversa fecha a edição
+  const [openThreads, setOpenThreads] = useState<Set<string>>(() => new Set());
+  // trocar de conversa fecha a edição e os fios abertos
   const [editSpace, setEditSpace] = useState(space);
   if (editSpace !== space) {
     setEditSpace(space);
     setEditing(null);
+    setOpenThreads(new Set());
   }
   const shown = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -840,82 +952,136 @@ export function MessageList({
     } else if (atBottom.current) el.scrollTop = el.scrollHeight;
   }, [items, outgoing.length, firstName]);
 
-  return (
-    <div
-      className="chat-msgs"
-      ref={box}
-      onScroll={(e) => {
-        const el = e.currentTarget;
-        atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
-      }}
-      aria-live="polite"
-      aria-relevant="additions"
-    >
-      <div className="chat-msgs-top">
-        {filter && (
-          <div className="chat-filter-note">
-            {shown.length === 0 ? "Nenhuma mensagem carregada tem esse texto." : `${shown.length} mensagens com “${filter}”`}
-            <button type="button" className="btn glass sm" onClick={onClearFilter}>
-              <X size={14} aria-hidden />
-              Limpar
-            </button>
-          </div>
-        )}
-        {hasOlder && !filter && (
-          <button
-            type="button"
-            className="btn glass sm chat-older"
-            disabled={olderLoading}
-            onClick={() => {
-              prevHeight.current = box.current?.scrollHeight ?? null;
-              onOlder();
-            }}
-          >
-            {olderLoading && <LoaderCircle size={14} className="spinning" aria-hidden />}
-            Carregar anteriores
-          </button>
-        )}
-      </div>
-      {items.map((it) =>
-        it.kind === "day" ? (
-          <div className="chat-day" key={it.key}>
-            <span>{it.label}</span>
-          </div>
-        ) : it.mine ? (
-          <div className="chat-mine" key={it.key}>
-            <div className="chat-mmeta">
-              Você · {hhmm(it.first.createMs)} <Check size={14} aria-label="Enviada" />
-            </div>
-            {it.list.map((m) => (
-              <div key={m.name} className="chat-mine-item">
-                {m.threadReply && <span className="chat-replytag"><Reply size={12} aria-hidden />Resposta na conversa</span>}
-                <MessageBody account={account} space={space} m={m} onReply={onReply} editing={editing} onEdit={setEditing} />
-                {m.thread && replies.get(m.thread) && <ThreadChip account={account} space={space} replies={replies.get(m.thread)!} root={m} onReply={onReply} />}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="chat-mg" key={it.key}>
-            <ChatAvatar name={it.first.sender.name} photo={it.first.sender.photo} size={36} seed={it.first.sender.id} />
-            <div className="chat-mb">
-              <div className="chat-mh">
-                <span className="chat-mn">{it.first.sender.name}</span>
-                <span className="chat-mtm">{hhmm(it.first.createMs)}</span>
-              </div>
-              {it.list.map((m) => (
-                <div key={m.name}>
-                  {m.threadReply && <span className="chat-replytag"><Reply size={12} aria-hidden />Resposta na conversa</span>}
-                  <MessageBody account={account} space={space} m={m} onReply={onReply} editing={editing} onEdit={setEditing} />
-                  {m.thread && replies.get(m.thread) && <ThreadChip account={account} space={space} replies={replies.get(m.thread)!} root={m} onReply={onReply} />}
-                </div>
-              ))}
-            </div>
-          </div>
-        ),
+  const byName = useMemo(() => new Map(messages.map((m) => [m.name, m])), [messages]);
+  const people = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const m of messages) {
+      if (!m.sender.bot && m.sender.name !== "Sem nome") map.set(m.sender.id, m.mine ? "você" : m.sender.name);
+      for (const x of m.mentions ?? []) if (x.name) map.set(x.id, x.name);
+    }
+    return map;
+  }, [messages]);
+  const myId = useMemo(() => messages.find((m) => m.mine)?.sender.id ?? null, [messages]);
+
+  const ctx = useMemo<ListContext>(() => {
+    const openThread = (thread: string) => setOpenThreads((s) => (s.has(thread) ? s : new Set(s).add(thread)));
+    return {
+      account,
+      space,
+      now,
+      uri,
+      byName,
+      people,
+      myId,
+      editing,
+      onEdit: setEditing,
+      openThreads,
+      toggleThread: (thread) =>
+        setOpenThreads((s) => {
+          const next = new Set(s);
+          if (!next.delete(thread)) next.add(thread);
+          return next;
+        }),
+      reply: (m) => {
+        if (m.thread && replies.has(m.thread)) openThread(m.thread);
+        onReply(m);
+      },
+      jumpTo: (name) => {
+        const target = byName.get(name);
+        if (target?.threadReply && target.thread) openThread(target.thread);
+        // espera o fio abrir antes de procurar a mensagem
+        window.requestAnimationFrame(() => {
+          const el = box.current?.querySelector<HTMLElement>(`[data-msg="${CSS.escape(name)}"]`);
+          if (!el) return;
+          el.scrollIntoView({ block: "center", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+          el.classList.remove("is-flash");
+          void el.offsetWidth;
+          el.classList.add("is-flash");
+          window.setTimeout(() => el.classList.remove("is-flash"), 1400);
+        });
+      },
+    };
+  }, [account, space, now, uri, byName, people, myId, editing, openThreads, replies, onReply]);
+
+  const row = (m: ChatMessageDto, pos: Pos, cls?: string) => (
+    <div key={m.name} className={cls ?? "chat-item"}>
+      {m.threadReply && (
+        <span className="chat-replytag">
+          <Reply size={12} aria-hidden />
+          Resposta na conversa
+        </span>
       )}
-      {outgoing.map((o) => (
-        <OutgoingItem key={o.id} o={o} />
-      ))}
+      <MessageBody m={m} pos={pos} />
+      {m.thread && replies.get(m.thread) && <ThreadChip replies={replies.get(m.thread)!} root={m} />}
     </div>
+  );
+
+  return (
+    <ListCtx.Provider value={ctx}>
+      <div
+        className="chat-msgs"
+        ref={box}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+        }}
+        aria-live="polite"
+        aria-relevant="additions"
+      >
+        <div className="chat-msgs-top">
+          {filter && (
+            <div className="chat-filter-note">
+              {shown.length === 0 ? "Nenhuma mensagem carregada tem esse texto." : `${shown.length} mensagens com “${filter}”`}
+              <button type="button" className="btn glass sm" onClick={onClearFilter}>
+                <X size={14} aria-hidden />
+                Limpar
+              </button>
+            </div>
+          )}
+          {hasOlder && !filter && (
+            <button
+              type="button"
+              className="btn glass sm chat-older"
+              disabled={olderLoading}
+              onClick={() => {
+                prevHeight.current = box.current?.scrollHeight ?? null;
+                onOlder();
+              }}
+            >
+              {olderLoading && <LoaderCircle size={14} className="spinning" aria-hidden />}
+              Carregar anteriores
+            </button>
+          )}
+        </div>
+        {items.map((it) =>
+          it.kind === "day" ? (
+            <div className="chat-day" key={it.key}>
+              <span>{it.label}</span>
+            </div>
+          ) : it.mine ? (
+            <div className="chat-mine" key={it.key}>
+              <div className="chat-mmeta">
+                Você · <Stamp ms={it.first.createMs} tipLeft /> <Check size={14} aria-label="Enviada" />
+              </div>
+              {it.list.map((m, i) => row(m, posOf(i, it.list.length), "chat-mine-item"))}
+            </div>
+          ) : (
+            <div className="chat-mg" key={it.key}>
+              <ChatAvatar name={it.first.sender.name} photo={it.first.sender.photo} size={36} seed={it.first.sender.id} />
+              <div className="chat-mb">
+                <div className="chat-mh">
+                  <span className="chat-mn">{it.first.sender.name}</span>
+                  <Stamp ms={it.first.createMs} />
+                </div>
+                {it.list.map((m, i) => row(m, posOf(i, it.list.length)))}
+              </div>
+            </div>
+          ),
+        )}
+        {outgoing.map((o) => (
+          <OutgoingItem key={o.id} o={o} />
+        ))}
+      </div>
+    </ListCtx.Provider>
   );
 }

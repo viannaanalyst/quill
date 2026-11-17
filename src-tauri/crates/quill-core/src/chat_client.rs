@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use crate::chat::{AttachmentRef, ChatMessage, ChatPage, ChatPerson, ChatPreview, ChatSpace, RawMessage, SpaceKind};
+use crate::chat::{AttachmentRef, ChatMention, ChatMessage, ChatPage, ChatPerson, ChatPreview, ChatQuote, ChatSpace, RawMessage, SpaceKind};
 use crate::google::{GoogleClient, LoginError, Progress};
 
 /// Até quantas conversas a lista mostra (as mais recentes).
@@ -32,6 +32,14 @@ pub struct ChatService {
     members: Mutex<HashMap<String, Vec<String>>>,
     /// conversa → (atividade quando a prévia foi buscada, últimas mensagens, mais nova primeiro)
     previews: Mutex<HashMap<String, (i64, Vec<RawMessage>)>>,
+}
+
+/// Pessoas citadas numa mensagem: quem enviou, quem escreveu a citada e quem foi mencionado.
+fn people_in(m: &RawMessage) -> Vec<String> {
+    let mut ids = vec![m.sender_id.clone()];
+    ids.extend(m.quoted.as_ref().and_then(|q| q.sender_id.clone()));
+    ids.extend(m.mention_ids.iter().cloned());
+    ids
 }
 
 fn first_name(name: &str) -> String {
@@ -108,7 +116,19 @@ impl ChatService {
 
     fn message(&self, m: RawMessage, me: Option<&str>) -> ChatMessage {
         let sender = self.person(&m.sender_id, m.sender_display_name.as_deref(), m.sender_bot);
+        let quoted = m.quoted.map(|q| ChatQuote {
+            sender: q.sender_id.as_deref().map(|id| self.person(id, None, false)),
+            name: q.name,
+            text: q.text,
+        });
+        let mentions = {
+            let people = self.people.lock().expect("trava");
+            m.mention_ids.into_iter().map(|id| ChatMention { name: people.get(&id).map(|p| p.name.clone()), id }).collect()
+        };
         ChatMessage {
+            quoted,
+            mentions,
+            custom_emojis: m.custom_emojis,
             mine: me.is_some_and(|me| me == m.sender_id),
             sender,
             name: m.name,
@@ -269,7 +289,7 @@ impl ChatService {
         let (mut raw, next) = self.client.chat_messages(token, space, page_token, crate::chat::PAGE_SIZE).await?;
         raw.reverse();
         let me = self.me(account, token).await;
-        self.resolve(token, raw.iter().map(|m| m.sender_id.clone())).await;
+        self.resolve(token, raw.iter().flat_map(people_in)).await;
         Ok(ChatPage { messages: raw.into_iter().map(|m| self.message(m, me.as_deref())).collect(), next_page_token: next })
     }
 
@@ -285,7 +305,7 @@ impl ChatService {
     ) -> Result<ChatMessage, LoginError> {
         let raw = self.client.chat_send(token, space, text, thread, attachments).await?;
         let me = self.me(account, token).await;
-        self.resolve(token, [raw.sender_id.clone()]).await;
+        self.resolve(token, people_in(&raw)).await;
         let mut m = self.message(raw, me.as_deref());
         // a mensagem acabou de sair desta conta, mesmo que o próprio id não tenha vindo
         m.mine = true;
@@ -321,6 +341,7 @@ impl ChatService {
         let raw = self.client.chat_edit(token, message, text).await?;
         self.forget_preview(message);
         let me = self.me(account, token).await;
+        self.resolve(token, people_in(&raw)).await;
         let mut m = self.message(raw, me.as_deref());
         m.mine = true;
         Ok(m)
@@ -421,6 +442,9 @@ mod tests {
             ("/x/chat/spaces/A/messages", r#"{"messages":[{"name":"spaces/A/messages/1","sender":{"name":"users/3"},"createTime":"2026-11-17T10:00:00Z","text":"Bom dia, time"}]}"#),
             ("/x/chat/spaces/B/messages", r#"{"messages":[{"name":"spaces/B/messages/2","sender":{"name":"users/1"},"createTime":"2026-11-17T12:00:00Z","text":"Combinado"},
                {"name":"spaces/B/messages/1","sender":{"name":"users/2"},"createTime":"2026-11-17T11:59:00Z","text":"Pode ser às 15h?","thread":{"name":"spaces/B/threads/T"}}],"nextPageToken":"older"}"#),
+            ("/x/chat/spaces/D/messages", r#"{"messages":[{"name":"spaces/D/messages/2","sender":{"name":"users/1"},"createTime":"2026-11-17T12:00:00Z","text":"concordo @Bia","formattedText":"concordo <users/3>",
+               "annotations":[{"type":"USER_MENTION","userMention":{"user":{"name":"users/3"}}},{"type":"USER_MENTION","userMention":{"user":{"name":"users/404"}}}],
+               "quotedMessageMetadata":{"name":"spaces/D/messages/1","quotedMessageSnapshot":{"sender":"users/2","text":"Vamos fechar sexta?"}}}]}"#),
             ("/x/chat/spaces/C/messages", r#"{"messages":[{"name":"spaces/C/messages/1","sender":{"name":"users/2"},"createTime":"2026-11-17T11:00:00Z","attachment":[{"contentName":"plano.pdf"}]}]}"#),
             ("/x/people/people/me", r#"{"resourceName":"people/1"}"#),
             (
@@ -500,6 +524,24 @@ mod tests {
         assert!(!page.messages[0].mine);
         assert_eq!(page.messages[0].thread.as_deref(), Some("spaces/B/threads/T"));
         assert!(page.messages[1].mine);
+    }
+
+    #[tokio::test]
+    async fn citacao_e_mencoes_com_o_nome_das_pessoas() {
+        let (base, _seen) = fake_router(routes()).await;
+        let page = service(&base).messages("eu@empresa.com", "ya29", "spaces/D", None).await.unwrap();
+        let m = &page.messages[0];
+        let q = m.quoted.as_ref().expect("citação");
+        assert_eq!(q.name, "spaces/D/messages/1");
+        assert_eq!(q.sender.as_ref().map(|p| p.name.as_str()), Some("Ana Lima"));
+        assert_eq!(q.text, "Vamos fechar sexta?");
+        assert_eq!(
+            m.mentions,
+            [
+                ChatMention { id: "users/3".into(), name: Some("Bia Souza".into()) },
+                ChatMention { id: "users/404".into(), name: None },
+            ]
+        );
     }
 
     #[tokio::test]

@@ -17,6 +17,12 @@ const PR = P("5", "Paula Reis");
 const FA = P("6", "Fernanda Alves");
 const CM = P("7", "Carla Mendes");
 const ME = P("9", "Você");
+const BOT: ChatPersonDto = { id: "users/app-lancamentos", name: "Lançamentos", photo: null, email: null, bot: true };
+
+/** Emoji próprio da empresa de exemplo (na API ele vem com um link temporário do Google). */
+const FESTA = `data:image/svg+xml,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="15" fill="#F6C344"/><circle cx="11" cy="13" r="2.2" fill="#3A2A12"/><circle cx="21" cy="13" r="2.2" fill="#3A2A12"/><path d="M9 19c2 4 12 4 14 0" stroke="#3A2A12" stroke-width="2.2" fill="none" stroke-linecap="round"/><path d="M4 6l4 3M28 6l-4 3M16 1v4" stroke="#D9473F" stroke-width="2" stroke-linecap="round"/></svg>`,
+)}`;
 
 let n = 0;
 function msg(space: string, sender: ChatPersonDto, ms: number, text: string, extra: Partial<ChatMessageDto> = {}): ChatMessageDto {
@@ -48,15 +54,38 @@ function financeiro(): ChatMessageDto[] {
     ],
   });
   const thread = root.thread;
+  const video = msg(FIN, RL, day(10, 5), "Gravei o passo a passo do fechamento e tirei foto do quadro da reunião.", {
+    attachments: [att("quadro-reuniao.jpg", "image/svg+xml"), att("passo-a-passo-fechamento.mp4", "video/mp4")],
+    reactions: [{ emoji: "❤️", count: 2 }],
+  });
+  const bot = "💸 *Compra lançada (paga)*\n*Valor:* R$ 52,90\n*Cartão:* final 4410\n*Categoria:* Alimentação\n<https://painel.financeiro.app/lancamentos/8812|Ver no painel>";
   return [
     root,
+    msg(FIN, MC, day(9, 13), "Quem puder, confere até as 11h 🙏"),
     msg(FIN, RL, day(9, 31), "Aqui bateu certinho com a planilha.", { thread, threadReply: true }),
     msg(FIN, BN, day(9, 40), "Só a linha de viagens que mudou, já ajustei.", { thread, threadReply: true }),
-    msg(FIN, RL, day(10, 5), "Gravei o passo a passo do fechamento e tirei foto do quadro da reunião.", {
-      attachments: [att("quadro-reuniao.jpg", "image/svg+xml"), att("passo-a-passo-fechamento.mp4", "video/mp4")],
-      reactions: [{ emoji: "❤️", count: 2 }],
+    msg(FIN, BOT, day(9, 14), bot.replace(/[*<>]|\|Ver no painel/g, ""), { formattedText: bot }),
+    msg(
+      FIN,
+      RL,
+      day(9, 17),
+      "",
+      {
+        formattedText:
+          "Bati com o _extrato_ e com a planilha ✅\nO total ficou em `R$ 48.210,33`. Rodei assim:\n```\nfechamento --mes 10 --conferir --saida relatorio-outubro-final-com-observacoes.csv\n```\n- viagens: ~pendente~ ajustado\n- reembolsos: ok\n<users/3>, confere as viagens?",
+        quoted: { name: root.name, sender: MC, text: root.text },
+        mentions: [{ id: BN.id, name: BN.name }],
+        reactions: [{ emoji: "🫡", count: 1 }, { emoji: ":festa:", count: 2, image: FESTA }],
+      },
+    ),
+    msg(FIN, RL, day(9, 19), ":festa:", { customEmojis: [{ name: ":festa:", url: FESTA }] }),
+    msg(FIN, RL, day(9, 20), "Subi a pasta: https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-relatorios-de-outubro-versao-final-revisada"),
+    video,
+    msg(FIN, ME, day(10, 12), "Ficou ótimo, Rafael! Vou usar o vídeo no treinamento de sexta.", {
+      edited: true,
+      reactions: [{ emoji: "😂", count: 1 }],
+      quoted: { name: video.name, sender: RL, text: video.text },
     }),
-    msg(FIN, ME, day(10, 12), "Ficou ótimo, Rafael! Vou usar o vídeo no treinamento de sexta.", { edited: true, reactions: [{ emoji: "😂", count: 1 }] }),
     msg(FIN, ME, day(10, 12), "", { attachments: [att("audio-treinamento.m4a", "audio/wav")] }),
     msg(FIN, BN, day(10, 24), "Segue o relatório final com as observações da diretoria.", { attachments: [att("Relatório de outubro.pdf", "application/pdf")] }),
   ];

@@ -191,3 +191,48 @@ Baseado no `git log` e nas mensagens dos commits. Horários em Brasília (UTC−
 - Conferido na prévia (claro e escuro); ainda não testado no Mac.
 - Calendário: as setas voltaram a ser bolinhas separadas, sem a pílula em volta da data (‹ data ›), e o hífen de
   "Quarta-feira" não ganha mais espaço extra.
+
+### Chat: visual do Google Chat, formatação e barra da mensagem (não commitado em 2026-11-17)
+
+Pedido do Gabriel depois de usar o Chat com a conta real, comparando com o Google Chat.
+- **Sem rolagem para o lado:** coluna de conversas com 300 px (era 344), arrastável de 240 a 420 px pela divisória
+  (setas do teclado e dois cliques para voltar); mensagens, imagens, vídeo, links longos, blocos de código e anexos
+  quebram a linha ou encolhem; a área das mensagens tem `overflow-x: hidden`. Conferido a 1440 e a 1100 px.
+- **Balões nos outros também:** cinza-claro (claro) e cinza-escuro (escuro) à esquerda; os seus continuam azul-claro à
+  direita. Mensagens seguidas da mesma pessoa ficam empilhadas, com os cantos de junção mais retos.
+- **Formatação:** `formattedText` interpretado (negrito, itálico, tachado, código, bloco com três crases, links
+  `<url|texto>`, URLs soltas, listas, menções, quebras de linha), emojis em fonte colorida, mensagem só de emoji maior
+  e emoji próprio da empresa com a imagem. Tudo montado com elementos React (`src/chat/format.ts` +
+  `chatText.tsx`), sem HTML vindo da API.
+- **Citação:** cartão com barrinha, nome e começo do texto (`quotedMessageMetadata`); clicar leva até a mensagem.
+  A `quill-core` passou a ler citação, menções e emoji da empresa, com o nome das pessoas pela People API.
+- **Horário:** "agora", "5 min", "58 min" e depois 14:35; data e hora completas numa dica ao parar o mouse em qualquer
+  mensagem; nas suas, a hora fica acima do grupo.
+- **Barra da mensagem** (troca os botões antigos): 3 reações rápidas (começam com ✅ 🫡 🤣 e viram as que você mais
+  usa), adicionar reação (grade de emojis), responder no fio (abre as respostas e põe o cursor na caixa) e ⋮ com
+  Editar, Apagar (só as suas), Copiar texto e Abrir no Google Chat. Animação curta só de `opacity`/`transform`; pelo
+  teclado, um Tab por mensagem e setas na barra. As respostas do fio ganharam a mesma barra (editar e apagar nelas).
+- "Respostas sugeridas" do Google não vêm pela API: ficaram de fora.
+- Testes: 4 novos na `quill-core` (citação, menções e emoji da empresa, imagem só do Google, nomes no `ChatService`)
+  e 15 das telas com `npm test` (novo: `src/**/*.test.ts` rodam direto no Node, sem dependência nova). Decisões no
+  acréscimo do [ADR-023](02-decisoes-adrs/ADR-023-google-chat-pela-api-so-workspace.md).
+- Conferido na prévia (claro e escuro, 1440 e 1100 px); ainda não testado no Mac.
+
+### Cofre único nas Chaves (não commitado em 2026-11-17)
+
+- **Problema:** no Mac, o Quill pedia a senha das Chaves várias vezes a cada abertura ("Quill deseja usar as
+  informações confidenciais armazenadas em app.quill.desktop.google"): havia um item por conta, e o app sem assinatura
+  fixa faz o "Permitir Sempre" se perder a cada versão.
+- **Agora:** todos os tokens do Google e senhas de app do iCloud/IMAP ficam num **único item** (`app.quill.desktop` /
+  `cofre`, um JSON), lido uma vez por abertura e guardado na memória; só é gravado de novo quando algo muda (login,
+  conta removida, token novo). Novo módulo `quill-core/src/vault.rs` (`Vault`, interface `SecretStore`; as Chaves de
+  verdade só na feature `desktop`). `session.rs`, `imap_session.rs` e o `lib.rs` passam pelo cofre; ninguém mais usa
+  os itens antigos.
+- **Migração:** na primeira abertura, os itens antigos das contas do `accounts.json` são juntados no cofre novo e
+  apagados. Nessa vez o Mac ainda pode perguntar uma vez por conta; depois, uma vez só por versão nova do app.
+- Se as Chaves recusarem, o Quill não pergunta de novo até reabrir e nunca grava por cima do cofre.
+- Guia rápido ganhou "Parar de pedir a senha das Chaves" (Permitir Sempre e o certificado gratuito "Apple
+  Development" para assinatura fixa; o `tauri.conf.json` **não** foi mudado). Decisão no
+  [ADR-024](02-decisoes-adrs/ADR-024-cofre-unico-nas-chaves.md); referência das Chaves atualizada.
+- 22 testes novos (14 do cofre, 1 das Chaves "de mentira" do `keyring`, 3 da sessão do Google, 4 da do iCloud/IMAP).
+  Ainda não testado no Mac.

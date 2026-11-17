@@ -118,10 +118,25 @@ export interface ChatMessageDto {
   reactions: ChatReactionDto[];
   /** editada depois de enviada */
   edited: boolean;
+  /** mensagem citada (cartão com a barrinha, o nome e o começo do texto) */
+  quoted?: ChatQuoteDto | null;
+  /** pessoas mencionadas (`<users/…>` no texto formatado), com o nome quando se sabe */
+  mentions?: { id: string; name?: string | null }[];
+  /** emojis próprios da empresa usados no texto (`:nome:`) */
+  customEmojis?: { name: string; url: string }[];
+}
+export interface ChatQuoteDto {
+  name: string;
+  sender?: ChatPersonDto | null;
+  /** começo do texto da citada (vazio quando a API não manda a cópia) */
+  text: string;
 }
 export interface ChatReactionDto {
+  /** emoji em unicode ou, no emoji da empresa, o nome (`:festa:`) */
   emoji: string;
   count: number;
+  /** emoji próprio da empresa: a imagem (não dá para reagir com ele pelo Quill) */
+  image?: string | null;
 }
 export interface ChatPageDto {
   messages: ChatMessageDto[];

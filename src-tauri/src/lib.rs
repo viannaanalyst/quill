@@ -165,7 +165,7 @@ async fn imap_guess(state: State<'_, AppState>, email: String, provider: String)
 }
 
 /// Conecta uma conta iCloud/IMAP: testa a entrada no IMAP e no SMTP e só então guarda
-/// a senha de app nas Chaves do sistema. Erro vem como frase pronta para mostrar.
+/// a senha de app no cofre único das Chaves do sistema. Erro vem como frase pronta para mostrar.
 #[tauri::command]
 async fn imap_connect(state: State<'_, AppState>, config: ImapConfig, password: String) -> Result<AccountInfo, String> {
     let account = state.imap.connect(&config, &password).await.map_err(|e| e.to_string())?;
@@ -656,15 +656,17 @@ pub fn run() {
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             let accounts_file = data_dir.join("accounts.json");
+            // um só item nas Chaves para todas as contas, aberto uma vez (o macOS pede a senha uma vez só)
+            let vault = std::sync::Arc::new(quill_core::vault::Vault::system(accounts_file.clone()));
             let google = match (option_env!("QUILL_GOOGLE_CLIENT_ID"), option_env!("QUILL_GOOGLE_CLIENT_SECRET")) {
-                (Some(id), Some(secret)) => Some(GoogleSession::new(id, secret, accounts_file.clone())),
+                (Some(id), Some(secret)) => Some(GoogleSession::new(id, secret, accounts_file.clone(), vault.clone())),
                 _ => None,
             };
             let chat = match (option_env!("QUILL_GOOGLE_CLIENT_ID"), option_env!("QUILL_GOOGLE_CLIENT_SECRET")) {
                 (Some(id), Some(secret)) => Some(ChatService::new(quill_core::google::GoogleClient::new(id, secret))),
                 _ => None,
             };
-            let imap = ImapSession::new(accounts_file.clone());
+            let imap = ImapSession::new(accounts_file.clone(), vault);
             app.manage(AppState { google, imap, icloud: ICloudDav::default(), chat, accounts_file });
             Ok(())
         })

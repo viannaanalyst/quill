@@ -10,6 +10,7 @@ import { Check, LoaderCircle, Mic, Paperclip, Pause, Play, RotateCcw, SendHorizo
 import { pendingFile, sendChat, type PendingFile } from "../state/chat";
 import { AudioPlayer } from "./Messages";
 import { blobToBase64, clock, kindOf } from "./media";
+import { plainChat } from "./format";
 
 const MAX_FILE = 200 * 1024 * 1024;
 const EMOJIS = ["😀", "😂", "😊", "😍", "🤔", "😅", "😢", "😮", "👍", "👎", "👏", "🙏", "🙌", "💪", "🎉", "🔥", "✅", "❌", "⚠️", "❤️", "💙", "💚", "⭐", "☕", "🚀", "📌", "📎", "📅", "⏰", "👀", "🤝", "💡"];
@@ -228,6 +229,11 @@ export function Composer({
     toast(msg, "error");
   });
 
+  // "Responder no fio": o cursor vai para a caixa
+  useEffect(() => {
+    if (replyTo) area.current?.focus({ preventScroll: true });
+  }, [replyTo]);
+
   // trocou de conversa: começa vazio (não na primeira vez)
   const lastSpace = useRef(space);
   useEffect(() => {
@@ -393,7 +399,7 @@ export function Composer({
       {replyTo && (
         <div className="chat-replying">
           <span>
-            Respondendo na conversa de <b>{replyTo.mine ? "você" : replyTo.sender.name}</b>: {replyTo.text.slice(0, 80) || "anexo"}
+            Respondendo na conversa de <b>{replyTo.mine ? "você" : replyTo.sender.name}</b>: {plainChat(replyTo.formattedText || replyTo.text).slice(0, 80) || "anexo"}
           </span>
           <button type="button" className="chat-link" onClick={onClearReply} aria-label="Cancelar resposta">
             <X size={13} aria-hidden />

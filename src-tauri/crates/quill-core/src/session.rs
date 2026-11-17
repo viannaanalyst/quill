@@ -1,23 +1,24 @@
-//! Sessão das contas Google no app de computador: login pela página oficial (navegador ou folha do macOS), tokens no cofre do sistema
-//! (Chaves do macOS / Credential Manager do Windows) e acesso renovado sozinho.
+//! Sessão das contas Google no app de computador: login pela página oficial (navegador ou folha do macOS), token de
+//! atualização no cofre único das Chaves do sistema (`vault.rs`) e acesso renovado sozinho.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::accounts::{Account, AccountStore};
 use crate::gmail::MessageSummary;
 use crate::google::{GoogleClient, LoginError, Loopback, Profile, SCOPES};
 use crate::oauth::{AuthRequest, Pkce, google_auth_url, random_token};
+use crate::vault::{SecretKind, Vault};
 
-/// Nome do "serviço" no cofre; cada conta fica guardada pelo e-mail.
-const VAULT_SERVICE: &str = "app.quill.desktop.google";
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(4 * 60);
 
 pub struct GoogleSession {
     client: GoogleClient,
     store: AccountStore,
+    /// cofre único (o mesmo da sessão do iCloud/IMAP)
+    vault: Arc<Vault>,
     /// e-mail → (token de acesso, quando expira); só na memória
     tokens: Mutex<HashMap<String, (String, Instant)>>,
     /// avisado quando a pessoa cancela o login em andamento
@@ -26,15 +27,12 @@ pub struct GoogleSession {
     auth_url: Mutex<Option<String>>,
 }
 
-fn vault(email: &str) -> Result<keyring::Entry, LoginError> {
-    keyring::Entry::new(VAULT_SERVICE, &email.to_lowercase()).map_err(|e| LoginError::Vault(e.to_string()))
-}
-
 impl GoogleSession {
-    pub fn new(client_id: &str, client_secret: &str, accounts_file: PathBuf) -> Self {
+    pub fn new(client_id: &str, client_secret: &str, accounts_file: PathBuf, vault: Arc<Vault>) -> Self {
         Self {
             client: GoogleClient::new(client_id, client_secret),
             store: AccountStore::new(accounts_file),
+            vault,
             tokens: Mutex::new(HashMap::new()),
             cancel: tokio::sync::Notify::new(),
             auth_url: Mutex::new(None),
@@ -111,9 +109,7 @@ impl GoogleSession {
             .refresh_token
             .ok_or_else(|| LoginError::Google("o Google não devolveu o acesso permanente; tente de novo".into()))?;
 
-        vault(&profile.email_address)?
-            .set_password(&refresh)
-            .map_err(|e| LoginError::Vault(e.to_string()))?;
+        self.vault.set(SecretKind::Google, &profile.email_address, &refresh).map_err(LoginError::Vault)?;
         let account = Account::google(&profile.email_address);
         self.store.add(account.clone()).map_err(|e| LoginError::Vault(e.to_string()))?;
         self.remember(&account.email, tokens.access_token, tokens.expires_in);
@@ -126,7 +122,7 @@ impl GoogleSession {
             && Instant::now() < *until {
                 return Ok(token.clone());
             }
-        let refresh = vault(email)?.get_password().map_err(|_| LoginError::NeedsLogin)?;
+        let refresh = self.vault.get(SecretKind::Google, email).map_err(LoginError::Vault)?.ok_or(LoginError::NeedsLogin)?;
         match self.client.refresh(&refresh).await {
             Ok(t) => {
                 self.remember(email, t.access_token.clone(), t.expires_in);
@@ -279,9 +275,8 @@ impl GoogleSession {
 
     /// Tira a conta do Quill neste computador (nada é apagado no Google).
     pub fn remove(&self, email: &str) -> Result<(), LoginError> {
-        if let Ok(entry) = vault(email) {
-            let _ = entry.delete_credential();
-        }
+        // se as Chaves recusarem, a conta sai da lista do mesmo jeito (como antes)
+        let _ = self.vault.remove(SecretKind::Google, email);
         self.tokens.lock().expect("trava dos tokens").remove(&email.to_lowercase());
         self.store.remove(email).map_err(|e| LoginError::Vault(e.to_string()))
     }
@@ -297,12 +292,54 @@ pub struct Agenda {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
 
+    use crate::vault::memory::MemoryStore;
+    use crate::vault::{SecretKind, VAULT_ACCOUNT, VAULT_SERVICE, Vault};
+
+    fn temp_file() -> PathBuf {
+        std::env::temp_dir().join(format!("quill-test-{}.json", random_token(8)))
+    }
+
+    fn session_with(store: &MemoryStore) -> (GoogleSession, Arc<Vault>) {
+        let file = temp_file();
+        let vault = Arc::new(Vault::new(Box::new(store.clone()), file.clone()));
+        (GoogleSession::new("id-teste", "segredo-teste", file, vault.clone()), vault)
+    }
+
     fn session() -> GoogleSession {
-        let file = std::env::temp_dir().join(format!("quill-test-{}.json", random_token(8)));
-        GoogleSession::new("id-teste", "segredo-teste", file)
+        session_with(&MemoryStore::default()).0
+    }
+
+    #[test]
+    fn remove_apaga_so_o_token_da_conta_no_cofre_unico() {
+        let store = MemoryStore::default();
+        store.put(VAULT_SERVICE, VAULT_ACCOUNT, r#"{"google":{"ana@gmail.com":"r1","caio@gmail.com":"r2"},"imap":{"bia@icloud.com":"s1"}}"#);
+        let (s, vault) = session_with(&store);
+        s.store.add(Account::google("ana@gmail.com")).unwrap();
+        s.remove("Ana@gmail.com").unwrap();
+        assert_eq!(vault.get(SecretKind::Google, "ana@gmail.com").unwrap(), None);
+        assert_eq!(vault.get(SecretKind::Google, "caio@gmail.com").unwrap().as_deref(), Some("r2"));
+        assert_eq!(vault.get(SecretKind::Imap, "bia@icloud.com").unwrap().as_deref(), Some("s1"));
+        assert!(s.accounts().is_empty());
+    }
+
+    #[tokio::test]
+    async fn access_token_sem_token_no_cofre_pede_login() {
+        let s = session();
+        assert!(matches!(s.access_token("ana@gmail.com").await, Err(LoginError::NeedsLogin)));
+    }
+
+    #[tokio::test]
+    async fn access_token_com_as_chaves_recusadas_avisa_sem_repetir_o_pedido() {
+        let store = MemoryStore::default();
+        store.put(VAULT_SERVICE, VAULT_ACCOUNT, "{}");
+        store.fail(VAULT_SERVICE, VAULT_ACCOUNT);
+        let (s, _) = session_with(&store);
+        for email in ["ana@gmail.com", "caio@gmail.com"] {
+            assert!(matches!(s.access_token(email).await, Err(LoginError::Vault(_))));
+        }
+        assert_eq!(store.reads(), 1);
     }
 
     #[tokio::test]

@@ -18,6 +18,7 @@ import { devParams, isTauri } from "../lib/platform";
 import { getPref, setPref } from "../lib/storage";
 import { getMailbox, onMailboxLoaded } from "./mailbox";
 import { getStore } from "./store";
+export { quickReactions } from "../chat/reactions";
 
 /**
  * Google Chat das contas Workspace: conversas, mensagens, envio (com anexos e áudio) e não lidas.
@@ -80,12 +81,15 @@ interface ChatState {
   reacted: Record<string, string[]>;
   /** mensagens saindo da tela (animação de apagar) */
   removing: string[];
+  /** emoji → quantas vezes você reagiu com ele (as 3 mais usadas aparecem na barra da mensagem) */
+  reactionUse: Record<string, number>;
 }
 
 const SEEN_PREF = "chat.seen";
 const PINNED_PREF = "chat.pinned";
 const REACTED_PREF = "chat.reacted";
 const ACCOUNT_PREF = "chat.account";
+const REACTION_USE_PREF = "chat.reactionUse";
 
 let state: ChatState = {
   account: null,
@@ -104,6 +108,7 @@ let state: ChatState = {
   pinned: getPref<string[]>(PINNED_PREF, []),
   reacted: getPref<Record<string, string[]>>(REACTED_PREF, {}),
   removing: [],
+  reactionUse: getPref<Record<string, number>>(REACTION_USE_PREF, {}),
 };
 const listeners = new Set<() => void>();
 function set(patch: Partial<ChatState>) {
@@ -464,6 +469,16 @@ export function bumpReaction(m: ChatMessageDto, emoji: string, delta: 1 | -1): C
 
 const busyReactions = new Set<string>();
 
+/** Conta mais um uso do emoji (para as reações rápidas da barra da mensagem). */
+function countReactionUse(emoji: string) {
+  const reactionUse = { ...state.reactionUse, [emoji]: (state.reactionUse[emoji] ?? 0) + 1 };
+  // só os 40 mais usados ficam guardados
+  const keep = Object.entries(reactionUse).toSorted((a, b) => b[1] - a[1]).slice(0, 40);
+  const trimmed = Object.fromEntries(keep);
+  setPref(REACTION_USE_PREF, trimmed);
+  set({ reactionUse: trimmed });
+}
+
 /** Reage com o emoji ou, se a reação já é sua, tira. A tela muda na hora e volta se der erro. */
 export async function toggleReaction(space: string, message: ChatMessageDto, emoji: string) {
   const account = state.account;
@@ -477,6 +492,7 @@ export async function toggleReaction(space: string, message: ChatMessageDto, emo
   const removing = myReactions(state, cur).includes(emoji);
   patchMessage(space, message.name, (m) => bumpReaction(m, emoji, removing ? -1 : 1));
   setReacted(k, removing ? before.filter((e) => e !== emoji) : [...before.filter((e) => e !== emoji), emoji]);
+  if (!removing) countReactionUse(emoji);
   try {
     if (!isTauri) {
       (await loadSample()).sampleReact(space, message.name, emoji, !removing);

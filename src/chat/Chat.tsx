@@ -1,5 +1,5 @@
 import * as Popover from "@radix-ui/react-popover";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import "./chat.css";
 import { TopBar } from "../components/TopBar";
 import { Select, Dot } from "../components/Select";
@@ -27,6 +27,7 @@ import {
 } from "../components/icons";
 import { friendlyError, type ChatMessageDto, type ChatSpaceDto } from "../lib/api";
 import { isTauri } from "../lib/platform";
+import { getPref, setPref } from "../lib/storage";
 import { accountName, getMailbox, signInWithGoogle, useMailbox } from "../state/mailbox";
 import { navigate } from "../state/store";
 import { now as clockNow } from "../state/calendar";
@@ -48,6 +49,52 @@ import { Composer } from "./Composer";
 import { ChatAvatar, hhmm, MessageList, PersonAvatar, SpaceIcon } from "./Messages";
 import { openLink } from "./chatText";
 import { kindOf } from "./media";
+
+/** Largura da coluna de conversas: arrastável entre esses limites (guardada neste computador). */
+const LIST_PREF = "chat.listWidth";
+const LIST_MIN = 240;
+const LIST_MAX = 420;
+const LIST_DEFAULT = 300;
+const clampList = (w: number) => Math.round(Math.min(LIST_MAX, Math.max(LIST_MIN, w)));
+
+/** Divisória entre a lista e a conversa: arrastar, setas do teclado ou dois cliques (volta ao padrão). */
+function ListResizer({ width, onChange }: { width: number; onChange: (w: number, save: boolean) => void }) {
+  const drag = useRef<{ x: number; w: number } | null>(null);
+  return (
+    <div
+      className="chat-split"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Largura da lista de conversas"
+      aria-valuemin={LIST_MIN}
+      aria-valuemax={LIST_MAX}
+      aria-valuenow={width}
+      tabIndex={0}
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        e.currentTarget.setPointerCapture(e.pointerId);
+        drag.current = { x: e.clientX, w: width };
+      }}
+      onPointerMove={(e) => {
+        if (drag.current) onChange(clampList(drag.current.w + e.clientX - drag.current.x), false);
+      }}
+      onPointerUp={(e) => {
+        if (!drag.current) return;
+        onChange(clampList(drag.current.w + e.clientX - drag.current.x), true);
+        drag.current = null;
+      }}
+      onPointerCancel={() => (drag.current = null)}
+      onDoubleClick={() => onChange(LIST_DEFAULT, true)}
+      onKeyDown={(e) => {
+        const step = e.shiftKey ? 40 : 16;
+        const next = e.key === "ArrowLeft" ? width - step : e.key === "ArrowRight" ? width + step : e.key === "Home" ? LIST_MIN : e.key === "End" ? LIST_MAX : null;
+        if (next == null) return;
+        e.preventDefault();
+        onChange(clampList(next), true);
+      }}
+    />
+  );
+}
 
 const SPACES_EVERY = 30_000;
 const MESSAGES_EVERY = 8_000;
@@ -421,6 +468,7 @@ function Conversation({ s, account }: { s: ChatSpaceDto; account: string }) {
         <MessageList
           account={account}
           space={s.name}
+          uri={uri}
           messages={messages ?? []}
           outgoing={outgoing}
           now={clockNow()}
@@ -456,6 +504,11 @@ export default function Chat({ space }: { space?: string }) {
   const chat = useChat((s) => s);
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<Tab>("all");
+  const [listWidth, setListWidth] = useState(() => clampList(getPref<number>(LIST_PREF, LIST_DEFAULT)));
+  const resize = (w: number, save: boolean) => {
+    setListWidth(w);
+    if (save) setPref(LIST_PREF, w);
+  };
   const now = clockNow();
 
   useEffect(() => {
@@ -574,6 +627,7 @@ export default function Chat({ space }: { space?: string }) {
             )}
           </div>
         </section>
+        <ListResizer width={listWidth} onChange={resize} />
         {open && account ? (
           <Conversation s={open} account={account} />
         ) : (
@@ -588,7 +642,9 @@ export default function Chat({ space }: { space?: string }) {
   return (
     <div className="chat">
       <TopBar title="Chat" sub={unread > 0 && accounts.length > 0 && !problem ? `${unread} não lidas` : undefined} />
-      <div className="chat-content">{body}</div>
+      <div className="chat-content" style={{ "--chat-cl-w": `${listWidth}px` } as CSSProperties}>
+        {body}
+      </div>
     </div>
   );
 }

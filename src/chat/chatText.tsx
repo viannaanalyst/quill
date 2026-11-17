@@ -1,11 +1,12 @@
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { api } from "../lib/api";
 import { isTauri } from "../lib/platform";
 import { toast } from "../components/Toasts";
+import { parseChat, type Block, type CustomEmojiRef, type Inline } from "./format";
 
 /**
- * Texto de uma mensagem do Chat: links clicáveis (abrem no navegador) e a marcação do Google Chat
- * (*negrito*, _itálico_, ~riscado~, `código`). O texto vem cru da API; nada vira HTML.
+ * Texto de uma mensagem do Chat montado com elementos React a partir da árvore de `format.ts`
+ * (negrito, itálico, código, links, listas, menções e emojis). Nada do texto da API vira HTML.
  */
 
 export function openLink(url: string) {
@@ -16,51 +17,92 @@ export function openLink(url: string) {
   api.openLink(url).catch(() => toast("Não consegui abrir o link.", "error"));
 }
 
-const URL_RE = /\bhttps?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]}]/g;
-const MARK_RE = /(\*[^*\n]+\*|_[^_\n]+_|~[^~\n]+~|`[^`\n]+`)/g;
-
-function marks(text: string, keyBase: string): ReactNode[] {
-  const out: ReactNode[] = [];
-  let last = 0;
-  for (const m of text.matchAll(MARK_RE)) {
-    const i = m.index ?? 0;
-    // só vale como marcação no começo de palavra (evita pegar snake_case e afins)
-    if (i > 0 && /\w/.test(text[i - 1])) continue;
-    if (i > last) out.push(text.slice(last, i));
-    const inner = m[0].slice(1, -1);
-    const k = `${keyBase}-${i}`;
-    const c = m[0][0];
-    out.push(c === "*" ? <strong key={k}>{inner}</strong> : c === "_" ? <em key={k}>{inner}</em> : c === "~" ? <s key={k}>{inner}</s> : <code key={k}>{inner}</code>);
-    last = i + m[0].length;
-  }
-  if (last < text.length) out.push(text.slice(last));
-  return out;
+export interface TextContext {
+  /** nome de quem foi mencionado (`users/<id>`) */
+  nameOf?: (id: string) => string | null | undefined;
+  /** id da própria conta: a menção a você fica destacada */
+  myId?: string | null;
 }
 
-/** Mostra o link sem o "https://" (como no desenho). */
-const shortUrl = (url: string) => url.replace(/^https?:\/\//, "").replace(/\/$/, "");
+function inlines(list: Inline[], ctx: TextContext, key: string): ReactNode[] {
+  return list.map((n, i) => {
+    const k = `${key}.${i}`;
+    switch (n.t) {
+      case "text":
+        return n.v;
+      case "br":
+        return <br key={k} />;
+      case "b":
+        return <strong key={k}>{inlines(n.c, ctx, k)}</strong>;
+      case "i":
+        return <em key={k}>{inlines(n.c, ctx, k)}</em>;
+      case "s":
+        return <s key={k}>{inlines(n.c, ctx, k)}</s>;
+      case "code":
+        return <code key={k}>{n.v}</code>;
+      case "emoji":
+        return (
+          <span key={k} className="chat-emo">
+            {n.v}
+          </span>
+        );
+      case "custom":
+        return <img key={k} className="chat-cemo" src={n.url} alt={n.name} draggable={false} referrerPolicy="no-referrer" />;
+      case "mention": {
+        const all = n.id === "users/all";
+        const name = all ? "todos" : (ctx.nameOf?.(n.id) ?? "alguém");
+        return (
+          <span key={k} className={`chat-mention${all || n.id === ctx.myId ? " is-me" : ""}`}>
+            @{name}
+          </span>
+        );
+      }
+      case "link": {
+        const href = n.href;
+        return (
+          <a
+            key={k}
+            href={href}
+            onClick={(e) => {
+              e.preventDefault();
+              openLink(href);
+            }}
+          >
+            {inlines(n.c, ctx, k)}
+          </a>
+        );
+      }
+    }
+  });
+}
 
-export function ChatText({ text }: { text: string }) {
-  const out: ReactNode[] = [];
-  let last = 0;
-  for (const m of text.matchAll(URL_RE)) {
-    const i = m.index ?? 0;
-    if (i > last) out.push(...marks(text.slice(last, i), `t${last}`));
-    const url = m[0];
-    out.push(
-      <a
-        key={`u${i}`}
-        href={url}
-        onClick={(e) => {
-          e.preventDefault();
-          openLink(url);
-        }}
-      >
-        {shortUrl(url)}
-      </a>,
-    );
-    last = i + url.length;
-  }
-  if (last < text.length) out.push(...marks(text.slice(last), `t${last}`));
-  return <>{out}</>;
+/** Blocos já interpretados (parágrafos, listas e blocos de código). */
+export function ChatBlocks({ blocks, ctx = {} }: { blocks: Block[]; ctx?: TextContext }) {
+  return (
+    <>
+      {blocks.map((b, i) =>
+        b.t === "pre" ? (
+          <pre key={i} className="chat-pre">
+            <code>{b.v}</code>
+          </pre>
+        ) : b.t === "ul" ? (
+          <ul key={i} className="chat-ul">
+            {b.items.map((it, j) => (
+              <li key={j}>{inlines(it, ctx, `${i}.${j}`)}</li>
+            ))}
+          </ul>
+        ) : (
+          <p key={i} className="chat-p">
+            {inlines(b.c, ctx, String(i))}
+          </p>
+        ),
+      )}
+    </>
+  );
+}
+
+/** Texto com a marcação do Google Chat (para quando não precisa saber se é só emoji). */
+export function ChatText({ text, custom, ctx }: { text: string; custom?: CustomEmojiRef[]; ctx?: TextContext }) {
+  const blocks = useMemo(() => parseChat(text, custom), [text, custom]);
+  return <ChatBlocks blocks={blocks} ctx={ctx} />;
 }

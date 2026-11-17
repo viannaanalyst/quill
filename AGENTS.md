@@ -28,6 +28,7 @@ App de e-mail e calendário, **macOS primeiro**, depois Windows. Começou como u
 - `npm install`: instala as dependências.
 - `npm run dev`: só as telas, no navegador (porta 1420). Parâmetros da prévia: `?theme=dark`, `?step=3` (onboarding), `?screen=inbox|read|compose|day|week|month|settings`, `?native=1` (simula a janela do Mac), `?preload=onboarding` (pega estilos vazando entre telas).
 - `npm run build`: confere os tipos e gera `dist/`.
+- `npm test`: testes das partes das telas sem React (`src/**/*.test.ts`, rodam direto no Node).
 - `npm run tauri dev`: abre o app de verdade. Precisa de Rust; no Mac, também do Xcode.
 - `npm run tauri build`: gera o instalador.
 
@@ -50,10 +51,10 @@ App de e-mail e calendário, **macOS primeiro**, depois Windows. Começou como u
 - Google Agenda: `quill-core/src/calendar.rs` (leitura, resposta a convites, criar evento); nas telas, `src/state/calendar.ts` junta as cópias do mesmo convite entre contas (iCalUID + início) para não repetir evento. Microsoft (Graph) ainda precisa do login Microsoft.
 - Anexos: envio pelo upload do Gmail (até 25 MB), download para Downloads, "ver sem baixar" com Quick Look (`quill-core/src/files.rs`). Ícone real do tipo de arquivo: `FileIcon`.
 - Agenda e contatos do iCloud: CalDAV/CardDAV em `quill-core/src/{ical,dav,caldav,carddav,dav_client}.rs` (só para `*.icloud.com`, mesma senha de app).
-- iCloud e "Outro e-mail": IMAP/SMTP em `quill-core/src/imap*.rs` (senha de app nas Chaves, serviço `app.quill.desktop.imap`); os comandos do `lib.rs` escolhem Google ou IMAP pelo provedor da conta. Microsoft ainda falta (precisa do ID do app registrado no Azure).
+- iCloud e "Outro e-mail": IMAP/SMTP em `quill-core/src/imap*.rs` (senha de app no cofre único das Chaves); os comandos do `lib.rs` escolhem Google ou IMAP pelo provedor da conta. Microsoft ainda falta (precisa do ID do app registrado no Azure).
 - Touch ID: `src-tauri/src/touchid.rs` (LocalAuthentication, só compila no Mac).
 - Login do Google no Mac: janela de login do sistema (ASWebAuthenticationSession) em `src-tauri/src/websheet.rs`, volta ainda pelo `127.0.0.1`; cai para o navegador se não abrir (ADR-022).
-- Lógica do login e do Gmail em `src-tauri/crates/quill-core` (testes: `cargo test --features net` dentro dessa pasta; roda até na VPS). Tokens de acesso permanentes ficam nas Chaves do sistema (`keyring`), nunca em arquivo.
+- Lógica do login e do Gmail em `src-tauri/crates/quill-core` (testes: `cargo test --features net` dentro dessa pasta; roda até na VPS). Tokens de acesso permanentes e senhas de app ficam num único item das Chaves do sistema (`app.quill.desktop` / `cofre`, lido uma vez por abertura, `quill-core/src/vault.rs`, ADR-024), nunca em arquivo.
 
 ## Fluxo de trabalho
 

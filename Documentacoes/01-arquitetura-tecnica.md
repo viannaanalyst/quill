@@ -37,7 +37,7 @@ não entram aqui.
 | iCloud IMAP/SMTP | E-mail das contas iCloud | TLS (rustls), senha de app |
 | iCloud CalDAV/CardDAV | Agenda e contatos do iCloud | HTTPS, senha de app, só `*.icloud.com` |
 | Outros provedores IMAP/SMTP | E-mail de "Outro e-mail" | TLS (rustls), senha do provedor |
-| Chaves do macOS | Guardar tokens do Google e senhas de app | `keyring` (Credential Manager no Windows) |
+| Chaves do macOS | Guardar tokens do Google e senhas de app, num único item (cofre) | `keyring` (Credential Manager no Windows) |
 | Gravatar, ícones do Google e da DuckDuckGo | Fotos e logos dos remetentes | Imagem carregada pela tela; desligável |
 
 ## Peças (C4 nível 2)
@@ -85,7 +85,9 @@ src/
   read/                     leitura, EmailFrame (quadro isolado), conversas
   compose/                  Escrever, barra de formatação, sugestões de destinatário
   calendar/                 dia, semana, mês e formulário de evento (prefixo cal-)
-  chat/                     Google Chat: lista, conversa, caixa de escrever, gravação, anexos (prefixo chat-)
+  chat/                     Google Chat: lista, conversa, caixa de escrever, gravação, anexos (prefixo chat-);
+                            format.ts interpreta a marcação do Chat (sem React, testado no Node) e
+                            chatText.tsx a monta com elementos React; reactions.ts escolhe as reações rápidas
   settings/                 Ajustes e suas seções (prefixo st-)
   components/               peças comuns: Select, DatePicker, SliderGroup, Toasts, CommandPalette,
                             AccountMenu, ImapConnect, LockScreen, MessageAvatar, FileIcon, PhotoCropper…
@@ -117,8 +119,8 @@ src-tauri/
 ## Módulos da `quill-core` (C4 nível 3)
 
 A crate tem dois recursos (features): `net` liga a rede (reqwest, tokio, IMAP, SMTP); `desktop` liga também o cofre
-do sistema (`keyring`) e abrir o navegador (`open`). O app usa `desktop`; os testes rodam com `net` (199) ou com
-`desktop` (201, inclui os de `session`).
+do sistema (`keyring`) e abrir o navegador (`open`). O app usa `desktop`; os testes rodam com `net` (282) ou com
+`desktop` (292, inclui os de `session`, `imap_session` e o do `vault` com as Chaves "de mentira" do `keyring`).
 
 | Módulo | Recurso | O que faz | Testes |
 |---|---|---|---|
@@ -133,17 +135,18 @@ do sistema (`keyring`) e abrir o navegador (`open`). O app usa `desktop`; os tes
 | `dav` | — | WebDAV: corpo dos pedidos e leitura das respostas `multistatus` | 7 |
 | `caldav` | — | Agenda do iCloud: agendas, eventos, repetições, fusos; monta os `.ics` | 23 |
 | `carddav` | — | Contatos do iCloud: catálogos e vCards (nome, e-mails, foto) | 8 |
-| `chat` | — | Google Chat: lê conversas, membros, mensagens (com reações e "editada"), anexos e pessoas (People API); monta envio, upload, reação, edição e o filtro das próprias reações; confere nomes de mensagem e de reação; classifica erros (permissão, app não configurado, conta sem Workspace, mensagem com respostas) | 37 |
+| `chat` | — | Google Chat: lê conversas, membros, mensagens (com reações, "editada", citação, menções e emoji próprio da empresa — imagem só de endereço https do Google), anexos e pessoas (People API); monta envio, upload, reação, edição e o filtro das próprias reações; confere nomes de mensagem e de reação; classifica erros (permissão, app não configurado, conta sem Workspace, mensagem com respostas) | 40 |
 | `google` | `net` | Conversa com o Google: volta do navegador, troca e renovação de tokens, Gmail, Agenda, People, Chat (com download e upload de anexos, reações, editar e apagar) | 44 |
-| `chat_client` | `net` | `ChatService`: cache na memória do próprio id, das pessoas, dos membros e das prévias; resolve nomes e fotos; tira só a própria reação; refaz a prévia depois de editar ou apagar | 10 |
+| `chat_client` | `net` | `ChatService`: cache na memória do próprio id, das pessoas, dos membros e das prévias; resolve nomes e fotos (também de quem foi citado ou mencionado); tira só a própria reação; refaz a prévia depois de editar ou apagar | 11 |
 | `imap_client` | `net` | Conversa com servidores IMAP e SMTP (TLS com rustls), palpite de servidores | 17 |
 | `dav_client` | `net` | CalDAV/CardDAV com o iCloud: HTTP Basic só em HTTPS e só para `*.icloud.com`; redirecionamentos à mão | 14 |
-| `session` | `desktop` | Sessão das contas Google: login (tempo máximo de 4 min, cancelável, com o jeito de abrir a página escolhido pelo app), tokens nas Chaves, renovação, ações | 2 |
-| `imap_session` | `desktop` | Contas iCloud/IMAP: senha de app nas Chaves, servidores no `accounts.json` | 0 |
-| **Total** | | | **249** (247 com `net`) |
+| `vault` | — (Chaves de verdade com `desktop`) | Cofre único nas Chaves (`app.quill.desktop` / `cofre`): lê uma vez por abertura, guarda na memória, grava só quando muda, migra e apaga os itens antigos; nunca grava por cima do que não conseguiu ler ([ADR-024](02-decisoes-adrs/ADR-024-cofre-unico-nas-chaves.md)) | 14 (+1 com `desktop`) |
+| `session` | `desktop` | Sessão das contas Google: login (tempo máximo de 4 min, cancelável, com o jeito de abrir a página escolhido pelo app), token no cofre único, renovação, ações | 5 |
+| `imap_session` | `desktop` | Contas iCloud/IMAP: senha de app no cofre único, servidores no `accounts.json` | 4 |
+| **Total** | | | **292** (282 com `net`) |
 
-`session` e `imap_session` só juntam o cofre do sistema e a rede; a lógica que eles usam está testada nos outros
-módulos.
+`session` e `imap_session` só juntam o cofre e a rede; a lógica que eles usam está testada nos outros módulos. O
+`lib.rs` cria um único `Vault` e passa para as duas sessões.
 
 ## Comandos da parte nativa (`src-tauri/src/lib.rs`)
 
@@ -205,7 +208,7 @@ contatos do iCloud vão por CalDAV/CardDAV com a mesma senha de app. Erros que p
 | `calendar.ts` | Agendas e eventos de todas as contas, juntando cópias do mesmo convite (iCalUID + início) e escondendo feriados repetidos em outro idioma; criar, editar, apagar, responder |
 | `contacts.ts` | Sugestões de destinatário, com cache em `quill.contacts.cache` |
 | `outbox.ts` | Caixa de saída com "Desfazer": segura o e-mail N segundos antes de enviar |
-| `chat.ts` | Google Chat: conta escolhida, conversas, mensagens por conversa, pessoas, mensagens saindo (com progresso e "Tentar de novo"), não lidas (`quill.chat.seen`), fixadas (`quill.chat.pinned`), reações suas (`quill.chat.reacted`), editar e apagar (a tela muda na hora e volta se der erro); com o Chat fechado, atualiza junto com os e-mails |
+| `chat.ts` | Google Chat: conta escolhida, conversas, mensagens por conversa, pessoas, mensagens saindo (com progresso e "Tentar de novo"), não lidas (`quill.chat.seen`), fixadas (`quill.chat.pinned`), reações suas (`quill.chat.reacted`), uso de cada emoji para as reações rápidas (`quill.chat.reactionUse`), editar e apagar (a tela muda na hora e volta se der erro); com o Chat fechado, atualiza junto com os e-mails |
 
 Preferências que várias telas leem ficam no `localStorage` (prefixo `quill.`) por `usePref`/`getPref`. Lista completa
 em [05-referencia.md](05-referencia.md).
@@ -222,13 +225,14 @@ Na prévia do navegador, `mailbox.ts`, `calendar.ts` e `chat.ts` usam dados de e
    se ela não abrir, ou fora do Mac, abre o navegador ([ADR-022](02-decisoes-adrs/ADR-022-login-google-na-folha-do-macos.md)).
 3. O Google devolve o código para `127.0.0.1`; o app fecha a janela de login e a `quill-core` troca o código por
    tokens. Se a pessoa fechar a janela antes, a espera é cancelada.
-4. O token de renovação vai para as Chaves (serviço `app.quill.desktop.google`); a conta entra no `accounts.json`.
+4. O token de renovação vai para o cofre único das Chaves (`app.quill.desktop` / `cofre`); a conta entra no
+   `accounts.json`.
 5. Tempo máximo de espera: 4 minutos. Cancelar ou começar outro login encerra o anterior.
 
 **Conectar iCloud/IMAP**
 1. `imap_guess` sugere os servidores; iCloud já vem predefinido.
 2. `imap_connect` testa a entrada no IMAP e no SMTP.
-3. Só se os dois funcionarem, a senha vai para as Chaves (serviço `app.quill.desktop.imap`) e os servidores para o
+3. Só se os dois funcionarem, a senha vai para o cofre único das Chaves e os servidores para o
    `accounts.json`.
 
 **Enviar com "Desfazer"**
@@ -244,12 +248,12 @@ Na prévia do navegador, `mailbox.ts`, `calendar.ts` e `chat.ts` usam dados de e
 | Permissões do Tauri | Só `core:default` e arrastar a janela; nenhum plugin com acesso a arquivos ou shell |
 | E-mail formatado | Num `iframe` com `sandbox="allow-same-origin allow-popups"` (sem `allow-scripts`); scripts, formulários e eventos são retirados antes de mostrar; imagens externas bloqueadas por padrão |
 | Links | Abrem no navegador do sistema pelo `open_link`, que só aceita `http`, `https` e `mailto` |
-| Tokens e senhas | Só nas Chaves do sistema (`app.quill.desktop.google`, `app.quill.desktop.imap`); nunca em arquivo, log ou `localStorage` |
+| Tokens e senhas | Só nas Chaves do sistema, num único item (`app.quill.desktop` / `cofre`, lido uma vez por abertura e guardado na memória); nunca em arquivo, log ou `localStorage` |
 | `accounts.json` | Só e-mail, serviço e servidores; nunca senha |
 | Senha do iCloud | Enviada só por HTTPS e só para `icloud.com` / `*.icloud.com`; redirecionamentos seguidos à mão e conferidos; a senha nunca aparece em erro |
 | IMAP/SMTP | Sempre TLS com rustls e o verificador de certificados do sistema |
 | Anexos | Nome de arquivo limpo, sem sobrescrever; `reveal_download` só aceita caminhos dentro de Downloads |
-| Google Chat | Nomes de conversa (`spaces/<id>`), de mensagem, de reação, de conteúdo (download) e de conversa da resposta conferidos antes de montar o caminho na API; reação só com emoji; tirar reação confere que é da própria conta; `spaceUri` só se for `https://*.google.com`; erros do Google viram frase curta (nunca o token); limites de 50 MB (mostrar), 200 MB (baixar/enviar) e 4.096 caracteres |
+| Google Chat | Nomes de conversa (`spaces/<id>`), de mensagem, de reação, de conteúdo (download) e de conversa da resposta conferidos antes de montar o caminho na API; reação só com emoji; tirar reação confere que é da própria conta; `spaceUri` só se for `https://*.google.com`; erros do Google viram frase curta (nunca o token); limites de 50 MB (mostrar), 200 MB (baixar/enviar) e 4.096 caracteres; texto das mensagens montado com elementos React (nunca `dangerouslySetInnerHTML`), links só `http(s)`/`mailto` e abertos no navegador; imagem de emoji da empresa só de `https://*.googleusercontent.com`, `*.google.com`, `*.gstatic.com` ou `*.ggpht.com` |
 | Microfone | Só quando a pessoa grava no Chat; frase de permissão em `src-tauri/Info.plist` (`NSMicrophoneUsageDescription`), que o Tauri junta ao app |
 | Credenciais do Google | Embutidas na montagem pelo `build.rs` (Infisical ou `oauth.local.env`, fora do git); nunca no repositório |
 | Touch ID | `LocalAuthentication` do macOS (`DeviceOwnerAuthentication`: digital ou senha do Mac) |
@@ -263,6 +267,7 @@ extrair do programa). Quem protege a conta é o PKCE e a volta só para `127.0.0
 npm install            # dependências das telas
 npm run dev            # prévia no navegador (porta 1420), com dados de exemplo
 npm run build          # confere os tipos (tsc) e gera dist/
+npm test               # testes das telas sem React (src/**/*.test.ts, Node puro, sem instalar nada)
 npm run tauri dev      # app de verdade (precisa de Rust; no Mac, Xcode)
 npm run tauri build    # instalador
 ```
@@ -296,8 +301,9 @@ infisical run --env=prod -- npm run tauri build
 
 Em 2026-11-17, na VPS:
 
-- **Testes da `quill-core`:** `cargo test --features net` → **264 testes passaram, 0 falharam** (266 com
-  `--features desktop`). Cobrem OAuth, leitura do Gmail e da Agenda, contatos, contas, anexos, IMAP (com servidor
+- **Testes da `quill-core`:** `cargo test --features net` → **282 testes passaram, 0 falharam** (292 com
+  `--features desktop`; a conta inclui 4 testes do Chat que estavam em andamento, ainda não commitados). Cobrem o
+  cofre único das Chaves (leitura uma vez, migração dos itens antigos, recusa das Chaves, com um cofre na memória), OAuth, leitura do Gmail e da Agenda, contatos, contas, anexos, IMAP (com servidor
   falso), iCalendar/vCard, WebDAV, CalDAV e CardDAV, Google Chat (leitura, envio, download e upload com progresso,
   reações, editar e apagar, cache de pessoas) e as conversas com o Google e o iCloud (com servidores falsos). Não
   falam com servidores reais.
@@ -305,7 +311,7 @@ Em 2026-11-17, na VPS:
   "Tauri de mentira" (só os tipos e assinaturas que o `lib.rs` usa: `State`, `AppHandle`, `Manager`, `Emitter`,
   `ipc::Request`, `generate_handler!`…) e o `lib.rs` real como biblioteca, conferido com `cargo check`. Pega erro de
   tipo e de chamada, mas não substitui montar no Mac.
-- **Telas:** `npm run build` sem erros de tipo. Atenção: rodou com mudanças de outros agentes ainda não commitadas na
+- **Telas:** `npm test` (15 testes: formatação do Chat e reações rápidas) e `npm run build` sem erros de tipo. Atenção: rodou com mudanças de outros agentes ainda não commitadas na
   pasta (ícone do Dock).
 - **Prévia do navegador:** as telas foram conferidas por prints em claro e escuro durante o desenvolvimento, com os
   parâmetros `?screen=`, `?theme=` e `?native=1`.

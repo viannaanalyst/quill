@@ -84,7 +84,7 @@ Microsoft (em 2026-11-17 o Gabriel não conseguiu entrar no portal). Ver
 ## Sair e entrar de novo
 
 - **Sair de tudo:** menu do avatar → **Sair** → confirmar. Todas as contas são desconectadas deste Mac (os tokens e
-  senhas saem das Chaves). Nada é apagado no Google nem no iCloud. Você continua no app, sem voltar ao onboarding.
+  senhas saem do cofre do Quill nas Chaves). Nada é apagado no Google nem no iCloud. Você continua no app, sem voltar ao onboarding.
 - **Tirar só uma conta:** **Ajustes → Contas →** escolha a conta → **Desconectar**.
 - **Entrar de novo:** conecte a conta como da primeira vez (menu do avatar ou **Ajustes → Contas → Adicionar conta**).
 - **Recomeçar do zero:** **Ajustes → Privacidade → Apagar dados**. Limpa as preferências do Quill neste Mac (tema,
@@ -122,6 +122,36 @@ aviso "… precisa entrar de novo. Abra Ajustes → Contas".
 **Para acabar com isso de vez:** publicar o app do Google (sair do modo "Testando"). Faltam a página inicial e a
 política de privacidade na aba Branding do Google Cloud. Está nas pendências da [visão geral](00-visao-geral.md).
 
+## Parar de pedir a senha das Chaves
+
+**O que aparece:** ao abrir o Quill, o Mac pergunta "Quill deseja usar as informações confidenciais armazenadas em…"
+e pede a senha do Mac.
+
+**Por quê:** o Quill guarda os tokens do Google e as senhas de app do iCloud nas Chaves do Mac, num **único item**
+(`app.quill.desktop`, conta `cofre`). O Mac só deixa um app abrir esse item depois que você autoriza.
+
+**O que fazer na hora:** digite a senha do Mac e clique em **Permitir Sempre** (não só "Permitir"). Assim o Mac não
+pergunta mais para esta versão do app.
+
+**Na primeira abertura depois da atualização** (a do cofre único): o Quill junta os itens antigos, um por conta, no
+item novo e apaga os antigos. Nessa vez o Mac ainda pode perguntar **uma vez por conta** (e, se você clicar só em
+"Permitir", de novo na hora de apagar o item antigo). Clique em **Permitir Sempre** em todas. Da próxima vez que
+abrir, é uma pergunta só, ou nenhuma.
+
+**Por que volta a cada versão nova:** o app é montado **sem assinatura fixa** (assinatura "ad-hoc"). Para o Mac, cada
+montagem nova é um app diferente, e o "Permitir Sempre" da versão anterior não vale para ela. Com o cofre único, é
+**uma** pergunta por versão nova, não uma por conta.
+
+**Para resolver de vez** (decisão sua; nada disso foi feito ainda):
+1. No Mac, abra o **Xcode → Ajustes → Contas**.
+2. Clique em **+** e entre com o seu Apple ID (não precisa pagar o programa de desenvolvedor).
+3. Escolha a conta → **Gerenciar certificados** → **+** → **Apple Development**.
+4. Peça ao agente para colocar o nome desse certificado em `src-tauri/tauri.conf.json`, no campo
+   `bundle.macOS.signingIdentity` (o nome aparece como `Apple Development: <seu nome> (<código>)`; no Terminal,
+   `security find-identity -v -p codesigning` mostra).
+5. A partir da montagem seguinte, todas as versões têm a mesma assinatura: depois de um último "Permitir Sempre", o Mac
+   para de perguntar.
+
 ## Pedir uma montagem nova do app
 
 O app **não é remontado a cada mudança** (pedido do Gabriel, para economizar). As mudanças são conferidas na prévia do
@@ -147,5 +177,6 @@ Prints do app no Mac são só da janela do Quill, nunca da tela inteira, porque 
 | iCloud recusa a senha | Usou a senha do Apple ID, ou a senha de app foi revogada | Criar outra senha de app em appleid.apple.com |
 | Imagens do e-mail não aparecem | Imagens externas bloqueadas por privacidade | Botão **Mostrar imagens** no e-mail, ou desligar em Ajustes → Privacidade |
 | Fotos dos remetentes não aparecem | Opção desligada, ou o remetente não tem Gravatar nem ícone de site | Ajustes → Privacidade → Fotos e logos dos remetentes |
+| O Mac pede a senha das Chaves ao abrir o Quill | Versão nova do app (sem assinatura fixa) ou primeira abertura depois do cofre único | Clicar em **Permitir Sempre**; para acabar de vez, ver [Parar de pedir a senha das Chaves](#parar-de-pedir-a-senha-das-chaves) |
 | Touch ID não aparece ao abrir | Opção desligada, ou o Mac não tem Touch ID nem senha configurada | Ajustes → Privacidade → Abrir o app com Touch ID |
 | Calendário sem a agenda de uma conta "Outro e-mail" | Contas IMAP genéricas não têm agenda no Quill | Usar Google ou iCloud para agenda |

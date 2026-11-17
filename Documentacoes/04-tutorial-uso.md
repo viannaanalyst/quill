@@ -177,10 +177,22 @@ Só funciona com conta **Google Workspace** (da empresa); contas Gmail pessoais 
    permissões que o login antigo não tinha.
 3. Na coluna da esquerda, escolha a conversa. Use a busca, as abas **Todas / Não lidas / Espaços** e o seletor de conta
    (quando há mais de uma conta da empresa). O número azul é quantas mensagens chegaram desde que você abriu a conversa.
+   A coluna pode ficar mais larga ou mais estreita: arraste a divisória entre ela e a conversa (dois cliques voltam ao
+   tamanho normal; pelo teclado, Tab até a divisória e as setas).
 4. Escreva embaixo: **Enter** envia, **⇧Enter** quebra a linha. A mensagem aparece na hora com "Enviando…"; se falhar,
    aparece **Tentar de novo**.
-5. Para responder dentro de uma conversa (fio), passe o mouse na mensagem e clique na seta, ou abra "N respostas" e
-   clique em **Responder na conversa**.
+5. Para responder dentro de uma conversa (fio), passe o mouse na mensagem e clique em **Responder no fio** na barra
+   (abre as respostas e o cursor já vai para a caixa), ou abra "N respostas" e clique em **Responder na conversa**.
+
+Como as mensagens aparecem:
+- As dos outros ficam em balões cinza à esquerda; as suas, em azul-claro à direita. Mensagens seguidas da mesma pessoa
+  ficam empilhadas.
+- Negrito, itálico, tachado, código, links, listas, menções (@nome), emojis coloridos e os emojis próprios da empresa
+  aparecem como no Google Chat. Mensagem só com 1 a 3 emojis aparece grande.
+- Quando alguém cita outra mensagem, aparece o cartão com a barrinha azul, o nome e o começo do texto; clicar nele leva
+  até a mensagem citada (se ela já estiver carregada).
+- O horário ao lado do nome é "agora" ou "5 min" na primeira hora e depois a hora (14:35). Parando o mouse sobre
+  qualquer mensagem, aparece a data e a hora completas. Nas suas, a hora fica acima do grupo.
 
 Anexos e áudio:
 - **Enviar arquivo:** clipe, arrastar para a conversa ou colar uma imagem (até 200 MB por arquivo). O arquivo começa a
@@ -191,15 +203,23 @@ Anexos e áudio:
   mensagem; PDF e outros arquivos têm **Ver** e **Baixar** (vai para Downloads); arquivo do Google Drive abre no
   navegador.
 
-Reações, editar e apagar:
-- **Reagir:** passe o mouse na mensagem e clique na carinha. Aparecem 6 rápidas (👍 ❤️ 😂 😮 😢 🙏); o **+** abre
-  todos os emojis. As reações aparecem embaixo da mensagem com a contagem (😀 3); a sua fica em azul. Clicar num chip
-  reage com o mesmo emoji; clicar no seu (azul) tira a sua reação.
-- **Editar** (só as suas): passe o mouse, clique em **⋯ → Editar**. O balão vira um campo: **Enter** salva, **⇧Enter**
-  quebra a linha, **Esc** cancela. Depois aparece "(editada)".
-- **Apagar** (só as suas): **⋯ → Apagar** e confirme. A mensagem some para todos. Se ela tiver respostas no fio, o
+Barra da mensagem (reações, responder, editar e apagar):
+- Passe o mouse em qualquer mensagem: aparece uma barrinha no canto de cima do balão, como no Google Chat. Nela:
+  - **3 reações rápidas:** no começo ✅ 🫡 🤣; com o tempo, viram as 3 que você mais usa (guardado neste computador);
+  - **Adicionar reação** (carinha com +): abre a grade com todos os emojis;
+  - **Responder no fio:** abre as respostas e põe o cursor na caixa para responder naquele fio;
+  - **⋮**: **Editar** e **Apagar** (só nas suas), **Copiar texto** e **Abrir no Google Chat**.
+- As reações aparecem embaixo da mensagem com a contagem (😀 3); a sua fica em azul. Clicar num chip reage com o
+  mesmo emoji; clicar no seu (azul) tira a sua reação. Emoji próprio da empresa aparece com a imagem, mas só dá para
+  reagir com ele pelo Google Chat.
+- **Editar** (só as suas): **⋮ → Editar**. O balão vira um campo: **Enter** salva, **⇧Enter** quebra a linha, **Esc**
+  cancela. Depois aparece "(editada)". Vale também para as respostas dentro do fio.
+- **Apagar** (só as suas): **⋮ → Apagar** e confirme. A mensagem some para todos. Se ela tiver respostas no fio, o
   Google Chat não deixa apagar pelo Quill (só junto com as respostas, no Google Chat).
-- Pelo teclado: **Tab** até a mensagem mostra os mesmos botões.
+- Pelo teclado: **Tab** chega na barra de cada mensagem (um Tab por mensagem); as **setas ← →** andam entre os botões
+  e **Enter** escolhe.
+- As "respostas sugeridas" do Google Chat ("Show", "De nada"…) não aparecem no Quill: o Google não as entrega pela
+  API.
 
 Outros botões: **fixar** a conversa (fica em "Fixadas", só neste Mac), **buscar** nas mensagens carregadas, **ligar**
 e **nova conversa** (abrem o Google Chat no navegador). As mensagens novas chegam a cada 8 segundos com a tela aberta.

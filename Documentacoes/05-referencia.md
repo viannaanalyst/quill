@@ -47,6 +47,8 @@ Consulta rápida. O guia de estilo completo (cores, tipografia, botões, estrutu
 | CalDAV / CardDAV | Padrões para agenda (CalDAV) e contatos (CardDAV); o iCloud usa os dois | iCloud |
 | iCalUID | Identificador único de um evento, igual em todas as cópias do mesmo convite | Junção de convites |
 | Chaves do macOS | Cofre de senhas do sistema (Keychain); no Windows, Credential Manager | Tokens e senhas |
+| Cofre único | O único item do Quill nas Chaves (`app.quill.desktop` / `cofre`), com todos os tokens e senhas | Chaves do macOS |
+| Assinatura ad-hoc | Montagem sem certificado fixo; para o macOS, cada versão é um app novo e pede a senha das Chaves de novo | Montagem no Mac |
 | Crate | Pacote de código Rust | `quill-core` |
 | `quill-core` | Crate com a lógica do Quill (login, Gmail, IMAP, iCloud), testada sem o app | `src-tauri/crates/quill-core` |
 | Comando (Tauri) | Função da parte nativa que as telas chamam | `src-tauri/src/lib.rs` |
@@ -103,6 +105,8 @@ dados deste Mac" (Ajustes → Privacidade) apaga todas. Nunca guardam senha nem 
 | `chat.baseline.<conta>` | boolean | `true`, `false` | `false` | Já abriu o Chat dessa conta (na primeira vez, o que existe conta como lido) |
 | `chat.pinned` | lista | `["<conta>\|<spaces/id>", …]` | `[]` | Conversas fixadas (só neste Mac; a API não informa as do Google Chat) |
 | `chat.reacted` | objeto | `{"<conta>\|<spaces/id/messages/id>": ["👍", …]}` (até 2.000 mensagens) | `{}` | Emojis com que você reagiu, para destacar o chip (a API só informa a contagem) |
+| `chat.reactionUse` | objeto | `{"👍": 3, …}` (até 40 emojis) | `{}` | Quantas vezes você reagiu com cada emoji; as 3 mais usadas viram as reações rápidas da barra (começa com ✅ 🫡 🤣) |
+| `chat.listWidth` | número | 240 a 420 | 300 | Largura da coluna de conversas do Chat (arrastando a divisória) |
 
 **Notificações (2026-11-17):** `notifyChat` (boolean, padrão `true`: avisar mensagens do Chat), `notifySoundEmail` e
 `notifySoundChat` (`pop` (padrão), `gota`, `sino`, `cristal`, `marimba`, `brisa`; arquivos em `src/assets/sounds/`).
@@ -137,12 +141,22 @@ contas conectadas, **sem senhas nem tokens**.
 
 ### Chaves do sistema (Keychain)
 
+Um **único item** para todas as contas ([ADR-024](02-decisoes-adrs/ADR-024-cofre-unico-nas-chaves.md)), lido uma
+vez por abertura do app e guardado na memória (`quill-core/src/vault.rs`).
+
 | Serviço | Conta (nome do item) | Guarda | Quem grava |
 |---|---|---|---|
-| `app.quill.desktop.google` | e-mail em minúsculas | Token de renovação do Google | `quill-core/src/session.rs`, depois do login |
-| `app.quill.desktop.imap` | e-mail em minúsculas | Senha de app (iCloud) ou senha do provedor (IMAP) | `quill-core/src/imap_session.rs`, depois de testar IMAP e SMTP |
+| `app.quill.desktop` | `cofre` | JSON `{ "google": { "<e-mail>": "<token de renovação>" }, "imap": { "<e-mail>": "<senha de app>" } }`, e-mails em minúsculas | `Vault`: depois do login do Google (`session.rs`), depois de testar IMAP e SMTP (`imap_session.rs`) e ao desconectar |
 
-"Sair" e "Desconectar" apagam o item da conta. "Apagar dados deste Mac" **não** mexe nas Chaves.
+Itens antigos, de antes do cofre único (só lidos na migração e depois apagados):
+
+| Serviço | Conta (nome do item) | Guardava |
+|---|---|---|
+| `app.quill.desktop.google` | e-mail em minúsculas | Token de renovação do Google |
+| `app.quill.desktop.imap` | e-mail em minúsculas | Senha de app (iCloud) ou senha do provedor (IMAP) |
+
+"Sair" e "Desconectar" tiram a conta do cofre (o item é gravado de novo sem ela). "Apagar dados deste Mac" **não**
+mexe nas Chaves.
 
 ## Tokens de cor principais
 

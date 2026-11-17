@@ -13,6 +13,7 @@ pub mod dav;
 pub mod caldav;
 pub mod carddav;
 pub mod chat;
+pub mod vault;
 
 #[cfg(feature = "net")]
 pub mod google;

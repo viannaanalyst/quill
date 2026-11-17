@@ -83,8 +83,50 @@ pub const MAX_DOWNLOAD: u64 = 200 * 1024 * 1024;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatReaction {
+    /// o emoji em unicode ou, no emoji próprio da empresa, o nome dele (`:festa:`)
     pub emoji: String,
     pub count: u32,
+    /// emoji próprio da empresa: a imagem dele (link temporário do Google)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+}
+
+/// Emoji próprio da empresa que aparece no texto como `:nome:`, com a imagem dele.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomEmoji {
+    /// como aparece no texto, com os dois-pontos (`:festa:`)
+    pub name: String,
+    /// link temporário da imagem (só endereço https do Google)
+    pub url: String,
+}
+
+/// Mensagem citada, como a API devolve (`quotedMessageMetadata`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RawQuote {
+    /// `spaces/<id>/messages/<id>`
+    pub name: String,
+    /// quem escreveu a citada (`quotedMessageSnapshot.sender`), quando a API manda a cópia
+    pub sender_id: Option<String>,
+    /// começo do texto da citada (vazio quando a API não manda a cópia)
+    pub text: String,
+}
+
+/// Mensagem citada, pronta para a tela (o cartão com a barrinha, o nome e o começo do texto).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatQuote {
+    pub name: String,
+    pub sender: Option<ChatPerson>,
+    pub text: String,
+}
+
+/// Pessoa mencionada (`<users/<id>>` no texto formatado), com o nome quando a People API souber.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatMention {
+    pub id: String,
+    pub name: Option<String>,
 }
 
 /// Uma reação como `reactions.list` devolve.
@@ -119,6 +161,12 @@ pub struct RawMessage {
     pub reactions: Vec<ChatReaction>,
     /// editada depois de enviada (`lastUpdateTime`)
     pub edited: bool,
+    /// mensagem citada (resposta citando outra)
+    pub quoted: Option<RawQuote>,
+    /// pessoas mencionadas (`users/<id>`), sem repetir
+    pub mention_ids: Vec<String>,
+    /// emojis próprios da empresa usados no texto
+    pub custom_emojis: Vec<CustomEmoji>,
 }
 
 /// Mensagem pronta para a tela.
@@ -139,6 +187,9 @@ pub struct ChatMessage {
     pub deleted: bool,
     pub reactions: Vec<ChatReaction>,
     pub edited: bool,
+    pub quoted: Option<ChatQuote>,
+    pub mentions: Vec<ChatMention>,
+    pub custom_emojis: Vec<CustomEmoji>,
 }
 
 /// Uma página de mensagens, da mais antiga para a mais nova.
@@ -327,6 +378,14 @@ fn google_link(u: &str) -> bool {
     })
 }
 
+/// Imagem https de um endereço do Google (emoji próprio da empresa). Outros endereços não carregam.
+pub fn google_image(u: &str) -> bool {
+    const HOSTS: [&str; 4] = ["googleusercontent.com", "google.com", "gstatic.com", "ggpht.com"];
+    url::Url::parse(u).is_ok_and(|p| {
+        p.scheme() == "https" && p.host_str().is_some_and(|h| HOSTS.iter().any(|g| h == *g || h.ends_with(&format!(".{g}"))))
+    })
+}
+
 /// Conversas da mais recente para a mais antiga.
 pub fn sort_spaces(spaces: &mut [RawSpace]) {
     spaces.sort_by_key(|s| std::cmp::Reverse(s.last_active_ms));
@@ -390,6 +449,58 @@ struct MsgJson {
     last_update_time: Option<String>,
     #[serde(default)]
     emoji_reaction_summaries: Vec<ReactionSummaryJson>,
+    quoted_message_metadata: Option<QuoteJson>,
+    #[serde(default)]
+    annotations: Vec<AnnotationJson>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct QuoteJson {
+    #[serde(default)]
+    name: String,
+    quoted_message_snapshot: Option<QuoteSnapshotJson>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct QuoteSnapshotJson {
+    sender: Option<String>,
+    #[serde(default)]
+    text: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AnnotationJson {
+    #[serde(default, rename = "type")]
+    kind: String,
+    user_mention: Option<UserMentionJson>,
+    custom_emoji_metadata: Option<CustomEmojiMetaJson>,
+}
+#[derive(Deserialize)]
+struct UserMentionJson {
+    user: Option<UserJson>,
+}
+#[derive(Deserialize)]
+struct UserJson {
+    #[serde(default)]
+    name: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CustomEmojiMetaJson {
+    custom_emoji: Option<CustomEmojiJson>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CustomEmojiJson {
+    emoji_name: Option<String>,
+    temporary_image_uri: Option<String>,
+}
+
+/// Emoji da empresa com nome (`:nome:`) e imagem do Google; sem isso, não dá para mostrar.
+fn custom_emoji(e: CustomEmojiJson) -> Option<CustomEmoji> {
+    let name = e.emoji_name.filter(|n| n.len() > 2 && n.len() <= 80 && n.starts_with(':') && n.ends_with(':') && !n.contains(char::is_whitespace))?;
+    let url = e.temporary_image_uri.filter(|u| google_image(u))?;
+    Some(CustomEmoji { name, url })
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -398,8 +509,10 @@ struct ReactionSummaryJson {
     reaction_count: Option<u32>,
 }
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct EmojiJson {
     unicode: Option<String>,
+    custom_emoji: Option<CustomEmojiJson>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -440,11 +553,51 @@ fn raw_message(m: MsgJson) -> RawMessage {
         m.emoji_reaction_summaries
             .into_iter()
             .filter_map(|r| {
-                let emoji = r.emoji?.unicode.filter(|u| !u.is_empty())?;
-                Some(ChatReaction { emoji, count: r.reaction_count.unwrap_or(1).max(1) })
+                let count = r.reaction_count.unwrap_or(1).max(1);
+                let e = r.emoji?;
+                if let Some(emoji) = e.unicode.filter(|u| !u.is_empty()) {
+                    return Some(ChatReaction { emoji, count, image: None });
+                }
+                let c = custom_emoji(e.custom_emoji?)?;
+                Some(ChatReaction { emoji: c.name, count, image: Some(c.url) })
             })
             .collect()
     };
+    let quoted = if deleted {
+        None
+    } else {
+        m.quoted_message_metadata.filter(|q| valid_message_name(&q.name)).map(|q| {
+            let snap = q.quoted_message_snapshot;
+            RawQuote {
+                name: q.name,
+                sender_id: snap.as_ref().and_then(|s| s.sender.clone()).filter(|s| s.starts_with("users/")),
+                text: snap.map(|s| s.text).unwrap_or_default(),
+            }
+        })
+    };
+    let mut mention_ids: Vec<String> = Vec::new();
+    let mut custom_emojis: Vec<CustomEmoji> = Vec::new();
+    if !deleted {
+        for a in m.annotations {
+            match a.kind.as_str() {
+                "USER_MENTION" => {
+                    if let Some(id) = a.user_mention.and_then(|u| u.user).map(|u| u.name).filter(|n| n.starts_with("users/")) {
+                        if !mention_ids.contains(&id) {
+                            mention_ids.push(id);
+                        }
+                    }
+                }
+                "CUSTOM_EMOJI" => {
+                    if let Some(c) = a.custom_emoji_metadata.and_then(|c| c.custom_emoji).and_then(custom_emoji) {
+                        if !custom_emojis.iter().any(|x| x.name == c.name) {
+                            custom_emojis.push(c);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
     RawMessage {
         name: m.name,
         sender_bot: sender.kind == "BOT",
@@ -473,6 +626,9 @@ fn raw_message(m: MsgJson) -> RawMessage {
         deleted,
         reactions,
         edited,
+        quoted,
+        mention_ids,
+        custom_emojis,
     }
 }
 
@@ -1124,7 +1280,7 @@ mod tests {
         let m = &list[0];
         assert_eq!(
             m.reactions,
-            [ChatReaction { emoji: "👍".into(), count: 3 }, ChatReaction { emoji: "❤️".into(), count: 1 }],
+            [ChatReaction { emoji: "👍".into(), count: 3, image: None }, ChatReaction { emoji: "❤️".into(), count: 1, image: None }],
             "emoji próprio da empresa (sem unicode) fica de fora; sem contagem conta 1"
         );
         assert!(m.edited);
@@ -1208,5 +1364,65 @@ mod tests {
     fn apagar_mensagem_com_respostas_vira_frase_clara() {
         let msg = r#"400 Bad Request: {"error":{"code":400,"message":"Message has thread replies. Set force=true to delete the message and its replies.","status":"FAILED_PRECONDITION"}}"#;
         assert_eq!(classify_error(msg), ChatErrorKind::Other(HAS_REPLIES.into()));
+    }
+
+    #[test]
+    fn le_mensagem_citada_com_a_copia_do_texto() {
+        let json = r#"{"messages":[{"name":"spaces/A/messages/5","sender":{"name":"users/1"},"createTime":"2026-11-17T12:00:00Z","text":"concordo",
+          "quotedMessageMetadata":{"name":"spaces/A/messages/2","lastUpdateTime":"2026-11-17T11:00:00Z","quoteType":"REPLY",
+            "quotedMessageSnapshot":{"sender":"users/7","text":"Vamos fechar sexta?","formattedText":"Vamos fechar *sexta*?"}}},
+          {"name":"spaces/A/messages/6","sender":{"name":"users/1"},"createTime":"2026-11-17T12:01:00Z","text":"sem cópia",
+          "quotedMessageMetadata":{"name":"spaces/A/messages/3"}},
+          {"name":"spaces/A/messages/7","sender":{"name":"users/1"},"createTime":"2026-11-17T12:02:00Z","text":"nome estranho",
+          "quotedMessageMetadata":{"name":"../x"}}
+        ]}"#;
+        let (list, _) = parse_messages(json).unwrap();
+        assert_eq!(
+            list[0].quoted,
+            Some(RawQuote { name: "spaces/A/messages/2".into(), sender_id: Some("users/7".into()), text: "Vamos fechar sexta?".into() })
+        );
+        assert_eq!(list[1].quoted, Some(RawQuote { name: "spaces/A/messages/3".into(), sender_id: None, text: String::new() }));
+        assert_eq!(list[2].quoted, None, "nome que não é de mensagem fica de fora");
+    }
+
+    #[test]
+    fn le_mencoes_e_emoji_proprio_da_empresa() {
+        let json = r#"{"messages":[{"name":"spaces/A/messages/5","sender":{"name":"users/1"},"createTime":"2026-11-17T12:00:00Z",
+          "text":"@Ana olha isso :festa:","formattedText":"<users/22> olha isso :festa:",
+          "annotations":[
+            {"type":"USER_MENTION","startIndex":0,"length":4,"userMention":{"user":{"name":"users/22","type":"HUMAN"},"type":"MENTION"}},
+            {"type":"USER_MENTION","userMention":{"user":{"name":"users/22"}}},
+            {"type":"CUSTOM_EMOJI","customEmojiMetadata":{"customEmoji":{"uid":"u1","emojiName":":festa:","temporaryImageUri":"https://lh3.googleusercontent.com/festa"}}},
+            {"type":"CUSTOM_EMOJI","customEmojiMetadata":{"customEmoji":{"uid":"u2","emojiName":":mal:","temporaryImageUri":"https://exemplo.com/x.png"}}},
+            {"type":"RICH_LINK","richLinkMetadata":{"uri":"https://exemplo.com"}}
+          ],
+          "emojiReactionSummaries":[
+            {"emoji":{"unicode":"👍"},"reactionCount":2},
+            {"emoji":{"customEmoji":{"uid":"u1","emojiName":":festa:","temporaryImageUri":"https://lh3.googleusercontent.com/festa"}},"reactionCount":3},
+            {"emoji":{"customEmoji":{"uid":"u3"}},"reactionCount":1}
+          ]}]}"#;
+        let (list, _) = parse_messages(json).unwrap();
+        let m = &list[0];
+        assert_eq!(m.mention_ids, ["users/22"], "sem repetir");
+        assert_eq!(m.custom_emojis, [CustomEmoji { name: ":festa:".into(), url: "https://lh3.googleusercontent.com/festa".into() }], "só imagem do Google");
+        assert_eq!(
+            m.reactions,
+            [
+                ChatReaction { emoji: "👍".into(), count: 2, image: None },
+                ChatReaction { emoji: ":festa:".into(), count: 3, image: Some("https://lh3.googleusercontent.com/festa".into()) },
+            ],
+            "emoji da empresa sem imagem fica de fora"
+        );
+    }
+
+    #[test]
+    fn imagem_so_de_endereco_do_google() {
+        assert!(google_image("https://lh3.googleusercontent.com/a"));
+        assert!(google_image("https://fonts.gstatic.com/x.png"));
+        assert!(google_image("https://chat.google.com/api/get_attachment"));
+        assert!(!google_image("http://lh3.googleusercontent.com/a"));
+        assert!(!google_image("https://googleusercontent.com.mal.com/a"));
+        assert!(!google_image("https://mal.com/?x=googleusercontent.com"));
+        assert!(!google_image("javascript:alert(1)"));
     }
 }

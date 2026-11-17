@@ -87,3 +87,38 @@ A permissão `chat.messages`, que já estava no login, cobre `reactions.create`,
   no Quill.
 - Editar e apagar respostas dentro do fio (a lista aberta em "N respostas") ainda não têm botão; reagir nelas, sim,
   pelos chips.
+
+## Acréscimo (2026-11-17): visual do Google Chat, formatação, citação e barra da mensagem
+
+**Contexto**
+O Gabriel usou o Chat com a conta real e comparou com o Google Chat: aparecia rolagem para o lado, as mensagens dos
+outros não tinham balão, negrito e emoji não apareciam direito (ex.: "💸 *Compra lançada (paga)*"), a citação de outra
+mensagem não aparecia e os botões da mensagem eram diferentes da barrinha do Google. Na API:
+- `formattedText` traz a marcação (`*negrito*`, `_itálico_`, `~tachado~`, código, listas, `<url|texto>`, menções
+  `<users/…>` e emoji da empresa `:nome:`); o nome de quem foi mencionado não vem junto;
+- `quotedMessageMetadata` traz o nome da mensagem citada e, quando o Google manda, uma cópia (`quotedMessageSnapshot`)
+  com quem escreveu e o texto;
+- emoji próprio da empresa vem em `annotations` (`CUSTOM_EMOJI`) e nas reações com um link temporário da imagem;
+- as "respostas sugeridas" do Google Chat não vêm pela API.
+
+**Decisão**
+- **Texto da mensagem:** `formattedText` (ou `text`, se não vier) interpretado em `src/chat/format.ts` (sem React,
+  com testes no Node: `npm test`) e montado com elementos React em `chatText.tsx`. Nada do texto vira HTML; links só
+  `http(s)`/`mailto`, abertos no navegador. Emojis ficam numa fonte colorida; 1 a 3 emojis sozinhos aparecem grandes.
+- **Citação, menções e emoji da empresa** lidos na `quill-core` (`quoted`, `mentions`, `customEmojis` e `image` na
+  reação). O nome de quem foi citado ou mencionado vem do mesmo cache da People API. A imagem do emoji da empresa só
+  passa se for `https` de um endereço do Google. Sem a cópia da citada, a tela procura a mensagem entre as já
+  carregadas; clicar no cartão leva até ela.
+- **Reagir com emoji da empresa** fica fora: a API cria reação por unicode; o chip aparece com a imagem, sem clique.
+- **Barra da mensagem** (no lugar dos botões antigos): 3 reações rápidas, adicionar reação, responder no fio e ⋮
+  (Editar, Apagar, Copiar texto, Abrir no Google Chat). As rápidas começam com ✅ 🫡 🤣 e passam a ser as 3 que a
+  pessoa mais usa (`quill.chat.reactionUse`, só neste computador). Um ponto de Tab por mensagem; as setas andam na barra.
+- **Editar e apagar respostas do fio** passam a ter a mesma barra (antes só dava para reagir nelas).
+- **"Abrir no Google Chat"** abre a conversa (`spaceUri`): o formato do link direto de uma mensagem não é documentado.
+- **Respostas sugeridas** não entram (não vêm pela API).
+- **Layout:** coluna de conversas com 300 px, arrastável de 240 a 420 px (`quill.chat.listWidth`); a área das
+  mensagens nunca rola para o lado (tudo quebra a linha ou encolhe).
+
+**Consequências**
+- Se o Google não mandar a cópia da citada e ela for antiga (não carregada), o cartão mostra só "Mensagem citada".
+- O link temporário do emoji da empresa pode expirar; a próxima atualização da conversa traz um novo.
