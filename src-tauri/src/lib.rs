@@ -1,11 +1,13 @@
 //! Parte nativa do Quill: comandos que as telas chamam para entrar (Google, iCloud ou IMAP) e ler os e-mails.
 //! Cada comando de e-mail olha o provedor da conta: iCloud/IMAP vai por `ImapSession`, o resto pelo Google.
+//! Agenda e contatos do iCloud vão por CalDAV/CardDAV (`ICloudDav`), com a mesma senha de app do e-mail.
 //! A lógica fica em `crates/quill-core` (testada); aqui só a ligação com o Tauri.
 
 mod touchid;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use quill_core::dav_client::{Creds, DavError, ICloudDav};
 use quill_core::gmail::MessageSummary;
 use quill_core::google::LoginError;
 use quill_core::imap::{ImapConfig, ImapError};
@@ -18,6 +20,8 @@ struct AppState {
     google: Option<GoogleSession>,
     /// contas iCloud e IMAP (não dependem das credenciais do Google)
     imap: ImapSession,
+    /// agenda e contatos das contas iCloud (CalDAV/CardDAV)
+    icloud: ICloudDav,
     accounts_file: std::path::PathBuf,
 }
 
@@ -46,8 +50,21 @@ fn imap_err(e: ImapError) -> String {
     }
 }
 
-/// Recursos que só existem nas contas Google (agenda, por enquanto).
+/// Contas "Outro e-mail" (IMAP genérico) não têm agenda.
 const IMAP_NO_CALENDAR: &str = "A agenda dessa conta ainda não está disponível no Quill.";
+
+/// Erros da agenda/contatos do iCloud: senha recusada vira "needs_login" (conectar de novo).
+fn dav_err(e: DavError) -> String {
+    match e {
+        DavError::NeedsLogin => "needs_login".into(),
+        other => other.to_string(),
+    }
+}
+
+/// E-mail e senha de app (do cofre) de uma conta iCloud, para o CalDAV/CardDAV.
+fn icloud_creds(state: &AppState, email: &str) -> Result<Creds, String> {
+    state.imap.icloud_creds(email).map_err(imap_err)
+}
 
 fn google(state: &AppState) -> Result<&GoogleSession, String> {
     state.google.as_ref().ok_or_else(|| "not_configured".to_string())
@@ -217,21 +234,37 @@ async fn message_action(state: State<'_, AppState>, email: String, id: String, a
     google(&state)?.act(&email, &id, &action).await.map_err(err)
 }
 
-/// Agendas e eventos de uma conta Google entre duas datas (RFC 3339).
+/// Agendas e eventos de uma conta entre duas datas (RFC 3339): Google, ou iCloud pelo CalDAV.
+/// Contas "Outro e-mail" não têm agenda (devolve vazio).
 #[tauri::command]
 async fn calendar_agenda(state: State<'_, AppState>, email: String, time_min: String, time_max: String) -> Result<quill_core::session::Agenda, String> {
     if state.imap.is_imap(&email) {
-        // agenda do iCloud (CalDAV) ainda não: a conta só não mostra eventos
-        return Ok(quill_core::session::Agenda { calendars: Vec::new(), events: Vec::new() });
+        if !state.imap.is_icloud(&email) {
+            return Ok(quill_core::session::Agenda { calendars: Vec::new(), events: Vec::new() });
+        }
+        let creds = icloud_creds(&state, &email)?;
+        let (calendars, events) = state.icloud.agenda(&email, &creds, &time_min, &time_max).await.map_err(dav_err)?;
+        return Ok(quill_core::session::Agenda { calendars, events });
     }
     google(&state)?.agenda(&email, &time_min, &time_max).await.map_err(err)
 }
 
-/// Sugestões de destinatário (contatos do Google e quem aparece nos enviados) de uma conta.
+/// Sugestões de destinatário de uma conta: contatos (Google ou iCloud) e quem aparece nos enviados.
 #[tauri::command]
 async fn contacts_list(state: State<'_, AppState>, email: String) -> Result<Vec<quill_core::contacts::Contact>, String> {
     if state.imap.is_imap(&email) {
-        return Ok(Vec::new());
+        if !state.imap.is_icloud(&email) {
+            return Ok(Vec::new());
+        }
+        let creds = icloud_creds(&state, &email)?;
+        let sent = async {
+            match state.imap.folder(&email, "sent", 100, now_ms(), 0).await {
+                Ok(list) => quill_core::carddav::contacts_from_sent(&list),
+                Err(_) => Vec::new(),
+            }
+        };
+        let own: Vec<String> = quill_core::accounts::AccountStore::new(state.accounts_file.clone()).list().into_iter().map(|a| a.email).collect();
+        return Ok(state.icloud.suggestions(&email, &creds, sent, &own).await);
     }
     google(&state)?.contacts(&email).await.map_err(err)
 }
@@ -240,7 +273,11 @@ async fn contacts_list(state: State<'_, AppState>, email: String) -> Result<Vec<
 #[tauri::command]
 async fn calendar_rsvp(state: State<'_, AppState>, email: String, calendar_id: String, event_id: String, status: String) -> Result<(), String> {
     if state.imap.is_imap(&email) {
-        return Err(IMAP_NO_CALENDAR.into());
+        if !state.imap.is_icloud(&email) {
+            return Err(IMAP_NO_CALENDAR.into());
+        }
+        let creds = icloud_creds(&state, &email)?;
+        return state.icloud.rsvp(&email, &creds, &calendar_id, &event_id, &status).await.map_err(dav_err);
     }
     google(&state)?.rsvp(&email, &calendar_id, &event_id, &status).await.map_err(err)
 }
@@ -254,7 +291,11 @@ async fn calendar_update(
     patch: quill_core::calendar::EventPatch,
 ) -> Result<quill_core::calendar::CalEvent, String> {
     if state.imap.is_imap(&email) {
-        return Err(IMAP_NO_CALENDAR.into());
+        if !state.imap.is_icloud(&email) {
+            return Err(IMAP_NO_CALENDAR.into());
+        }
+        let creds = icloud_creds(&state, &email)?;
+        return state.icloud.update(&email, &creds, &calendar_id, &event_id, &patch).await.map_err(dav_err);
     }
     google(&state)?.update_event(&email, &calendar_id, &event_id, &patch).await.map_err(err)
 }
@@ -262,7 +303,11 @@ async fn calendar_update(
 #[tauri::command]
 async fn calendar_delete(state: State<'_, AppState>, email: String, calendar_id: String, event_id: String) -> Result<(), String> {
     if state.imap.is_imap(&email) {
-        return Err(IMAP_NO_CALENDAR.into());
+        if !state.imap.is_icloud(&email) {
+            return Err(IMAP_NO_CALENDAR.into());
+        }
+        let creds = icloud_creds(&state, &email)?;
+        return state.icloud.delete(&email, &creds, &calendar_id, &event_id).await.map_err(dav_err);
     }
     google(&state)?.delete_event(&email, &calendar_id, &event_id).await.map_err(err)
 }
@@ -275,7 +320,12 @@ async fn calendar_create(
     event: quill_core::calendar::NewEvent,
 ) -> Result<quill_core::calendar::CalEvent, String> {
     if state.imap.is_imap(&email) {
-        return Err(IMAP_NO_CALENDAR.into());
+        if !state.imap.is_icloud(&email) {
+            return Err(IMAP_NO_CALENDAR.into());
+        }
+        // no iCloud não existe Google Meet: o pedido de sala é ignorado
+        let creds = icloud_creds(&state, &email)?;
+        return state.icloud.create(&email, &creds, &calendar_id, &event).await.map_err(dav_err);
     }
     google(&state)?.create_event(&email, &calendar_id, &event).await.map_err(err)
 }
@@ -371,7 +421,7 @@ pub fn run() {
                 _ => None,
             };
             let imap = ImapSession::new(accounts_file.clone());
-            app.manage(AppState { google, imap, accounts_file });
+            app.manage(AppState { google, imap, icloud: ICloudDav::default(), accounts_file });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

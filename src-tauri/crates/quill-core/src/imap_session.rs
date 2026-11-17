@@ -48,6 +48,21 @@ impl ImapSession {
         Ok(p)
     }
 
+    /// A conta é do iCloud? (aí a agenda e os contatos vêm pelo CalDAV/CardDAV)
+    pub fn is_icloud(&self, email: &str) -> bool {
+        self.config(email).is_ok_and(|c| c.is_icloud())
+    }
+
+    /// Usuário e senha de app de uma conta iCloud (a mesma do e-mail, lida do cofre),
+    /// para a agenda e os contatos. Nunca sai do processo.
+    pub fn icloud_creds(&self, email: &str) -> Result<crate::dav_client::Creds, ImapError> {
+        let cfg = self.config(email)?;
+        if !cfg.is_icloud() {
+            return Err(ImapError::Invalid("Essa conta não é do iCloud.".into()));
+        }
+        Ok(crate::dav_client::Creds { username: cfg.username.clone(), password: self.password(email)? })
+    }
+
     fn creds(&self, email: &str) -> Result<(ImapConfig, String), ImapError> {
         Ok((self.config(email)?, self.password(email)?))
     }

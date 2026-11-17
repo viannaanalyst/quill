@@ -15,6 +15,11 @@ serde_json = "1.0.154"
 sha2 = "0.11.1"
 tokio = { version = "1.54.1", features = ["net", "io-util", "time", "macros", "rt", "sync"], optional = true }
 url = "2.5.8"
+# agenda e contatos do iCloud (CalDAV/CardDAV): XML, fusos e repetições
+quick-xml = "0.42.0"
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+chrono-tz = "0.10.4"
+rrule = "0.14.0"
 # IMAP/SMTP (iCloud e outros provedores), tudo com rustls: nada de OpenSSL do sistema
 async-imap = { version = "0.12.0", default-features = false, features = ["runtime-tokio"], optional = true }
 futures-util = { version = "0.3", default-features = false, features = ["std"], optional = true }

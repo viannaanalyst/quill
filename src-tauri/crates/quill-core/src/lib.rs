@@ -8,12 +8,19 @@ pub mod calendar;
 pub mod files;
 pub mod contacts;
 pub mod imap;
+pub mod ical;
+pub mod dav;
+pub mod caldav;
+pub mod carddav;
 
 #[cfg(feature = "net")]
 pub mod google;
 
 #[cfg(feature = "net")]
 pub mod imap_client;
+
+#[cfg(feature = "net")]
+pub mod dav_client;
 
 #[cfg(feature = "desktop")]
 pub mod session;
