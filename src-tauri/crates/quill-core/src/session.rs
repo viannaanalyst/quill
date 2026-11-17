@@ -99,9 +99,95 @@ impl GoogleSession {
         self.client.inbox(&token, max, now_ms, tz_offset_min).await
     }
 
-    pub async fn body(&self, email: &str, id: &str) -> Result<String, LoginError> {
+    pub async fn folder(&self, email: &str, folder: &str, max: u32, now_ms: i64, tz_offset_min: i32) -> Result<Vec<MessageSummary>, LoginError> {
+        let token = self.access_token(email).await?;
+        self.client.folder(&token, folder, max, now_ms, tz_offset_min).await
+    }
+
+    /// Contadores das caixas: não lidos na Entrada e no Spam, total em Rascunhos.
+    pub async fn counts(&self, email: &str) -> Result<HashMap<String, u64>, LoginError> {
+        let token = self.access_token(email).await?;
+        let (inbox, drafts, spam) = tokio::join!(
+            self.client.label_counts(&token, "INBOX"),
+            self.client.label_counts(&token, "DRAFT"),
+            self.client.label_counts(&token, "SPAM"),
+        );
+        let mut out = HashMap::new();
+        out.insert("inbox".to_string(), inbox?.unread);
+        out.insert("drafts".to_string(), drafts?.total);
+        out.insert("spam".to_string(), spam?.unread);
+        Ok(out)
+    }
+
+    /// Nome e foto da conta (pede o escopo "profile"; contas conectadas antes dele precisam entrar de novo).
+    pub async fn profile(&self, email: &str) -> Result<crate::gmail::UserInfo, LoginError> {
+        let token = self.access_token(email).await?;
+        self.client.userinfo(&token).await
+    }
+
+    pub async fn body(&self, email: &str, id: &str) -> Result<crate::gmail::MessageBody, LoginError> {
         let token = self.access_token(email).await?;
         self.client.body(&token, id).await
+    }
+
+    /// Envia pela conta `message.from` (o remetente é sempre a própria conta).
+    pub async fn send(&self, message: &crate::gmail::OutgoingMessage, thread_id: Option<&str>) -> Result<String, LoginError> {
+        let token = self.access_token(&message.from).await?;
+        let mime = crate::gmail::build_mime(message);
+        self.client.send(&token, &mime, thread_id).await
+    }
+
+    pub async fn attachment(&self, email: &str, message_id: &str, attachment_id: &str) -> Result<Vec<u8>, LoginError> {
+        let token = self.access_token(email).await?;
+        self.client.attachment(&token, message_id, attachment_id).await
+    }
+
+    /// Agendas visíveis da conta e os eventos delas no intervalo (todas ao mesmo tempo).
+    pub async fn agenda(&self, email: &str, time_min: &str, time_max: &str) -> Result<Agenda, LoginError> {
+        let token = self.access_token(email).await?;
+        let calendars = self.client.calendars(&token).await?;
+        let mut set = tokio::task::JoinSet::new();
+        for c in calendars.iter().filter(|c| c.selected) {
+            let client = self.client.clone();
+            let (token, id, min, max) = (token.clone(), c.id.clone(), time_min.to_string(), time_max.to_string());
+            set.spawn(async move { client.events(&token, &id, &min, &max).await });
+        }
+        let mut events = Vec::new();
+        while let Some(res) = set.join_next().await {
+            // uma agenda com erro (ex.: sem permissão) não derruba as outras
+            if let Ok(Ok(list)) = res {
+                events.extend(list);
+            }
+        }
+        Ok(Agenda { calendars, events })
+    }
+
+    pub async fn rsvp(&self, email: &str, calendar_id: &str, event_id: &str, status: &str) -> Result<(), LoginError> {
+        let token = self.access_token(email).await?;
+        self.client.rsvp(&token, calendar_id, event_id, status).await
+    }
+
+    pub async fn create_event(&self, email: &str, calendar_id: &str, e: &crate::calendar::NewEvent) -> Result<crate::calendar::CalEvent, LoginError> {
+        let token = self.access_token(email).await?;
+        self.client.create_event(&token, calendar_id, e).await
+    }
+
+    /// Ação num e-mail: archive, unarchive, spam, notspam, star, unstar, unread, read, trash.
+    pub async fn act(&self, email: &str, id: &str, action: &str) -> Result<(), LoginError> {
+        let token = self.access_token(email).await?;
+        let (add, remove): (&[&str], &[&str]) = match action {
+            "archive" => (&[], &["INBOX"]),
+            "unarchive" => (&["INBOX"], &[]),
+            "spam" => (&["SPAM"], &["INBOX"]),
+            "notspam" => (&["INBOX"], &["SPAM"]),
+            "star" => (&["STARRED"], &[]),
+            "unstar" => (&[], &["STARRED"]),
+            "unread" => (&["UNREAD"], &[]),
+            "read" => (&[], &["UNREAD"]),
+            "trash" => return self.client.trash(&token, id).await,
+            other => return Err(LoginError::Google(format!("ação desconhecida: {other}"))),
+        };
+        self.client.modify(&token, id, add, remove).await
     }
 
     pub async fn mark_read(&self, email: &str, id: &str) -> Result<(), LoginError> {
@@ -117,4 +203,11 @@ impl GoogleSession {
         self.tokens.lock().expect("trava dos tokens").remove(&email.to_lowercase());
         self.store.remove(email).map_err(|e| LoginError::Vault(e.to_string()))
     }
+}
+
+/// Agendas e eventos de uma conta.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Agenda {
+    pub calendars: Vec<crate::calendar::CalendarInfo>,
+    pub events: Vec<crate::calendar::CalEvent>,
 }

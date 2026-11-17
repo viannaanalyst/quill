@@ -39,6 +39,8 @@ App de e-mail e calendário, **macOS primeiro**, depois Windows. Começou como u
 - Credenciais do app do Google (OAuth "App para computador"): no **Infisical, projeto `quill`** (`.infisical.json` na raiz), variáveis `GOOGLE_OAUTH_CLIENT_ID` e `GOOGLE_OAUTH_CLIENT_SECRET` (ambientes `dev` e `prod`).
 - O `src-tauri/build.rs` embute as duas na montagem, vindas das variáveis (`infisical run --env=prod -- npm run tauri build`) ou do arquivo `src-tauri/oauth.local.env` (fora do git). Sem elas o app monta, mas o login avisa "não configurado".
 - O app do Google está em **Testando** (usuários de teste: as contas do Gabriel). Nesse modo o Google desconecta a cada 7 dias; para publicar faltam página inicial e política de privacidade na aba Branding.
+- Google Agenda: `quill-core/src/calendar.rs` (leitura, resposta a convites, criar evento); nas telas, `src/state/calendar.ts` junta as cópias do mesmo convite entre contas (iCalUID + início) para não repetir evento. Microsoft (Graph) ainda precisa do login Microsoft.
+- Anexos: envio pelo upload do Gmail (até 25 MB), download para Downloads, "ver sem baixar" com Quick Look (`quill-core/src/files.rs`). Ícone real do tipo de arquivo: `FileIcon`.
 - Lógica do login e do Gmail em `src-tauri/crates/quill-core` (testes: `cargo test --features net` dentro dessa pasta; roda até na VPS). Tokens de acesso permanentes ficam nas Chaves do sistema (`keyring`), nunca em arquivo.
 
 ## Fluxo de trabalho
@@ -51,7 +53,13 @@ App de e-mail e calendário, **macOS primeiro**, depois Windows. Começou como u
 - Botões só com ícone: `aria-label` + dica `data-tip="…"` (pílula escura; `data-tip-pos="right"` na barra lateral).
 - Barra de rolagem fina e arredondada, definida em `src/styles/components.css`.
 - Resposta a convite: confirmação com barrinha de tempo (4 s, dá para desfazer), depois o convite some (`RsvpButtons` / `InviteGate`).
-- Estado compartilhado entre telas (tela atual, lidos, resposta do convite, agendas visíveis) em `src/state/store.ts`.
+- Estado compartilhado entre telas (tela atual, lidos, resposta do convite, agendas visíveis) em `src/state/store.ts`; e-mails, contas, contadores e fotos em `src/state/mailbox.ts`.
+- Nada de `<select>` nativo: use `Select` (`src/components/Select.tsx`). Janelinhas flutuantes com Radix Popover e a classe `qp-content` (já anima a entrada e a saída).
+- Abas e botões segmentados com `SliderGroup` (o destaque desliza até o item com `aria-current`/`aria-pressed`/`aria-checked`).
+- Avisos rápidos: `toast("texto")` ou `toast("texto", "error")` (`src/components/Toasts.tsx`).
+- Preferências que outras telas precisam ver na hora: `usePref` (`src/lib/usePref.ts`).
+- Entrada das telas: o `AppShell` aplica `.screen-enter`; listas usam `.stagger`.
+- Busca geral ⌘K (`CommandPalette`, carregada só na primeira vez) e atalhos em `src/shell/shortcuts.ts`: ⌘K, ⌘, (Ajustes), ⌘N (escrever), ⌘R (atualizar), C, / e G depois E ou C.
 
 ## Skills obrigatórias
 
@@ -78,6 +86,5 @@ Carregue a skill **antes** de começar o tipo de trabalho correspondente:
 
 ## Para quando chegar a hora (pedidos já feitos)
 
-- Anexos com o ícone real do tipo de arquivo, prévia sem baixar (Quick Look no Mac) e barra de progresso de envio animada.
 - Login = entrar com Google / Microsoft / iCloud / IMAP na página oficial de cada serviço. Não existe conta Quill.
 - Abrir o app com Touch ID no Mac (Windows Hello no Windows).

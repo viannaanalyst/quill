@@ -37,6 +37,11 @@ export interface Message {
   accountEmail?: string;
   internalDate?: number;
   fromEmail?: string;
+  /** destinatário (Enviados e Rascunhos) */
+  toName?: string;
+  toEmail?: string;
+  threadId?: string;
+  starred?: boolean;
 }
 
 export interface AgendaItem {

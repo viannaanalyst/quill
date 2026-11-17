@@ -1,12 +1,23 @@
 import { useSyncExternalStore } from "react";
 import type { AccountId, Rsvp } from "../inbox/types";
+import { getPref } from "../lib/storage";
+
+/** Texto já preenchido ao abrir Escrever (responder, encaminhar, escrever para alguém). */
+export interface ComposeDraft {
+  from?: string;
+  to?: { name: string; email: string }[];
+  subject?: string;
+  /** HTML inicial do corpo */
+  body?: string;
+  threadId?: string;
+}
 
 /** Telas do app. */
 export type CalendarMode = "day" | "week" | "month";
 export type View =
   | { name: "inbox"; folder: string }
   | { name: "read"; id: string }
-  | { name: "compose" }
+  | { name: "compose"; draft?: ComposeDraft }
   | { name: "calendar"; mode: CalendarMode }
   | { name: "settings" };
 
@@ -18,6 +29,8 @@ export type RsvpPhase = "idle" | "confirm" | "leaving" | "done";
 
 interface State {
   view: View;
+  /** última caixa aberta (para o Voltar da leitura) */
+  lastFolder: string;
   readIds: ReadonlySet<string>;
   rsvp: { value: Rsvp | null; phase: RsvpPhase };
   hiddenCalendars: ReadonlySet<AccountId | "feriado">;
@@ -27,7 +40,9 @@ export const RSVP_CONFIRM_MS = 4000;
 const RSVP_LEAVE_MS = 260;
 
 let state: State = {
-  view: { name: "inbox", folder: "inbox" },
+  // tela inicial escolhida em Ajustes → Geral
+  view: getPref<string>("startScreen", "inbox") === "calendar" ? { name: "calendar", mode: "week" } : { name: "inbox", folder: "inbox" },
+  lastFolder: "inbox",
   readIds: new Set(),
   rsvp: { value: null, phase: "idle" },
   hiddenCalendars: new Set(),
@@ -50,8 +65,15 @@ export function useStore<T>(selector: (s: State) => T): T {
   return useSyncExternalStore(subscribe, () => selector(state));
 }
 
+export const getStore = () => state;
+
 export function navigate(view: View) {
-  set({ view });
+  set(view.name === "inbox" ? { view, lastFolder: view.folder } : { view });
+}
+
+/** Volta para a última caixa aberta. */
+export function backToFolder() {
+  navigate({ name: "inbox", folder: state.lastFolder });
 }
 
 export function markRead(id: string) {

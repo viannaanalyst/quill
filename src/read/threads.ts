@@ -6,6 +6,9 @@ export interface Attachment {
   name: string;
   kind: AttachmentKind;
   size: string;
+  mime?: string;
+  /** anexo real no Gmail (baixado só quando a pessoa pede) */
+  remote?: { email: string; messageId: string; id: string };
 }
 
 export interface EarlierMessage {

@@ -5,21 +5,14 @@ import { InviteGate, RsvpButtons } from "../components/Rsvp";
 import {
   Archive,
   ArrowLeft,
-  Bold,
   CalendarDays,
   ChevronDown,
   ChevronUp,
   CircleCheck,
   Download,
   Ellipsis,
-  FileSpreadsheet,
-  FileText,
   Folder,
   Forward,
-  ImageIcon,
-  Italic,
-  Link,
-  List,
   Mail,
   MailOpen,
   MailPlus,
@@ -27,25 +20,37 @@ import {
   Paperclip,
   Reply,
   ReplyAll,
+  LoaderCircle,
+  Maximize2,
   Search,
   SendHorizontal,
-  Smile,
   Star,
   Tag,
   Trash2,
-  Underline,
   User,
-  X,
 } from "../components/icons";
 import { MessageAvatar } from "../components/MessageAvatar";
 import type { Account, Message } from "../inbox/types";
-import { loadBody, markReadRemote, useMailbox } from "../state/mailbox";
-import { markRead, markUnread, navigate } from "../state/store";
+import { getMailbox, listContaining, loadBody, markReadRemote, messageAction, sendMessage, useMailbox } from "../state/mailbox";
+import { backToFolder, getStore, markRead, markUnread, navigate } from "../state/store";
+import { getPref } from "../lib/storage";
+import { escapeHtml, signatureHtml, textToHtml } from "../lib/signature";
+import { api, friendlyError, type AttachmentInfo } from "../lib/api";
+import { toast } from "../components/Toasts";
 import { THREADS, type Attachment, type Thread } from "./threads";
+import { FileIcon } from "../components/FileIcon";
+import { FILE_LABEL, fileSize, fileType } from "../lib/files";
 
 /** Conversa de um e-mail: a de exemplo completa ou uma versão simples montada a partir da prévia. */
-function threadFor(m: Message, account: Account | undefined, body: string | undefined): Thread {
+function threadFor(m: Message, account: Account | undefined, body: string | undefined, atts: AttachmentInfo[] | undefined): Thread {
   if (THREADS[m.id]) return THREADS[m.id];
+  const realAtts: Attachment[] = (atts ?? []).map((a) => ({
+    name: a.name,
+    kind: (({ pdf: "pdf", sheet: "sheet", image: "image" }) as Record<string, Attachment["kind"]>)[fileType(a.name, a.mimeType)] ?? "file",
+    size: fileSize(a.size),
+    mime: a.mimeType,
+    remote: { email: m.accountEmail!, messageId: m.id, id: a.id },
+  }));
   const text = m.accountEmail ? (body ?? "Carregando o e-mail…") : m.preview;
   return {
     email: m.fromEmail ?? `${m.from.toLowerCase().replace(/[^a-z]/g, "")}@exemplo.com`,
@@ -54,24 +59,31 @@ function threadFor(m: Message, account: Account | undefined, body: string | unde
     labels: [],
     earlier: [],
     body: text.split(/\n{2,}/),
-    attachments: m.attachment && !m.accountEmail ? [{ name: m.attachment, kind: "file", size: "—" }] : [],
+    attachments: m.accountEmail ? realAtts : m.attachment ? [{ name: m.attachment, kind: "file", size: "—" }] : [],
     senderRole: account?.name ?? "",
     history: [],
   };
 }
 
-function AttachmentIcon({ kind, size }: { kind: Attachment["kind"]; size: number }) {
-  return (
-    <span className={`icon-tile ${kind === "sheet" ? "sage" : "blue"}`}>
-      {kind === "sheet" ? <FileSpreadsheet size={size} aria-hidden /> : <FileText size={size} aria-hidden />}
-    </span>
-  );
+/** Abre a prévia (Quick Look), abre no app padrão ou guarda em Downloads. */
+async function attachmentAction(a: Attachment, action: "save" | "open" | "preview") {
+  if (!a.remote) {
+    toast("Prévia de design: nada para baixar");
+    return;
+  }
+  try {
+    const path = await api.attachment(a.remote.email, a.remote.messageId, a.remote.id, a.name, action);
+    if (action === "save") toast(`${path.split(/[\\/]/).pop()} salvo em Downloads`);
+  } catch (e) {
+    toast(`Não consegui baixar: ${friendlyError(e)}`, "error");
+  }
 }
 
 export default function ReadView({ id }: { id: string }) {
-  const messages = useMailbox((s) => s.messages);
+  const messages = useMailbox((s) => listContaining(s, id));
   const accounts = useMailbox((s) => s.accounts);
   const body = useMailbox((s) => s.bodies[id]);
+  const atts = useMailbox((s) => s.attachments[id]);
   const index = messages.findIndex((x) => x.id === id);
 
   // e-mail real: busca o texto completo na primeira abertura
@@ -82,15 +94,18 @@ export default function ReadView({ id }: { id: string }) {
   if (index < 0) {
     return (
       <div className="list-empty" style={{ margin: "auto" }}>
-        Esse e-mail não está mais na caixa de entrada.{" "}
-        <button className="btn glass sm" onClick={() => navigate({ name: "inbox", folder: "inbox" })}>Voltar</button>
+        Esse e-mail não está mais nesta caixa.{" "}
+        <button className="btn glass sm" onClick={backToFolder}>Voltar</button>
       </div>
     );
   }
   const m = messages[index];
   const account = accounts.find((a) => a.id === m.account);
-  return <ReadMessage key={id} m={m} t={threadFor(m, account, body)} account={account} index={index} messages={messages} />;
+  return <ReadMessage key={id} m={m} t={threadFor(m, account, body, atts)} account={account} index={index} messages={messages} />;
 }
+
+const withPrefix = (prefix: string, subject: string) => (subject.toLowerCase().startsWith(prefix.toLowerCase()) ? subject : `${prefix} ${subject}`);
+
 
 function ReadMessage({
   m,
@@ -108,12 +123,20 @@ function ReadMessage({
   const firstName = m.from.split(" ")[0];
 
   const [openEarlier, setOpenEarlier] = useState<Set<number>>(() => new Set());
-  const [starred, setStarred] = useState(false);
+  const [starred, setStarred] = useState(!!m.starred);
   const [reply, setReply] = useState("");
   const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
   const replyRef = useRef<HTMLTextAreaElement>(null);
+  const inSpam = getStore().lastFolder === "spam";
 
-  const back = () => navigate({ name: "inbox", folder: "inbox" });
+  const back = backToFolder;
+  /** depois de arquivar/apagar: abre o próximo da lista ou volta */
+  const leave = () => {
+    const next = messages[index + 1] ?? messages[index - 1];
+    if (next && next.id !== m.id) navigate({ name: "read", id: next.id });
+    else back();
+  };
   const go = (delta: number) => {
     const next = messages[index + delta];
     if (!next) return;
@@ -129,21 +152,85 @@ function ReadMessage({
       return next;
     });
   const focusReply = () => replyRef.current?.focus();
-  const send = () => {
-    if (!reply.trim()) return;
-    setReply("");
-    setSent(true);
+  const fromName = m.accountEmail ? getMailbox().profiles[m.accountEmail]?.name : null;
+  const send = async () => {
+    if (!reply.trim() || sending) return;
+    if (!m.accountEmail || !m.fromEmail) {
+      setReply("");
+      setSent(true);
+      return;
+    }
+    setSending(true);
+    try {
+      await sendMessage(
+        {
+          from: m.accountEmail,
+          fromName,
+          to: [m.fromEmail],
+          cc: [],
+          bcc: [],
+          subject: withPrefix("Re:", m.subject),
+          html: `<div>${textToHtml(reply.trim())}</div>${signatureHtml(m.accountEmail)}`,
+        },
+        m.threadId,
+      );
+      setReply("");
+      setSent(true);
+      toast("Resposta enviada");
+    } catch (e) {
+      toast(`Não enviou: ${friendlyError(e)}`, "error");
+    } finally {
+      setSending(false);
+    }
   };
+  const quoted = () =>
+    `<br><br><div>---------- Mensagem encaminhada ----------<br>De: ${escapeHtml(m.from)} &lt;${escapeHtml(t.email)}&gt;<br>Data: ${escapeHtml(t.date)}<br>Assunto: ${escapeHtml(m.subject)}<br><br>${t.body.map(textToHtml).join("<br><br>")}</div>`;
+  const forward = () => navigate({ name: "compose", draft: { from: m.accountEmail, subject: withPrefix("Fwd:", m.subject), body: quoted() } });
+  const writeTo = () => navigate({ name: "compose", draft: { from: m.accountEmail, to: [{ name: m.from, email: t.email }] } });
+  const fullReply = () =>
+    navigate({
+      name: "compose",
+      draft: {
+        from: m.accountEmail,
+        to: [{ name: m.from, email: t.email }],
+        subject: withPrefix("Re:", m.subject),
+        body: reply.trim() ? `<div>${textToHtml(reply.trim())}</div>` : "",
+        threadId: m.threadId,
+      },
+    });
 
   const actions: { icon: typeof Archive; label: string; onClick?: () => void }[] = [
-    { icon: Archive, label: "Arquivar", onClick: back },
-    { icon: Trash2, label: "Lixeira", onClick: back },
-    { icon: OctagonAlert, label: "Spam", onClick: back },
+    {
+      icon: Archive,
+      label: "Arquivar",
+      onClick: () => {
+        void messageAction(m.id, "archive");
+        leave();
+      },
+    },
+    {
+      icon: Trash2,
+      label: "Lixeira",
+      onClick: () => {
+        if (getPref("confirmDelete", false) && !window.confirm("Mover este e-mail para a Lixeira?")) return;
+        void messageAction(m.id, "trash");
+        leave();
+      },
+    },
+    {
+      icon: OctagonAlert,
+      label: inSpam ? "Não é spam" : "Spam",
+      onClick: () => {
+        void messageAction(m.id, inSpam ? "notspam" : "spam");
+        leave();
+      },
+    },
     {
       icon: MailOpen,
       label: "Marcar como não lida",
       onClick: () => {
         markUnread(m.id);
+        void messageAction(m.id, "unread");
         back();
       },
     },
@@ -171,7 +258,7 @@ function ReadMessage({
             <ReplyAll size={17} aria-hidden />
             Responder a todos
           </button>
-          <button className="btn glass lg" onClick={() => navigate({ name: "compose" })}>
+          <button className="btn glass lg" onClick={forward}>
             <Forward size={17} aria-hidden />
             Encaminhar
           </button>
@@ -186,7 +273,10 @@ function ReadMessage({
             aria-label="Importante"
             data-tip={starred ? "Tirar de importantes" : "Importante"}
             aria-pressed={starred}
-            onClick={() => setStarred((v) => !v)}
+            onClick={() => {
+              setStarred((v) => !v);
+              void messageAction(m.id, starred ? "unstar" : "star");
+            }}
             style={starred ? { color: "#e0a43a" } : undefined}
           >
             <Star size={17} aria-hidden fill={starred ? "currentColor" : "none"} />
@@ -278,12 +368,17 @@ function ReadMessage({
                     <div className="rd-atts">
                       {t.attachments.map((a) => (
                         <div key={a.name} className="rd-att">
-                          <AttachmentIcon kind={a.kind} size={20} />
-                          <div>
-                            <div className="rd-att-name">{a.name}</div>
-                            <div className="rd-att-size">{a.kind === "sheet" ? "Planilha" : a.kind === "pdf" ? "PDF" : "Arquivo"} · {a.size}</div>
-                          </div>
-                          <button className="btn glass ic" aria-label={`Baixar ${a.name}`} data-tip="Baixar">
+                          <button className="rd-att-open" onClick={() => void attachmentAction(a, "preview")} data-tip="Ver sem baixar" aria-label={`Ver ${a.name}`}>
+                            <FileIcon name={a.name} mime={a.mime} size={34} />
+                            <span>
+                              <span className="rd-att-name">{a.name}</span>
+                              <span className="rd-att-size">
+                                {FILE_LABEL[fileType(a.name, a.mime)]}
+                                {a.size ? ` · ${a.size}` : ""}
+                              </span>
+                            </span>
+                          </button>
+                          <button className="btn glass ic" aria-label={`Baixar ${a.name}`} data-tip="Baixar" onClick={() => void attachmentAction(a, "save")}>
                             <Download size={15} aria-hidden />
                           </button>
                         </div>
@@ -299,9 +394,6 @@ function ReadMessage({
                   <span className="person-chip">
                     <MessageAvatar message={m} size={20} />
                     {m.from}
-                    <button aria-label={`Remover ${m.from}`}>
-                      <X size={12} aria-hidden />
-                    </button>
                   </span>
                   <span className="rd-reply-mode">
                     <Reply size={14} aria-hidden />
@@ -320,43 +412,21 @@ function ReadMessage({
                   aria-label={`Responder para ${m.from}`}
                 />
                 <div className="format-bar">
-                  {[
-                    { icon: Bold, label: "Negrito" },
-                    { icon: Italic, label: "Itálico" },
-                    { icon: Underline, label: "Sublinhado" },
-                    { icon: Link, label: "Link" },
-                    { icon: List, label: "Lista" },
-                  ].map((b) => (
-                    <button key={b.label} className="btn ic" aria-label={b.label} data-tip={b.label}>
-                      <b.icon size={16} aria-hidden />
-                    </button>
-                  ))}
-                  <span className="vsep" aria-hidden />
-                  <button className="btn ic" aria-label="Anexar" data-tip="Anexar">
-                    <Paperclip size={16} aria-hidden />
-                  </button>
-                  <button className="btn ic" aria-label="Imagem" data-tip="Imagem">
-                    <ImageIcon size={16} aria-hidden />
-                  </button>
-                  <button className="btn ic" aria-label="Emoji" data-tip="Emoji">
-                    <Smile size={16} aria-hidden />
+                  <button className="btn glass sm" onClick={fullReply} data-tip="Abrir no editor completo (formatação e Cc)">
+                    <Maximize2 size={14} aria-hidden />
+                    Editor completo
                   </button>
                   <span className="saved-note" role="status">
                     {sent ? (
                       <>
                         <CircleCheck size={13} aria-hidden />
-                        Resposta enviada (exemplo)
-                      </>
-                    ) : reply ? (
-                      <>
-                        <CircleCheck size={13} aria-hidden />
-                        Rascunho salvo
+                        {m.accountEmail ? "Resposta enviada" : "Resposta enviada (exemplo)"}
                       </>
                     ) : null}
                   </span>
-                  <button className="btn solid" onClick={send} disabled={!reply.trim()} style={!reply.trim() ? { opacity: 0.5 } : undefined}>
-                    <SendHorizontal size={15} aria-hidden />
-                    Enviar
+                  <button className="btn solid" onClick={() => void send()} disabled={!reply.trim() || sending} style={!reply.trim() ? { opacity: 0.5 } : undefined}>
+                    {sending ? <LoaderCircle size={15} className="spinning" aria-hidden /> : <SendHorizontal size={15} aria-hidden />}
+                    {sending ? "Enviando…" : "Enviar"}
                   </button>
                 </div>
               </div>
@@ -381,7 +451,7 @@ function ReadMessage({
                 {t.email}
               </div>
               <div className="rd-row2">
-                <button className="btn glass sm" onClick={() => navigate({ name: "compose" })}>
+                <button className="btn glass sm" onClick={writeTo}>
                   <MailPlus size={14} aria-hidden />
                   Escrever
                 </button>
@@ -411,19 +481,21 @@ function ReadMessage({
                 <ul className="rd-files">
                   {t.attachments.map((a) => (
                     <li key={a.name} className="rd-file">
-                      <AttachmentIcon kind={a.kind} size={16} />
-                      <div>
-                        <div className="rd-att-name">{a.name}</div>
-                        <div className="rd-att-size">{a.size}</div>
-                      </div>
-                      <button className="btn glass ic" aria-label={`Baixar ${a.name}`} data-tip="Baixar">
+                      <button className="rd-att-open" onClick={() => void attachmentAction(a, "open")} data-tip="Abrir" aria-label={`Abrir ${a.name}`}>
+                        <FileIcon name={a.name} mime={a.mime} size={30} />
+                        <span>
+                          <span className="rd-att-name">{a.name}</span>
+                          <span className="rd-att-size">{a.size || FILE_LABEL[fileType(a.name, a.mime)]}</span>
+                        </span>
+                      </button>
+                      <button className="btn glass ic" aria-label={`Baixar ${a.name}`} data-tip="Baixar" onClick={() => void attachmentAction(a, "save")}>
                         <Download size={14} aria-hidden />
                       </button>
                     </li>
                   ))}
                 </ul>
                 {t.attachments.length > 1 && (
-                  <button className="btn glass">
+                  <button className="btn glass" onClick={() => t.attachments.forEach((a) => void attachmentAction(a, "save"))}>
                     <Download size={15} aria-hidden />
                     Baixar todos
                   </button>

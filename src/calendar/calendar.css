@@ -36,6 +36,7 @@
   gap: 20px;
   padding: 0 26px 20px;
   min-height: 0;
+  position: relative;
 }
 .cal-card {
   flex: 1;
@@ -158,8 +159,10 @@
 /* eventos: fundo suave na cor da agenda, sem barrinha lateral */
 .cal-ev {
   position: absolute;
-  left: 4px;
-  right: 5px;
+  --l: 4px;
+  --r: 5px;
+  left: var(--l);
+  right: var(--r);
   border-radius: 10px;
   padding: 5px 8px;
   background: color-mix(in srgb, var(--c) 16%, var(--surface));
@@ -233,8 +236,8 @@
   margin-top: 3px;
 }
 .cal-oneday .cal-ev {
-  left: 8px;
-  right: 14px;
+  --l: 8px;
+  --r: 14px;
   padding: 8px 12px;
 }
 .cal-oneday .cal-ev-title {
@@ -855,4 +858,231 @@
 .cal-agenda > .btn {
   width: 100%;
   margin-top: 12px;
+}
+
+/* a coluna lateral termina na mesma altura do calendário */
+.cal-side > :last-child {
+  flex: 1 0 auto;
+}
+.cal-views .slider-indicator {
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.cal-views.slider-group .pill[aria-pressed="true"] {
+  background: transparent;
+  box-shadow: none;
+}
+
+/* ---------- agenda de verdade: estados e peças novas ---------- */
+.cal-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 12px;
+  font-size: 12.5px;
+  color: var(--ink3);
+}
+/* eventos no mesmo horário ficam lado a lado */
+.cal-ev.split {
+  right: auto;
+  left: calc(var(--l) + (100% - var(--l) - var(--r)) * var(--col) / var(--cols));
+  width: calc((100% - var(--l) - var(--r)) / var(--cols) - 2px);
+}
+.cal-ev.declined,
+.cal-chip.declined,
+.cal-agenda li.declined {
+  opacity: 0.45;
+}
+.cal-ev.declined .cal-ev-title,
+.cal-chip.declined .cal-chip-text,
+.cal-agenda li.declined .cal-agenda-name {
+  text-decoration: line-through;
+}
+/* bolinhas das contas onde o mesmo evento aparece */
+.cal-ev-accts {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 2px;
+}
+.cal-ev-accts i,
+.cal-copies-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--surface);
+}
+.cal-ev:has(.cal-ev-accts) .cal-ev-title {
+  padding-right: 18px;
+}
+.cal-pop-cals,
+.cal-pop-text,
+.cal-check-name,
+.cal-person-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cal-pop-link {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: inherit;
+  text-decoration: none;
+}
+.cal-pop-link:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+.cal-copies {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 18px;
+  font-size: 12px;
+  color: var(--ink3);
+}
+.cal-copies-dots {
+  display: flex;
+  gap: 3px;
+  flex: none;
+}
+.cal-mine.no svg {
+  color: var(--ink3);
+}
+.cal-dayline-head b.not-today {
+  background: var(--surface2);
+  color: var(--ink);
+}
+.cal-dayallday {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 18px;
+  border-bottom: 1px solid var(--line2);
+  flex: none;
+}
+.cal-dayallday .cal-chip {
+  width: auto;
+  max-width: 100%;
+  margin-top: 0;
+}
+.cal-detail-empty {
+  display: grid;
+  place-items: center;
+  font-size: 13.5px;
+  color: var(--ink3);
+}
+.cal-list-empty {
+  font-size: 13px;
+  color: var(--ink3);
+  padding: 4px 0;
+}
+.cal-mini-grid > button.is-selected::before {
+  content: "";
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--ink2);
+}
+.cal-mini-grid > button {
+  border-radius: 8px;
+}
+.cal-mini-grid > button.in-week {
+  border-radius: 0;
+}
+.cal-mini-grid > button.week-start {
+  border-radius: 999px 0 0 999px;
+}
+.cal-mini-grid > button.week-end {
+  border-radius: 0 999px 999px 0;
+}
+
+/* criação rápida: campos de data, hora e local */
+.cal a.btn {
+  text-decoration: none;
+}
+.cal-pop-new {
+  left: 34px;
+  top: 8px;
+}
+.cal-pop-field {
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--surface2);
+  border: 0;
+  border-radius: 8px;
+  height: 28px;
+  padding: 0 8px;
+  outline: 0;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+  color-scheme: light dark;
+}
+.cal-pop-field:focus-visible {
+  box-shadow: 0 0 0 2px var(--blue);
+}
+.cal-pop-field[aria-invalid="true"] {
+  box-shadow: 0 0 0 1.5px var(--danger, #c2453d);
+}
+.cal-pop-place {
+  flex: 1;
+  background: transparent;
+  padding: 0;
+}
+.cal-pop-place::placeholder {
+  color: var(--ink3);
+}
+.cal-pop-place:focus-visible {
+  box-shadow: none;
+  border-bottom: 1.5px solid var(--blue);
+  border-radius: 0;
+}
+.cal-pop-times {
+  margin-top: 8px;
+  padding-left: 24px;
+}
+.cal-pop-err {
+  font-size: 12px;
+  color: var(--danger, #c2453d);
+}
+.cal-pop-allday {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink3);
+}
+
+/* sem conta ou erro: aviso no meio do calendário */
+.cal-notice {
+  position: absolute;
+  inset: 0 336px 20px 26px;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  z-index: 20;
+}
+.cal-notice-box {
+  pointer-events: auto;
+  max-width: 340px;
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--ink2);
+  text-wrap: pretty;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.12);
+}
+.cal-notice-box > svg {
+  color: var(--ink3);
 }

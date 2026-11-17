@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
-import { Bell, Search } from "./icons";
+import { Search } from "./icons";
 import { AccountMenu } from "./AccountMenu";
+import { Notifications } from "./Notifications";
+import { openPalette } from "./paletteState";
 
 /** Cabeçalho das telas: título • complemento, busca, ações e o avatar no canto direito. */
 export function TopBar({
@@ -39,13 +41,20 @@ export function TopBar({
           value={search ?? ""}
           onChange={(e) => onSearch?.(e.target.value)}
           readOnly={!onSearch}
+          onFocus={(e) => {
+            // sem busca própria nesta tela: a caixa abre a busca geral (⌘K)
+            if (!onSearch) {
+              e.currentTarget.blur();
+              openPalette();
+            }
+          }}
         />
-        <span className="kbd" aria-hidden>⌘ K</span>
+        <button type="button" className="kbd search-kbd" onClick={() => openPalette(search)} aria-label="Abrir busca geral (⌘K)">
+          ⌘ K
+        </button>
       </label>
       {actions}
-      <button className="btn glass ic" aria-label="Notificações" data-tip="Notificações">
-        <Bell size={17} aria-hidden />
-      </button>
+      <Notifications />
       <AccountMenu />
     </header>
   );

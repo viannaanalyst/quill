@@ -358,3 +358,38 @@
   color: var(--ink3);
   margin-top: 10px;
 }
+
+/* anexo clicável: ver sem baixar (Quick Look) ou abrir */
+.rd-att-open {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  border-radius: 12px;
+  padding: 2px 6px 2px 2px;
+  transition: background 0.14s ease, transform 0.14s ease;
+}
+.rd-att-open:hover {
+  background: var(--surface2);
+}
+.rd-att-open:active {
+  transform: scale(0.99);
+}
+.rd-att-open > span:last-child {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.rd-att-open .rd-att-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rd-att {
+  transition: box-shadow 0.15s ease;
+}
+.rd-att:hover {
+  box-shadow: 0 4px 14px -6px rgba(0, 0, 0, 0.16);
+}

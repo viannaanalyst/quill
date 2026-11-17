@@ -12,6 +12,7 @@ export interface MessageSummaryDto {
   id: string;
   threadId: string;
   from: { name: string; email: string };
+  to?: { name: string; email: string } | null;
   initials: string;
   subject: string;
   preview: string;
@@ -21,6 +22,35 @@ export interface MessageSummaryDto {
   starred: boolean;
   hasAttachment: boolean;
 }
+
+/** E-mail a enviar (quill-core::gmail::OutgoingMessage). */
+export interface OutgoingMessage {
+  from: string;
+  fromName?: string | null;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  html: string;
+  attachments?: OutAttachment[];
+}
+
+/** Anexo recebido (quill-core::gmail::AttachmentInfo). */
+export interface AttachmentInfo {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+}
+
+/** Arquivo anexado para enviar (conteúdo em base64 comum). */
+export interface OutAttachment {
+  name: string;
+  mimeType: string;
+  data: string;
+}
+
+export type MessageAction = "archive" | "unarchive" | "spam" | "notspam" | "star" | "unstar" | "unread" | "read" | "trash";
 
 /** Erros conhecidos que a parte nativa devolve como texto. */
 export const NEEDS_LOGIN = "needs_login";
@@ -41,8 +71,19 @@ export const api = {
   accountsList: () => call<AccountInfo[]>("accounts_list"),
   accountRemove: (email: string) => call<void>("account_remove", { email }),
   inbox: (email: string) => call<MessageSummaryDto[]>("inbox_fetch", { email, tzOffsetMin: tzOffsetMin() }),
-  body: (email: string, id: string) => call<string>("message_body", { email, id }),
+  folder: (email: string, folder: string) => call<MessageSummaryDto[]>("folder_fetch", { email, folder, tzOffsetMin: tzOffsetMin() }),
+  /** busca no Gmail (mesma sintaxe da busca do Gmail), em todas as caixas */
+  search: (email: string, q: string) => call<MessageSummaryDto[]>("folder_fetch", { email, folder: `search:${q}`, tzOffsetMin: tzOffsetMin() }),
+  counts: (email: string) => call<Record<string, number>>("folder_counts", { email }),
+  profile: (email: string) => call<{ name?: string | null; picture?: string | null }>("account_profile", { email }),
+  body: (email: string, id: string) => call<{ text: string; attachments: AttachmentInfo[] }>("message_body", { email, id }),
+  /** baixa um anexo: "save" (Downloads), "open" (app padrão) ou "preview" (Quick Look) */
+  attachment: (email: string, messageId: string, attachmentId: string, name: string, action: "save" | "open" | "preview") =>
+    call<string>("attachment_get", { email, messageId, attachmentId, name, action }),
+  revealDownload: (path: string) => call<void>("reveal_download", { path }),
   markRead: (email: string, id: string) => call<void>("message_mark_read", { email, id }),
+  send: (message: OutgoingMessage, threadId?: string) => call<string>("message_send", { message, threadId: threadId ?? null }),
+  action: (email: string, id: string, action: MessageAction) => call<void>("message_action", { email, id, action }),
 };
 
 /** Mensagem amigável para um erro vindo da parte nativa. */

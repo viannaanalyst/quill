@@ -4,6 +4,8 @@
 pub mod oauth;
 pub mod gmail;
 pub mod accounts;
+pub mod calendar;
+pub mod files;
 
 #[cfg(feature = "net")]
 pub mod google;

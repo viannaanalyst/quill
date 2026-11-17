@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useState } from "react";
 import "./shell.css";
 import iconLight from "../assets/brand/app-icon-light-128.png";
 import iconDark from "../assets/brand/app-icon-dark-128.png";
@@ -7,12 +7,41 @@ import { Archive, CalendarDays, FileText, Inbox as InboxIcon, Send, Settings as 
 import { isTauri } from "../lib/platform";
 import { navigate, useStore, type View } from "../state/store";
 import Inbox from "../inbox/Inbox";
+import { Toasts } from "../components/Toasts";
+import { usePalette } from "../components/paletteState";
+import { useShortcuts } from "./shortcuts";
 
 // Telas abertas com menos frequência carregam só quando usadas.
 const ReadView = lazy(() => import("../read/ReadView"));
 const Compose = lazy(() => import("../compose/Compose"));
 const Calendar = lazy(() => import("../calendar/Calendar"));
 const Settings = lazy(() => import("../settings/Settings"));
+const CommandPalette = lazy(() => import("../components/CommandPalette"));
+
+/** A busca geral só é baixada na primeira vez que abre. */
+function PaletteHost() {
+  const { open } = usePalette();
+  const [used, setUsed] = useState(open);
+  if (open && !used) setUsed(true);
+  return used ? (
+    <Suspense fallback={null}>
+      <CommandPalette />
+    </Suspense>
+  ) : null;
+}
+
+/** Chave da tela para refazer a animação de entrada só quando a tela muda de verdade. */
+const draftKeys = new WeakMap<object, number>();
+let draftSeq = 0;
+function screenKey(v: View) {
+  if (v.name === "compose" && v.draft) {
+    if (!draftKeys.has(v.draft)) draftKeys.set(v.draft, ++draftSeq);
+    return `compose-${draftKeys.get(v.draft)}`;
+  }
+  if (v.name === "calendar") return "calendar";
+  if (v.name === "read") return `read-${v.id}`;
+  return v.name;
+}
 
 type NavItem = { icon: typeof InboxIcon; label: string; to: View; active: (v: View) => boolean; badge?: boolean };
 
@@ -56,7 +85,7 @@ function Screen({ view, onRestartOnboarding }: { view: View; onRestartOnboarding
     case "read":
       return <ReadView id={view.id} />;
     case "compose":
-      return <Compose />;
+      return <Compose draft={view.draft} />;
     case "calendar":
       return <Calendar mode={view.mode} />;
     case "settings":
@@ -67,6 +96,7 @@ function Screen({ view, onRestartOnboarding }: { view: View; onRestartOnboarding
 /** Estrutura da janela: barra de ícones por fora + painel com a linha fina. */
 export default function AppShell({ onRestartOnboarding }: { onRestartOnboarding: () => void }) {
   const view = useStore((s) => s.view);
+  useShortcuts();
   const calendarItem: NavItem = { icon: CalendarDays, label: "Calendário", to: { name: "calendar", mode: "week" }, active: (v) => v.name === "calendar" };
   const settingsItem: NavItem = { icon: SettingsIcon, label: "Ajustes", to: { name: "settings" }, active: (v) => v.name === "settings" };
 
@@ -92,9 +122,13 @@ export default function AppShell({ onRestartOnboarding }: { onRestartOnboarding:
 
       <main className="panel">
         <Suspense fallback={null}>
-          <Screen view={view} onRestartOnboarding={onRestartOnboarding} />
+          <div className="screen-enter screen-host" key={screenKey(view)}>
+            <Screen view={view} onRestartOnboarding={onRestartOnboarding} />
+          </div>
         </Suspense>
       </main>
+      <PaletteHost />
+      <Toasts />
     </div>
   );
 }

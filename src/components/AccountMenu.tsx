@@ -1,50 +1,38 @@
-import { useEffect, useRef, useState } from "react";
-import { Logo } from "./Logo";
-import { LogOut, Plus, Settings } from "./icons";
+import * as Popover from "@radix-ui/react-popover";
+import { useRef, useState } from "react";
+import { AccountPhoto, AVATAR_PREF, resizePhoto } from "./MyAvatar";
+import { SliderGroup } from "./SliderGroup";
+import { toast } from "./Toasts";
+import { Camera, LogOut, Monitor, Moon, Plus, Settings, Sun, Trash2 } from "./icons";
 import { applyTheme, isTauri, type ThemePref } from "../lib/platform";
-import { getPref, setPref } from "../lib/storage";
+import { setPref } from "../lib/storage";
+import { usePref } from "../lib/usePref";
 import { friendlyError } from "../lib/api";
 import { signInWithGoogle, signOutAll, useMailbox } from "../state/mailbox";
 import { navigate } from "../state/store";
 
-const THEMES: { id: ThemePref; label: string }[] = [
-  { id: "system", label: "Sistema" },
-  { id: "light", label: "Claro" },
-  { id: "dark", label: "Escuro" },
+const THEMES: { id: ThemePref; label: string; icon: typeof Sun }[] = [
+  { id: "system", label: "Sistema", icon: Monitor },
+  { id: "light", label: "Claro", icon: Sun },
+  { id: "dark", label: "Escuro", icon: Moon },
 ];
 
-function initialsOf(email: string | undefined) {
-  if (!email) return isTauri ? "?" : "GV";
-  const local = email.split("@")[0].replace(/[^a-zA-Z]/g, "");
-  return (local.slice(0, 2) || "?").toUpperCase();
-}
-
-/** Avatar do cabeçalho: abre o menu com as contas, a aparência e o botão de sair. */
+/** Avatar do cabeçalho: abre o menu com a foto, as contas, a aparência e o botão de sair. */
 export function AccountMenu() {
   const [open, setOpen] = useState(false);
-  const [theme, setTheme] = useState<ThemePref>(() => getPref<ThemePref>("theme", "system"));
+  const byPointer = useRef(false);
+  const [theme, setTheme] = usePref<ThemePref>("theme", "system");
+  const [photo, setPhoto] = usePref<string | null>(AVATAR_PREF, null);
   const [confirmExit, setConfirmExit] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const connected = useMailbox((s) => s.connected);
-  const wrapRef = useRef<HTMLDivElement>(null);
+  const profiles = useMailbox((s) => s.profiles);
+  const fileRef = useRef<HTMLInputElement>(null);
   const first = connected[0]?.email;
-
-  // fecha ao clicar fora ou com Esc
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => !wrapRef.current?.contains(e.target as Node) && setOpen(false);
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    window.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  const name = first ? profiles[first]?.name : null;
 
   const chooseTheme = (t: ThemePref) => {
     setTheme(t);
-    setPref("theme", t);
     applyTheme(t);
   };
 
@@ -52,7 +40,18 @@ export function AccountMenu() {
     setStatus("Termine o login na janela do navegador que abriu…");
     try {
       const a = await signInWithGoogle();
-      setStatus(`${a.email} conectada.`);
+      setStatus(null);
+      toast(`${a.email} conectada`);
+    } catch (e) {
+      setStatus(friendlyError(e));
+    }
+  };
+
+  const pickPhoto = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      setPhoto(await resizePhoto(file));
+      toast("Foto atualizada");
     } catch (e) {
       setStatus(friendlyError(e));
     }
@@ -65,38 +64,77 @@ export function AccountMenu() {
   };
 
   return (
-    <div className="acm" ref={wrapRef}>
-      <button
-        className="me"
-        aria-label="Sua conta"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        onClick={() => {
-          setOpen((v) => !v);
+    <Popover.Root
+      open={open}
+      onOpenChange={(v) => {
+        setOpen(v);
+        if (v) {
           setConfirmExit(false);
           setStatus(null);
-        }}
-      >
-        {initialsOf(first)}
-      </button>
-      {open && (
-        <div className="acm-pop" role="dialog" aria-label="Sua conta">
+        }
+      }}
+    >
+      <Popover.Trigger asChild>
+        <button className="me acm-me" onPointerDown={() => (byPointer.current = true)} aria-label="Sua conta" data-tip="Sua conta">
+          <AccountPhoto email={first} main size={34} />
+        </button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content className="qp-content acm-pop" onOpenAutoFocus={(e) => {
+            // aberto com o mouse: não acende o foco no primeiro botão; com o teclado, foca normalmente
+            if (byPointer.current) e.preventDefault();
+            byPointer.current = false;
+          }} align="end" sideOffset={10} collisionPadding={12} aria-label="Sua conta">
+          <div className="acm-head">
+            <button className="acm-photo" onClick={() => fileRef.current?.click()} aria-label="Escolher foto" data-tip="Escolher foto">
+              <AccountPhoto email={first} main size={52} />
+              <span className="acm-photo-cam" aria-hidden>
+                <Camera size={13} />
+              </span>
+            </button>
+            <div className="acm-who">
+              <strong>{name || (first ? first.split("@")[0] : "Quill")}</strong>
+              <span>{first ?? (isTauri ? "Nenhuma conta conectada" : "Prévia de design")}</span>
+              <div className="acm-photo-actions">
+                <button onClick={() => fileRef.current?.click()}>Escolher foto</button>
+                {photo && (
+                  <button
+                    onClick={() => {
+                      setPhoto(null);
+                      toast("Foto removida");
+                    }}
+                  >
+                    <Trash2 size={12} aria-hidden />
+                    Remover
+                  </button>
+                )}
+              </div>
+            </div>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/heic"
+              hidden
+              onChange={(e) => {
+                void pickPhoto(e.target.files?.[0]);
+                e.target.value = "";
+              }}
+            />
+          </div>
+
           <div className="acm-section">
             <div className="section-label">Contas</div>
-            {connected.length === 0 ? (
-              <p className="acm-empty">{isTauri ? "Nenhuma conta conectada." : "Prévia de design (sem contas)."}</p>
-            ) : (
+            {connected.length > 0 && (
               <ul className="acm-accounts">
                 {connected.map((a) => (
                   <li key={a.email}>
-                    <span className="acm-logo">
-                      <Logo name={a.email.includes("inchurch") ? "inchurch" : "gmail"} size={15} />
-                    </span>
+                    <AccountPhoto email={a.email} size={26} />
                     <span className="acm-mail">{a.email}</span>
                   </li>
                 ))}
               </ul>
             )}
+            {connected.length === 0 && !isTauri && <p className="acm-empty">Prévia de design (sem contas).</p>}
             {isTauri && (
               <button className="acm-item" onClick={() => void addGoogle()}>
                 <Plus size={15} aria-hidden />
@@ -112,13 +150,14 @@ export function AccountMenu() {
 
           <div className="acm-section">
             <div className="section-label">Aparência</div>
-            <div className="segmented acm-theme" role="radiogroup" aria-label="Aparência">
+            <SliderGroup activeKey={theme} className="segmented acm-theme" role="radiogroup" label="Aparência">
               {THEMES.map((t) => (
-                <button key={t.id} role="radio" aria-checked={theme === t.id} aria-pressed={theme === t.id} onClick={() => chooseTheme(t.id)}>
+                <button key={t.id} role="radio" aria-checked={theme === t.id} onClick={() => chooseTheme(t.id)}>
+                  <t.icon size={14} aria-hidden />
                   {t.label}
                 </button>
               ))}
-            </div>
+            </SliderGroup>
           </div>
 
           <div className="acm-section">
@@ -131,12 +170,17 @@ export function AccountMenu() {
             >
               <Settings size={15} aria-hidden />
               Ajustes
+              <span className="kbd acm-kbd" aria-hidden>
+                ⌘ ,
+              </span>
             </button>
             {confirmExit ? (
               <div className="acm-confirm" role="alert">
-                <span>Sair desconecta as contas deste Mac. Nada é apagado no Google.</span>
+                <span>Sair desconecta as contas deste computador. Nada é apagado no Google.</span>
                 <div>
-                  <button className="btn glass sm" onClick={() => setConfirmExit(false)}>Cancelar</button>
+                  <button className="btn glass sm" onClick={() => setConfirmExit(false)}>
+                    Cancelar
+                  </button>
                   <button className="btn solid sm danger-solid" onClick={() => void exit()}>
                     <LogOut size={14} aria-hidden />
                     Sair
@@ -150,8 +194,8 @@ export function AccountMenu() {
               </button>
             )}
           </div>
-        </div>
-      )}
-    </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }

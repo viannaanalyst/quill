@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 import "./settings.css";
 import { TopBar } from "../components/TopBar";
 import { Logo } from "../components/Logo";
@@ -27,8 +27,22 @@ import type { AccountId } from "../inbox/types";
 import { SENDER_EMAILS } from "../compose/contacts";
 import { isTauri } from "../lib/platform";
 import { friendlyError } from "../lib/api";
-import { disconnect, signInWithGoogle, useMailbox } from "../state/mailbox";
+import { accountName, disconnect, signInWithGoogle, useMailbox } from "../state/mailbox";
 import { ConnectGoogleButton } from "../components/ConnectGoogle";
+import { Select } from "../components/Select";
+import { SliderGroup } from "../components/SliderGroup";
+import { ConfirmDialog, Toggle } from "./parts";
+import { usePref } from "./usePref";
+import {
+  AppearanceSection,
+  GeneralSection,
+  LabelsSection,
+  NotificationsSection,
+  PrivacySection,
+  ShortcutsSection,
+  SignaturesSection,
+  type SigAccount,
+} from "./sections";
 
 type Vars = CSSProperties & Record<`--${string}`, string>;
 
@@ -81,8 +95,106 @@ const INITIAL: Record<AccountId, AccountPrefs> = {
   icloud: { mail: true, calendar: true, nickname: "Família", color: "#A592B8", unified: true, notify: true, autoDownload: false, fetch: "Na hora", signature: "Pessoal" },
 };
 
-function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
-  return <button className="toggle" role="switch" aria-checked={on} aria-label={label} onClick={() => onChange(!on)} />;
+const REAL_COLORS = ["#5A8CB7", "#7C9A74", "#C8925A", "#7A8CA8", "#A592B8"];
+
+const FETCH_OPTIONS = ["Na hora", "A cada 15 min", "A cada hora", "Só quando eu pedir"].map((v) => ({ value: v, label: v }));
+const SIGNATURE_OPTIONS = ["inchurch", "Pessoal", "Nenhuma"].map((v) => ({ value: v, label: v }));
+
+const logoOf = (email: string) => (email.includes("inchurch") ? ("inchurch" as const) : ("gmail" as const));
+
+/** Linha de uma conta de verdade: apelido e cor salvos por e-mail. */
+function RealAccountRow({ email, index, selected, onSelect, onDisconnect }: { email: string; index: number; selected: boolean; onSelect: () => void; onDisconnect: () => void }) {
+  const [nickname] = usePref(`account:${email}:nickname`, accountName(email));
+  const [color] = usePref(`account:${email}:color`, REAL_COLORS[index % REAL_COLORS.length]);
+  return (
+    <li className="st-account" data-selected={selected}>
+      <button className="st-hit" aria-label={`Ver detalhes de ${nickname}`} aria-current={selected ? "true" : undefined} onClick={onSelect} />
+      <span className="st-logo">
+        <Logo name={logoOf(email)} size={21} />
+        <i style={{ background: color }} />
+      </span>
+      <div className="st-account-body">
+        <div className="st-account-name">
+          {nickname}
+          <span className="chip">{email.endsWith("@gmail.com") ? "Gmail" : "Google Workspace"}</span>
+        </div>
+        <div className="st-account-mail">{email}</div>
+        <div className="st-status">
+          <CircleCheck size={13} aria-hidden />
+          Conectada · Gmail API
+        </div>
+      </div>
+      <button className="btn glass sm danger" style={{ position: "relative", zIndex: 2 }} onClick={onDisconnect}>
+        <LogOut size={14} aria-hidden />
+        Desconectar
+      </button>
+      <ChevronRight size={17} className="st-chev" aria-hidden />
+    </li>
+  );
+}
+
+/** Detalhes da conta de verdade selecionada (cartão do lado direito). */
+function RealDetails({ email, index, onDisconnect }: { email: string; index: number; onDisconnect: () => void }) {
+  const [nickname, setNickname] = usePref(`account:${email}:nickname`, accountName(email));
+  const [color, setColor] = usePref(`account:${email}:color`, REAL_COLORS[index % REAL_COLORS.length]);
+  const [sig, setSig] = usePref(`account:${email}:signature`, "account");
+  return (
+    <aside className="st-side screen-enter" aria-label={`Detalhes de ${nickname}`}>
+      <section className="card st-card">
+        <div className="st-detail-head">
+          <span className="st-logo">
+            <Logo name={logoOf(email)} size={22} />
+            <i style={{ background: color }} />
+          </span>
+          <div>
+            <div className="st-detail-name">{nickname}</div>
+            <div className="st-detail-mail">{email}</div>
+          </div>
+        </div>
+        <div className="st-field">
+          <label className="st-field-label" htmlFor="st-nick">Apelido no Quill</label>
+          <input id="st-nick" className="st-input" value={nickname} onChange={(e) => setNickname(e.target.value)} />
+        </div>
+        <div className="st-field">
+          <span className="st-field-label" id="st-color">Cor da conta</span>
+          <div className="st-swatches" role="radiogroup" aria-labelledby="st-color">
+            {SWATCHES.map((c) => (
+              <button key={c} className="st-swatch" role="radio" aria-checked={color === c} aria-label={`Cor ${c}`} style={{ "--c": c } as Vars} onClick={() => setColor(c)} />
+            ))}
+          </div>
+        </div>
+        <div className="st-field">
+          <span className="st-field-label" id="st-sig-label">Assinatura padrão</span>
+          <Select
+            label="Assinatura padrão"
+            value={sig}
+            onChange={setSig}
+            className="st-select-full"
+            options={[
+              { value: "account", label: "A assinatura desta conta" },
+              { value: "none", label: "Nenhuma" },
+            ]}
+          />
+        </div>
+      </section>
+      <section className="card st-card">
+        <div className="section-label">
+          <RefreshCw size={14} aria-hidden />
+          Conta
+        </div>
+        <div className="st-cal">
+          <Cloud size={15} aria-hidden />
+          <span>Entrou pela página oficial do Google. O Quill nunca vê sua senha.</span>
+        </div>
+        <div className="st-actions">
+          <button className="btn glass sm danger" onClick={onDisconnect}>
+            <LogOut size={14} aria-hidden />
+            Desconectar
+          </button>
+        </div>
+      </section>
+    </aside>
+  );
 }
 
 export default function Settings({ onRestartOnboarding }: { onRestartOnboarding: () => void }) {
@@ -95,6 +207,14 @@ export default function Settings({ onRestartOnboarding }: { onRestartOnboarding:
   const live = isTauri && connected.length > 0;
   const [addStatus, setAddStatus] = useState<string | null>(null);
   const [confirmEmail, setConfirmEmail] = useState<string | null>(null);
+  const [selectedEmail, setSelectedEmail] = useState<string | null>(null);
+  const selEmail = connected.some((c) => c.email === selectedEmail) ? selectedEmail : (connected[0]?.email ?? null);
+  const selIndex = Math.max(0, connected.findIndex((c) => c.email === selEmail));
+
+  const sigAccounts: SigAccount[] = isTauri
+    ? connected.map((c) => ({ id: c.email, name: accountName(c.email), email: c.email, logo: logoOf(c.email) }))
+    : ACCOUNTS.map((a) => ({ id: a.id, name: a.name, email: SENDER_EMAILS[a.id], logo: a.logo }));
+  const sectionLabel = SECTIONS.find((x) => x.id === section)!.label;
 
   /** Adicionar conta: Google abre o login de verdade (no app); os outros serviços ainda não. */
   const addAccount = async (provider: string) => {
@@ -118,15 +238,17 @@ export default function Settings({ onRestartOnboarding }: { onRestartOnboarding:
 
   return (
     <>
-      <TopBar title="Ajustes" sub="Contas" searchPlaceholder="Buscar nos ajustes" />
+      <TopBar title="Ajustes" sub={sectionLabel} searchPlaceholder="Buscar nos ajustes" />
       <div className="st">
         <nav className="card st-nav" aria-label="Seções dos ajustes">
-          {SECTIONS.map((s) => (
-            <button key={s.id} className="st-nav-item" aria-current={section === s.id ? "page" : undefined} onClick={() => setSection(s.id)}>
-              <s.icon size={17} aria-hidden />
-              {s.label}
-            </button>
-          ))}
+          <SliderGroup className="st-nav-group" activeKey={section}>
+            {SECTIONS.map((s) => (
+              <button key={s.id} className="st-nav-item" aria-current={section === s.id ? "page" : undefined} onClick={() => setSection(s.id)}>
+                <s.icon size={17} aria-hidden />
+                {s.label}
+              </button>
+            ))}
+          </SliderGroup>
           <div className="st-nav-foot">
             Quill 0.1 · uso pessoal
             <br />
@@ -141,15 +263,18 @@ export default function Settings({ onRestartOnboarding }: { onRestartOnboarding:
 
         {section !== "accounts" ? (
           <div className="st-main">
-            <section className="card st-soon">
-              <h2>{SECTIONS.find((s) => s.id === section)!.label}</h2>
-              <p>Essa parte dos ajustes vem nas próximas etapas.</p>
-            </section>
+            {section === "general" && <GeneralSection key={section} />}
+            {section === "appearance" && <AppearanceSection key={section} />}
+            {section === "notifications" && <NotificationsSection key={section} />}
+            {section === "signatures" && <SignaturesSection key={section} accounts={sigAccounts} />}
+            {section === "labels" && <LabelsSection key={section} />}
+            {section === "shortcuts" && <ShortcutsSection key={section} />}
+            {section === "privacy" && <PrivacySection key={section} />}
           </div>
         ) : (
           <>
             <div className="st-main">
-              <section className="card st-list" aria-label="Suas contas">
+              <section className="card st-list screen-enter" aria-label="Suas contas">
                 <div className="st-list-head">
                   <div>
                     <h2 className="st-title">Suas contas</h2>
@@ -165,27 +290,7 @@ export default function Settings({ onRestartOnboarding }: { onRestartOnboarding:
                 {live ? (
                   <ul className="st-accounts">
                     {connected.map((acc, i) => (
-                      <li key={acc.email} className="st-account">
-                        <span className="st-logo">
-                          <Logo name={acc.email.includes("inchurch") ? "inchurch" : "gmail"} size={21} />
-                          <i style={{ background: ["#5A8CB7", "#7C9A74", "#C8925A", "#7A8CA8", "#A592B8"][i % 5] }} />
-                        </span>
-                        <div className="st-account-body">
-                          <div className="st-account-name">
-                            {acc.email.endsWith("@gmail.com") ? acc.email.split("@")[0] : acc.email.split("@")[1].split(".")[0]}
-                            <span className="chip">{acc.email.endsWith("@gmail.com") ? "Gmail" : "Google Workspace"}</span>
-                          </div>
-                          <div className="st-account-mail">{acc.email}</div>
-                          <div className="st-status">
-                            <CircleCheck size={13} aria-hidden />
-                            Conectada · Gmail API
-                          </div>
-                        </div>
-                        <button className="btn glass sm danger" style={{ position: "relative", zIndex: 2 }} onClick={() => setConfirmEmail(acc.email)}>
-                          <LogOut size={14} aria-hidden />
-                          Desconectar
-                        </button>
-                      </li>
+                      <RealAccountRow key={acc.email} email={acc.email} index={i} selected={acc.email === selEmail} onSelect={() => setSelectedEmail(acc.email)} onDisconnect={() => setConfirmEmail(acc.email)} />
                     ))}
                   </ul>
                 ) : isTauri ? (
@@ -263,8 +368,9 @@ export default function Settings({ onRestartOnboarding }: { onRestartOnboarding:
               </section>
             </div>
 
+            {isTauri && live && selEmail && <RealDetails key={selEmail} email={selEmail} index={selIndex} onDisconnect={() => setConfirmEmail(selEmail)} />}
             {!isTauri && (
-            <aside className="st-side" aria-label={`Detalhes de ${sel.nickname}`}>
+            <aside className="st-side screen-enter" key={selected} aria-label={`Detalhes de ${sel.nickname}`}>
               <section className="card st-card">
                 <div className="st-detail-head">
                   <span className="st-logo">
@@ -303,12 +409,8 @@ export default function Settings({ onRestartOnboarding }: { onRestartOnboarding:
                   </div>
                 </div>
                 <div className="st-field">
-                  <label className="st-field-label" htmlFor="st-sig">Assinatura padrão</label>
-                  <select id="st-sig" className="st-input" value={sel.signature} onChange={(e) => update(selected, { signature: e.target.value })}>
-                    <option>inchurch</option>
-                    <option>Pessoal</option>
-                    <option>Nenhuma</option>
-                  </select>
+                  <span className="st-field-label">Assinatura padrão</span>
+                  <Select label="Assinatura padrão" className="st-select-full" value={sel.signature} onChange={(v) => update(selected, { signature: v })} options={SIGNATURE_OPTIONS} />
                 </div>
               </section>
 
@@ -334,13 +436,8 @@ export default function Settings({ onRestartOnboarding }: { onRestartOnboarding:
                     <Toggle on={sel.autoDownload} onChange={(v) => update(selected, { autoDownload: v })} label="Baixar anexos sozinho" />
                   </div>
                   <div className="st-row">
-                    <label htmlFor="st-fetch">Buscar novos e-mails</label>
-                    <select id="st-fetch" className="st-input" value={sel.fetch} onChange={(e) => update(selected, { fetch: e.target.value })}>
-                      <option>Na hora</option>
-                      <option>A cada 15 min</option>
-                      <option>A cada hora</option>
-                      <option>Só quando eu pedir</option>
-                    </select>
+                    <span>Buscar novos e-mails</span>
+                    <Select label="Buscar novos e-mails" size="sm" value={sel.fetch} onChange={(v) => update(selected, { fetch: v })} options={FETCH_OPTIONS} />
                   </div>
                 </div>
                 <div className="st-storage">
@@ -379,8 +476,11 @@ export default function Settings({ onRestartOnboarding }: { onRestartOnboarding:
         )}
       </div>
       {confirmEmail && (
-        <ConfirmDisconnect
-          name={confirmEmail}
+        <ConfirmDialog
+          title={`Desconectar ${confirmEmail}?`}
+          text="Os e-mails dessa conta saem do Quill neste Mac. Nada é apagado no servidor, e você pode conectar de novo quando quiser."
+          confirmLabel="Desconectar"
+          icon={<LogOut size={15} aria-hidden />}
           onCancel={() => setConfirmEmail(null)}
           onConfirm={() => {
             const email = confirmEmail;
@@ -389,35 +489,16 @@ export default function Settings({ onRestartOnboarding }: { onRestartOnboarding:
           }}
         />
       )}
-      {confirming && <ConfirmDisconnect name={sel.nickname} onCancel={() => setConfirming(false)} onConfirm={() => setConfirming(false)} />}
+      {confirming && (
+        <ConfirmDialog
+          title={`Desconectar ${sel.nickname}?`}
+          text="Os e-mails dessa conta saem do Quill neste Mac. Nada é apagado no servidor, e você pode conectar de novo quando quiser."
+          confirmLabel="Desconectar"
+          icon={<LogOut size={15} aria-hidden />}
+          onCancel={() => setConfirming(false)}
+          onConfirm={() => setConfirming(false)}
+        />
+      )}
     </>
-  );
-}
-
-/** Confirmação antes de uma ação difícil de desfazer (Esc ou Cancelar fecham). */
-function ConfirmDisconnect({ name, onCancel, onConfirm }: { name: string; onCancel: () => void; onConfirm: () => void }) {
-  const cancelRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    cancelRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCancel();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onCancel]);
-  return (
-    <div className="st-overlay" onClick={onCancel}>
-      <div className="st-dialog" role="alertdialog" aria-modal="true" aria-labelledby="st-dlg-title" aria-describedby="st-dlg-desc" onClick={(e) => e.stopPropagation()}>
-        <h2 id="st-dlg-title">Desconectar {name}?</h2>
-        <p id="st-dlg-desc">
-          Os e-mails dessa conta saem do Quill neste Mac. Nada é apagado no servidor, e você pode conectar de novo quando quiser.
-        </p>
-        <div className="st-dialog-actions">
-          <button ref={cancelRef} className="btn glass" onClick={onCancel}>Cancelar</button>
-          <button className="btn solid danger-solid" onClick={onConfirm}>
-            <LogOut size={15} aria-hidden />
-            Desconectar
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }

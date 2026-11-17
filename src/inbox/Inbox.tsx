@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import "./inbox.css";
 import { Logo } from "../components/Logo";
 import { VerifiedBadge } from "../components/VerifiedBadge";
 import { TopBar } from "../components/TopBar";
 import { MessageAvatar } from "../components/MessageAvatar";
 import { InviteGate, RsvpButtons } from "../components/Rsvp";
+import { EventRsvpButtons, useEventRsvp } from "../components/EventRsvp";
 import {
   Archive,
   CalendarDays,
@@ -24,43 +25,58 @@ import {
   Star,
   Video,
 } from "../components/icons";
-import { ACCOUNT_BY_ID, AGENDA, PENDING_INVITE, TODAY_LABEL, WEEK } from "./sampleData";
-import type { Account, AccountId, AgendaItem, Message } from "./types";
-import { loadMailbox, markReadRemote, useMailbox } from "../state/mailbox";
+import type { Account, AccountId, Message } from "./types";
+import { folderMessages, loadFolder, markReadRemote, refreshMailbox, useMailbox, type FolderId } from "../state/mailbox";
+import { SliderGroup } from "../components/SliderGroup";
+import { usePref } from "../lib/usePref";
 import { ConnectGoogleButton } from "../components/ConnectGoogle";
 import { isTauri } from "../lib/platform";
 import { markRead, navigate, useStore } from "../state/store";
+import { addDays, eventsOnDay, loadRange, sameDay, startOfDay, startOfWeek, timeRange, useCalendar, visibleEvents, type AgendaEvent } from "../state/calendar";
+import { calendarMap, dayLong, dayShort, dowShort, fmtDuration, fmtTime, openCalendarAt, useClock } from "../calendar/shared";
 
 type Filter = "all" | AccountId;
 
-export const FOLDERS = [
-  { id: "inbox", label: "Entrada", icon: InboxIcon, count: 0 },
-  { id: "starred", label: "Importantes", icon: Star, count: 6 },
+export const FOLDERS: { id: FolderId; label: string; icon: typeof InboxIcon }[] = [
+  { id: "inbox", label: "Entrada", icon: InboxIcon },
+  { id: "starred", label: "Importantes", icon: Star },
   { id: "sent", label: "Enviados", icon: Send },
-  { id: "drafts", label: "Rascunhos", icon: FileText, count: 2 },
+  { id: "drafts", label: "Rascunhos", icon: FileText },
   { id: "archive", label: "Arquivo", icon: Archive },
-  { id: "spam", label: "Spam", icon: OctagonAlert, count: 3 },
-] as const;
+  { id: "spam", label: "Spam", icon: OctagonAlert },
+];
 
-export default function Inbox({ folder }: { folder: string }) {
+export default function Inbox({ folder: folderParam }: { folder: string }) {
+  const folder = (FOLDERS.some((f) => f.id === folderParam) ? folderParam : folderParam === "trash" ? "trash" : "inbox") as FolderId;
   const [filter, setFilter] = useState<Filter>("all");
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [query, setQuery] = useState("");
   const readIds = useStore((s) => s.readIds);
   const accounts = useMailbox((s) => s.accounts);
-  const messages = useMailbox((s) => s.messages);
+  const messages = useMailbox((s) => folderMessages(s, folder));
+  const folderStatus = useMailbox((s) => s.folderStatus[folder]);
+  const counts = useMailbox((s) => s.counts);
+  const [showBanner] = usePref("showBanner", true);
+  const [showPreview] = usePref("showPreview", true);
+  const [density] = usePref<"comfortable" | "compact">("density", "comfortable");
+  const [markOnOpen] = usePref("markReadOnOpen", true);
+  const [visibleFolders] = usePref<string[]>("folders.visible", FOLDERS.map((f) => f.id));
+  const refreshing = useMailbox((s) => s.refreshing);
   const live = useMailbox((s) => s.live);
   const status = useMailbox((s) => s.status);
   const needsLogin = useMailbox((s) => s.needsLogin);
   const accountById = useMemo(() => new Map(accounts.map((a) => [a.id, a])), [accounts]);
-  const totalUnread = accounts.reduce((sum, a) => sum + a.unread, 0);
-  const folderInfo = FOLDERS.find((f) => f.id === folder) ?? FOLDERS[0];
+  const folderInfo = FOLDERS.find((f) => f.id === folder) ?? { id: "trash", label: "Lixeira", icon: InboxIcon };
+
+  // abre uma caixa que ainda não foi carregada (cada caixa vem do Gmail só quando é aberta)
+  useEffect(() => {
+    if (live && folder !== "inbox") void loadFolder(folder);
+  }, [live, folder]);
 
   const isUnread = (m: Message) => m.unread && !readIds.has(m.id);
 
-  // Filtros calculados na renderização (sem efeitos). Só a Entrada tem dados de exemplo.
+  // Filtros calculados na renderização (sem efeitos).
   const visible = useMemo(() => {
-    if (folder !== "inbox") return [];
     const q = query.trim().toLocaleLowerCase("pt-BR");
     return messages.filter((m) => {
       if (filter !== "all" && m.account !== filter) return false;
@@ -68,11 +84,16 @@ export default function Inbox({ folder }: { folder: string }) {
       if (q && !`${m.from} ${m.subject} ${m.preview}`.toLocaleLowerCase("pt-BR").includes(q)) return false;
       return true;
     });
-  }, [folder, filter, unreadOnly, query, readIds, messages]);
+  }, [filter, unreadOnly, query, readIds, messages]);
+
+  const loadingList = live && (folderStatus === "loading" || (status === "loading" && messages.length === 0));
+  const showsRecipient = folder === "sent" || folder === "drafts";
 
   const open = (id: string) => {
-    markRead(id);
-    markReadRemote(id);
+    if (markOnOpen) {
+      markRead(id);
+      markReadRemote(id);
+    }
     navigate({ name: "read", id });
   };
 
@@ -80,12 +101,14 @@ export default function Inbox({ folder }: { folder: string }) {
     <>
       <TopBar
         title="Caixa de entrada"
-        sub={live ? `${messages.length} e-mails recentes` : "1.284 e-mails"}
+        sub={live ? `${folderInfo.label} · ${messages.length} recentes` : "1.284 e-mails"}
         search={query}
         onSearch={setQuery}
         actions={
-          <button className="btn glass ic" aria-label="Atualizar" data-tip="Atualizar" onClick={() => void loadMailbox()}>
-            <RefreshCw size={17} aria-hidden />
+          <button className="btn glass ic" aria-label="Atualizar" data-tip="Atualizar" onClick={() => void refreshMailbox()} disabled={refreshing}>
+            <span className={refreshing ? "spinning" : undefined} style={{ display: "flex" }}>
+              <RefreshCw size={17} aria-hidden />
+            </span>
           </button>
         }
       />
@@ -97,8 +120,9 @@ export default function Inbox({ folder }: { folder: string }) {
             Escrever
           </button>
           <span className="vsep" aria-hidden />
-          <nav aria-label="Caixas" style={{ display: "flex", gap: 6 }}>
-            {FOLDERS.map((f) => (
+          <SliderGroup activeKey={folder} role="navigation" label="Caixas">
+            {FOLDERS.filter((f) => f.id === "inbox" || f.id === folder || visibleFolders.includes(f.id)).map((f) => (
+              // contadores reais: não lidos na Entrada e no Spam, total em Rascunhos
               <button
                 key={f.id}
                 className="pill"
@@ -107,10 +131,10 @@ export default function Inbox({ folder }: { folder: string }) {
               >
                 <f.icon size={17} aria-hidden />
                 {f.label}
-                {"count" in f && <span className="count">{f.id === "inbox" ? totalUnread : f.count}</span>}
+                {counts[f.id] ? <span className="count">{counts[f.id]}</span> : null}
               </button>
             ))}
-          </nav>
+          </SliderGroup>
         </div>
 
         <div className="content">
@@ -123,16 +147,16 @@ export default function Inbox({ folder }: { folder: string }) {
                 <span>
                   {folderInfo.label} · {filter === "all" ? "todas as contas" : accountById.get(filter)?.name}
                 </span>
-                <div className="segmented" role="group" aria-label="Mostrar" style={{ marginLeft: "auto" }}>
+                <SliderGroup activeKey={String(unreadOnly)} className="segmented" role="group" label="Mostrar" style={{ marginLeft: "auto" }}>
                   <button aria-pressed={!unreadOnly} onClick={() => setUnreadOnly(false)}>Todas</button>
                   <button aria-pressed={unreadOnly} onClick={() => setUnreadOnly(true)}>Não lidas</button>
-                </div>
+                </SliderGroup>
                 <button className="btn ic" aria-label="Filtros" data-tip="Filtros" style={{ color: "var(--ink2)" }}>
                   <ListFilter size={18} aria-hidden />
                 </button>
               </div>
 
-              <div className="list-scroll">
+              <div className={`list-scroll${density === "compact" ? " compact" : ""}${showPreview ? "" : " no-preview"}`}>
                 {isTauri && !live && status !== "loading" && (
                   <div className="inbox-connect">
                     <h2>Conecte seu e-mail</h2>
@@ -143,22 +167,29 @@ export default function Inbox({ folder }: { folder: string }) {
                     <ConnectGoogleButton />
                   </div>
                 )}
-                {folder === "inbox" && (live || !isTauri) && <Banner unread={messages.filter(isUnread).length} accounts={accounts.length} />}
+                {folder === "inbox" && showBanner && (live || !isTauri) && <Banner unread={messages.filter(isUnread).length} accounts={accounts.length} />}
                 {needsLogin.length > 0 && (
                   <p className="list-empty" role="alert">
                     {needsLogin.join(", ")} precisa entrar de novo. Abra Ajustes → Contas.
                   </p>
                 )}
-                {visible.length === 0 && live && status === "loading" ? (
+                {visible.length === 0 && loadingList ? (
                   <p className="list-empty" role="status">Carregando seus e-mails…</p>
                 ) : visible.length === 0 && isTauri && !live ? null : visible.length === 0 ? (
                   <p className="list-empty">
                     {folder === "inbox" ? "Nenhum e-mail com esse filtro." : `Nada em ${folderInfo.label} por enquanto.`}
                   </p>
                 ) : (
-                  <ul className="rows">
+                  <ul className="rows stagger" key={folder}>
                     {visible.map((m) => (
-                      <MessageRow key={m.id} message={m} account={accountById.get(m.account)} unread={isUnread(m)} onOpen={() => open(m.id)} />
+                      <MessageRow
+                        key={m.id}
+                        message={m}
+                        account={accountById.get(m.account)}
+                        unread={isUnread(m)}
+                        showRecipient={showsRecipient}
+                        onOpen={() => open(m.id)}
+                      />
                     ))}
                   </ul>
                 )}
@@ -168,20 +199,7 @@ export default function Inbox({ folder }: { folder: string }) {
 
           <aside className="col-side" aria-label="Hoje">
             <TodayCard />
-            {!isTauri && (
-            <InviteGate>
-              <section className="card invite" aria-label="Convite pendente">
-                <div className="section-label">
-                  <CalendarDays size={14} aria-hidden />
-                  Convite pendente
-                </div>
-                <div className="invite-title">{PENDING_INVITE.title}</div>
-                <div className="invite-when">{PENDING_INVITE.when}</div>
-                <div className="invite-from">{PENDING_INVITE.from}</div>
-                <RsvpButtons />
-              </section>
-            </InviteGate>
-            )}
+            <PendingInvite />
             {(live || !isTauri) && (
               <p className="sync">
                 <CircleCheck size={15} aria-hidden />
@@ -226,14 +244,27 @@ function AccountsBar({ accounts, filter, onChange }: { accounts: Account[]; filt
   );
 }
 
-function MessageRow({ message: m, account, unread, onOpen }: { message: Message; account?: Account; unread: boolean; onOpen: () => void }) {
+function MessageRow({
+  message: m,
+  account,
+  unread,
+  showRecipient,
+  onOpen,
+}: {
+  message: Message;
+  account?: Account;
+  unread: boolean;
+  showRecipient?: boolean;
+  onOpen: () => void;
+}) {
+  const who = showRecipient && m.toName ? `Para: ${m.toName}` : m.from;
   return (
     <li className={`row${unread ? " unread" : ""}`}>
-      <button className="row-hit" onClick={onOpen} aria-label={`${unread ? "Não lido. " : ""}${m.from}: ${m.subject}`} />
+      <button className="row-hit" onClick={onOpen} aria-label={`${unread ? "Não lido. " : ""}${who}: ${m.subject}`} />
       <MessageAvatar message={m} />
       <div className="row-body">
         <div className="row-top">
-          <span className="row-from">{m.from}</span>
+          <span className="row-from">{who}</span>
           {m.verified && <VerifiedBadge />}
           {account && (
             <span className="acct">
@@ -261,40 +292,77 @@ function MessageRow({ message: m, account, unread, onOpen }: { message: Message;
   );
 }
 
-const AGENDA_ICON = { video: Video, "map-pin": MapPin, clock: Clock } as const;
-
+/** Cartão "Hoje": a semana com bolinha nos dias com evento e os próximos compromissos do dia escolhido. */
 function TodayCard() {
+  const clock = useClock();
+  const events = useCalendar(visibleEvents);
+  const connected = useMailbox((s) => s.connected.length);
+  const weekStart = startOfWeek(clock).getTime();
+  const [picked, setPicked] = useState<number | null>(null);
+  const day = picked ?? startOfDay(clock).getTime();
+  const isToday = sameDay(day, clock);
+
+  // a semana atual (com folga, ver loadRange); repete quando uma conta entra
+  useEffect(() => {
+    void loadRange(new Date(weekStart), addDays(weekStart, 7));
+  }, [weekStart, connected]);
+
+  const week = useMemo(
+    () =>
+      Array.from({ length: 7 }, (_, i) => {
+        const d = addDays(weekStart, i);
+        return { t: d.getTime(), busy: eventsOnDay(events, d).length > 0 };
+      }),
+    [weekStart, events],
+  );
+  // hoje: só o que ainda não acabou; outro dia: tudo
+  const items = eventsOnDay(events, day)
+    .filter((e) => !isToday || e.end > clock)
+    .slice(0, 3);
+  const label = isToday ? "Hoje" : sameDay(day, addDays(clock, 1)) ? "Amanhã" : sameDay(day, addDays(clock, -1)) ? "Ontem" : dayLong(day).split(",")[0];
+
   return (
-    <section className="card today">
+    <section className="card today" aria-label={label}>
       <div className="today-head">
         <div>
-          <h2 className="today-title">Hoje</h2>
-          <div className="today-date">{TODAY_LABEL}</div>
+          <h2 className="today-title">{label}</h2>
+          <div className="today-date">{dayLong(day)}</div>
         </div>
-        <button className="btn glass ic" aria-label="Novo evento" data-tip="Novo evento" onClick={() => navigate({ name: "calendar", mode: "month" })}>
+        <button
+          className="btn glass ic"
+          aria-label="Novo evento"
+          data-tip="Novo evento"
+          data-tip-pos="left"
+          onClick={() => openCalendarAt("day", day, true)}
+        >
           <Plus size={16} aria-hidden />
         </button>
       </div>
       <ul className="week" aria-label="Esta semana">
-        {WEEK.map((d) => (
-          <li key={d.n} className={`${d.today ? "is-today" : ""}${d.dot ? " has-events" : ""}`}>
-            {d.day}
-            <b>{d.n}</b>
+        {week.map((d) => (
+          <li key={d.t} className={`${sameDay(d.t, clock) ? "is-today" : ""}${d.busy ? " has-events" : ""}`}>
+            <button
+              className={`inbox-week-day${d.t === day && !sameDay(d.t, clock) ? " is-picked" : ""}`}
+              aria-pressed={d.t === day}
+              aria-label={`${dayLong(d.t)}${d.busy ? ", com eventos" : ""}`}
+              onClick={() => setPicked(sameDay(d.t, clock) ? null : d.t)}
+            >
+              <span aria-hidden>{dowShort(d.t)}</span>
+              <b aria-hidden>{new Date(d.t).getDate()}</b>
+            </button>
           </li>
         ))}
       </ul>
-      {isTauri ? (
-        <p className="list-empty" style={{ padding: "18px 4px 6px", textAlign: "left" }}>
-          A agenda do Mac entra na próxima etapa. Por enquanto só os e-mails são de verdade.
-        </p>
-      ) : (
+      {items.length > 0 ? (
         <ul className="agenda">
-          {AGENDA.map((e) => (
-            <AgendaRow key={e.id} item={e} />
+          {items.map((e) => (
+            <AgendaRow key={e.key} event={e} clock={clock} />
           ))}
         </ul>
+      ) : (
+        <p className="inbox-agenda-empty">{isToday ? (eventsOnDay(events, day).length ? "Nada mais por hoje." : "Nada marcado para hoje.") : "Nada marcado neste dia."}</p>
       )}
-      <button className="btn glass" onClick={() => navigate({ name: "calendar", mode: "day" })}>
+      <button className="btn glass" onClick={() => openCalendarAt("day", day)}>
         <CalendarDays size={15} aria-hidden />
         Abrir calendário
       </button>
@@ -302,21 +370,66 @@ function TodayCard() {
   );
 }
 
-function AgendaRow({ item }: { item: AgendaItem }) {
-  const Icon = AGENDA_ICON[item.icon];
+function AgendaRow({ event: e, clock }: { event: AgendaEvent; clock: number }) {
+  const mins = Math.round((e.start - clock) / 60_000);
+  const soon = !e.allDay && mins > 0 && mins < 60 ? `em ${mins} min` : !e.allDay && e.start <= clock && e.end > clock ? "agora" : null;
+  const [Icon, meta] = e.meetUrl
+    ? [Video, `Meet · ${fmtDuration(e.end - e.start)}`]
+    : e.location
+      ? [MapPin, e.location]
+      : [Clock, e.allDay ? "Dia inteiro" : timeRange(e)];
   return (
-    <li className={item.soon ? "soon" : undefined}>
-      <span className="agenda-time">{item.time}</span>
-      <span className="agenda-dot" style={{ background: ACCOUNT_BY_ID.get(item.account)!.color }} aria-hidden />
+    <li className={`${soon ? "soon" : ""}${e.myStatus === "declined" ? " inbox-agenda-declined" : ""}`}>
+      <span className="agenda-time">{e.allDay ? "dia" : fmtTime(e.start)}</span>
+      <span className="agenda-dot" style={{ background: e.color }} aria-hidden />
       <span className="agenda-body">
-        <span className="agenda-title" style={{ display: "block" }}>{item.title}</span>
+        <span className="agenda-title" style={{ display: "block" }}>
+          {e.title}
+        </span>
         <span className="agenda-meta">
           <Icon size={13} aria-hidden />
-          {item.meta}
+          <span className="inbox-agenda-meta">{meta}</span>
         </span>
       </span>
-      {item.soon && <span className="soon-chip">{item.soon}</span>}
+      {soon && <span className="soon-chip">{soon}</span>}
     </li>
+  );
+}
+
+/** Próximo convite da agenda ainda sem resposta (some quando não há nenhum). */
+function PendingInvite() {
+  const clock = useClock();
+  const events = useCalendar(visibleEvents);
+  const invite = events.find((e) => e.myStatus === "needsAction" && e.start > clock);
+  if (!invite) return null;
+  return <InviteCard key={invite.key} e={invite} />;
+}
+
+function InviteCard({ e }: { e: AgendaEvent }) {
+  const rsvp = useEventRsvp(e.key);
+  const map = calendarMap(useCalendar((s) => s.calendars));
+  const from = e.organizer?.name ?? e.organizer?.email;
+  const cal = map.get(e.copies[0].calendarKey)?.name;
+  return (
+    <section className={`card invite${rsvp.leaving ? " invite-leaving" : ""}`} aria-label="Convite pendente">
+      <div className="section-label">
+        <CalendarDays size={14} aria-hidden />
+        Convite pendente
+      </div>
+      <div className="invite-title">{e.title}</div>
+      <div className="invite-when">
+        {dayShort(e.start)} · {timeRange(e)}
+        {e.location ? ` · ${e.location}` : ""}
+      </div>
+      {(from || cal) && (
+        <div className="invite-from">
+          {from ? `De ${from}` : ""}
+          {from && cal ? " · " : ""}
+          {cal ? `agenda ${cal}` : ""}
+        </div>
+      )}
+      <EventRsvpButtons rsvp={rsvp} />
+    </section>
   );
 }
 
@@ -338,6 +451,10 @@ function Envelope({ x, y, w, rotate }: { x: number; y: number; w: number; rotate
 
 /** Banner ilustrado do topo da lista (de dia no claro, à noite no escuro). */
 function Banner({ unread, accounts }: { unread: number; accounts: number }) {
+  const clock = useClock();
+  const events = useCalendar(visibleEvents);
+  // compromissos que ainda faltam hoje
+  const left = eventsOnDay(events, clock).filter((e) => e.end > clock).length;
   return (
     <div className="banner">
       <svg viewBox="0 0 1000 112" preserveAspectRatio="xMidYMid slice" aria-hidden>
@@ -384,7 +501,8 @@ function Banner({ unread, accounts }: { unread: number; accounts: number }) {
       <div className="banner-text">
         <h2>Bom dia, Gabriel</h2>
         <p>
-          {unread} {unread === 1 ? "e-mail novo" : "e-mails novos"} em {accounts} {accounts === 1 ? "conta" : "contas"} · 3 compromissos hoje
+          {unread} {unread === 1 ? "e-mail novo" : "e-mails novos"} em {accounts} {accounts === 1 ? "conta" : "contas"}
+          {left > 0 ? ` · ${left} ${left === 1 ? "compromisso" : "compromissos"} hoje` : ""}
         </p>
       </div>
     </div>
