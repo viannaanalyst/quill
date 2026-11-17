@@ -55,6 +55,7 @@ export type MessageAction = "archive" | "unarchive" | "spam" | "notspam" | "star
 /** Erros conhecidos que a parte nativa devolve como texto. */
 export const NEEDS_LOGIN = "needs_login";
 export const NOT_CONFIGURED = "not_configured";
+export const CANCELLED = "cancelled";
 
 async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (!isTauri) throw new Error("preview");
@@ -68,6 +69,9 @@ const tzOffsetMin = () => -new Date().getTimezoneOffset();
 
 export const api = {
   googleSignIn: (loginHint?: string) => call<AccountInfo>("google_sign_in", { loginHint: loginHint ?? null }),
+  googleSignInCancel: () => call<void>("google_sign_in_cancel"),
+  googleSignInReopen: () => call<void>("google_sign_in_reopen"),
+  googleSignInUrl: () => call<string | null>("google_sign_in_url"),
   accountsList: () => call<AccountInfo[]>("accounts_list"),
   accountRemove: (email: string) => call<void>("account_remove", { email }),
   inbox: (email: string) => call<MessageSummaryDto[]>("inbox_fetch", { email, tzOffsetMin: tzOffsetMin() }),
@@ -91,5 +95,6 @@ export function friendlyError(e: unknown): string {
   const msg = typeof e === "string" ? e : e instanceof Error ? e.message : String(e);
   if (msg === NOT_CONFIGURED) return "O login com Google ainda não foi configurado nesta versão do Quill.";
   if (msg === NEEDS_LOGIN) return "Essa conta precisa entrar de novo.";
+  if (msg === CANCELLED) return "Login cancelado. Tente de novo quando quiser.";
   return msg;
 }

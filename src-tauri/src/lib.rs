@@ -25,6 +25,7 @@ struct AccountInfo {
 fn err(e: LoginError) -> String {
     match e {
         LoginError::NeedsLogin => "needs_login".into(),
+        LoginError::Cancelled => "cancelled".into(),
         other => other.to_string(),
     }
 }
@@ -41,6 +42,25 @@ fn now_ms() -> i64 {
 async fn google_sign_in(state: State<'_, AppState>, login_hint: Option<String>) -> Result<AccountInfo, String> {
     let (account, profile) = google(&state)?.sign_in(login_hint).await.map_err(err)?;
     Ok(AccountInfo { email: account.email, provider: account.provider, messages_total: Some(profile.messages_total) })
+}
+
+/// Cancela o login em andamento (botão Cancelar na tela).
+#[tauri::command]
+fn google_sign_in_cancel(state: State<'_, AppState>) -> Result<(), String> {
+    google(&state)?.cancel_sign_in();
+    Ok(())
+}
+
+/// Abre de novo a página de login do Google em andamento.
+#[tauri::command]
+fn google_sign_in_reopen(state: State<'_, AppState>) -> Result<(), String> {
+    google(&state)?.reopen_auth_url().map_err(err)
+}
+
+/// Endereço da página de login em andamento (para copiar e colar em outro navegador).
+#[tauri::command]
+fn google_sign_in_url(state: State<'_, AppState>) -> Result<Option<String>, String> {
+    Ok(google(&state)?.auth_url())
 }
 
 #[tauri::command]
@@ -188,6 +208,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             google_sign_in,
+            google_sign_in_cancel,
+            google_sign_in_reopen,
+            google_sign_in_url,
             accounts_list,
             account_remove,
             inbox_fetch,

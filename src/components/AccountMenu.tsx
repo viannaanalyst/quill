@@ -1,11 +1,11 @@
 import * as Popover from "@radix-ui/react-popover";
 import { useRef, useState } from "react";
+import { LoginWaiting } from "./LoginWaiting";
 import { AccountPhoto, AVATAR_PREF, resizePhoto } from "./MyAvatar";
 import { SliderGroup } from "./SliderGroup";
 import { toast } from "./Toasts";
 import { Camera, LogOut, Monitor, Moon, Plus, Settings, Sun, Trash2 } from "./icons";
 import { applyTheme, isTauri, type ThemePref } from "../lib/platform";
-import { setPref } from "../lib/storage";
 import { usePref } from "../lib/usePref";
 import { friendlyError } from "../lib/api";
 import { signInWithGoogle, signOutAll, useMailbox } from "../state/mailbox";
@@ -25,6 +25,7 @@ export function AccountMenu() {
   const [photo, setPhoto] = usePref<string | null>(AVATAR_PREF, null);
   const [confirmExit, setConfirmExit] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const [signing, setSigning] = useState(false);
   const connected = useMailbox((s) => s.connected);
   const profiles = useMailbox((s) => s.profiles);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -37,13 +38,15 @@ export function AccountMenu() {
   };
 
   const addGoogle = async () => {
-    setStatus("Termine o login na janela do navegador que abriu…");
+    setStatus(null);
+    setSigning(true);
     try {
       const a = await signInWithGoogle();
-      setStatus(null);
       toast(`${a.email} conectada`);
     } catch (e) {
       setStatus(friendlyError(e));
+    } finally {
+      setSigning(false);
     }
   };
 
@@ -57,10 +60,13 @@ export function AccountMenu() {
     }
   };
 
+  /** Sai das contas e fica no app (a tela pede para conectar uma conta). O onboarding só volta por Ajustes. */
   const exit = async () => {
     await signOutAll();
-    setPref("onboarded", false);
-    window.location.reload();
+    setOpen(false);
+    setConfirmExit(false);
+    navigate({ name: "inbox", folder: "inbox" });
+    toast("Você saiu das contas neste computador");
   };
 
   return (
@@ -136,12 +142,13 @@ export function AccountMenu() {
             )}
             {connected.length === 0 && !isTauri && <p className="acm-empty">Prévia de design (sem contas).</p>}
             {isTauri && (
-              <button className="acm-item" onClick={() => void addGoogle()}>
+              <button className="acm-item" onClick={() => void addGoogle()} disabled={signing}>
                 <Plus size={15} aria-hidden />
                 Conectar conta Google
               </button>
             )}
-            {status && (
+            {signing && <LoginWaiting className="acm-status" />}
+            {status && !signing && (
               <p className="acm-status" role="status">
                 {status}
               </p>

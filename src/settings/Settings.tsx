@@ -28,6 +28,7 @@ import { SENDER_EMAILS } from "../compose/contacts";
 import { isTauri } from "../lib/platform";
 import { friendlyError } from "../lib/api";
 import { accountName, disconnect, signInWithGoogle, useMailbox } from "../state/mailbox";
+import { LoginWaiting } from "../components/LoginWaiting";
 import { ConnectGoogleButton } from "../components/ConnectGoogle";
 import { Select } from "../components/Select";
 import { SliderGroup } from "../components/SliderGroup";
@@ -206,6 +207,7 @@ export default function Settings({ onRestartOnboarding }: { onRestartOnboarding:
   const connected = useMailbox((s) => s.connected);
   const live = isTauri && connected.length > 0;
   const [addStatus, setAddStatus] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
   const [confirmEmail, setConfirmEmail] = useState<string | null>(null);
   const [selectedEmail, setSelectedEmail] = useState<string | null>(null);
   const selEmail = connected.some((c) => c.email === selectedEmail) ? selectedEmail : (connected[0]?.email ?? null);
@@ -223,12 +225,15 @@ export default function Settings({ onRestartOnboarding }: { onRestartOnboarding:
       setAddStatus("Por enquanto só o Google está disponível. Microsoft, iCloud e IMAP vêm em seguida.");
       return;
     }
-    setAddStatus("Termine o login na janela do navegador que abriu…");
+    setAddStatus(null);
+    setAdding(true);
     try {
       const a = await signInWithGoogle();
       setAddStatus(`${a.email} conectada.`);
     } catch (e) {
       setAddStatus(friendlyError(e));
+    } finally {
+      setAdding(false);
     }
   };
 
@@ -347,9 +352,13 @@ export default function Settings({ onRestartOnboarding }: { onRestartOnboarding:
                 )}
                 <div className="st-add">
                   <div className="st-add-title">Adicionar outra conta</div>
-                  <div className="st-add-sub" role="status">
-                    {addStatus ?? "Você entra pela página oficial do serviço; o Quill nunca vê sua senha principal."}
-                  </div>
+                  {adding ? (
+                    <LoginWaiting className="st-add-sub" />
+                  ) : (
+                    <div className="st-add-sub" role="status">
+                      {addStatus ?? "Você entra pela página oficial do serviço; o Quill nunca vê sua senha principal."}
+                    </div>
+                  )}
                   <div className="st-providers">
                     {[
                       { logo: "gmail" as const, name: "Google", sub: "Gmail ou Google Workspace" },

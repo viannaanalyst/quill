@@ -1283,3 +1283,44 @@
   background: linear-gradient(to bottom, var(--btop), var(--bbot));
   box-shadow: inset 0 1px 0 var(--bhl);
 }
+
+/* ---------- esperando o login no navegador ---------- */
+.lw {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink2);
+  animation: q-pop-in 0.2s var(--ease-out-soft) both;
+}
+.lw p {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 1.4;
+}
+.lw-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.lw-actions button {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink);
+  background: var(--surface2);
+  box-shadow: inset 0 0 0 1px var(--line);
+  transition: background 0.14s ease, transform 0.14s ease;
+}
+.lw-actions button:hover {
+  background: var(--line);
+}
+.lw-actions button:active {
+  transform: scale(0.97);
+}
+.lw-actions .lw-cancel {
+  color: var(--danger, #c2453d);
+}

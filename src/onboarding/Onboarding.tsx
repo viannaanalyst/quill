@@ -26,6 +26,7 @@ import {
 import { devParams, isTauri } from "../lib/platform";
 import { friendlyError } from "../lib/api";
 import { signInWithGoogle, useMailbox } from "../state/mailbox";
+import { LoginWaiting } from "../components/LoginWaiting";
 import { ConnectGoogleButton } from "../components/ConnectGoogle";
 import { getPref, setPref } from "../lib/storage";
 
@@ -108,6 +109,8 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
     setSigningIn("google");
     try {
       await signInWithGoogle();
+      // entrou: daqui para frente o app abre direto na caixa de entrada
+      setPref("onboarded", true);
       goTo(6);
     } catch (e) {
       setLoginError(friendlyError(e));
@@ -283,10 +286,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
             ))}
           </div>
           {signingIn === "google" ? (
-            <p className="small-note" role="status">
-              <LoaderCircle size={14} />
-              Termine o login na janela do navegador que abriu. Depois, volte para cá.
-            </p>
+            <LoginWaiting className="ob-login-wait" />
           ) : loginError ? (
             <p className="small-note" role="alert" style={{ color: "var(--danger, #c2453d)" }}>{loginError}</p>
           ) : (

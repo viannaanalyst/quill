@@ -13,13 +13,17 @@ use crate::oauth::{AuthRequest, Pkce, google_auth_url, random_token};
 
 /// Nome do "serviço" no cofre; cada conta fica guardada pelo e-mail.
 const VAULT_SERVICE: &str = "app.quill.desktop.google";
-const LOGIN_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+const LOGIN_TIMEOUT: Duration = Duration::from_secs(4 * 60);
 
 pub struct GoogleSession {
     client: GoogleClient,
     store: AccountStore,
     /// e-mail → (token de acesso, quando expira); só na memória
     tokens: Mutex<HashMap<String, (String, Instant)>>,
+    /// avisado quando a pessoa cancela o login em andamento
+    cancel: tokio::sync::Notify,
+    /// endereço do login em andamento (para abrir de novo ou copiar)
+    auth_url: Mutex<Option<String>>,
 }
 
 fn vault(email: &str) -> Result<keyring::Entry, LoginError> {
@@ -32,6 +36,8 @@ impl GoogleSession {
             client: GoogleClient::new(client_id, client_secret),
             store: AccountStore::new(accounts_file),
             tokens: Mutex::new(HashMap::new()),
+            cancel: tokio::sync::Notify::new(),
+            auth_url: Mutex::new(None),
         }
     }
 
@@ -46,7 +52,25 @@ impl GoogleSession {
     }
 
     /// Abre a página oficial do Google no navegador e espera a pessoa autorizar.
+    /// Para o login em andamento (a pessoa fechou o navegador ou desistiu).
+    pub fn cancel_sign_in(&self) {
+        self.cancel.notify_waiters();
+    }
+
+    /// Endereço do login em andamento, se houver.
+    pub fn auth_url(&self) -> Option<String> {
+        self.auth_url.lock().expect("trava do login").clone()
+    }
+
+    /// Abre de novo a página de login do Google (ex.: a pessoa fechou a aba).
+    pub fn reopen_auth_url(&self) -> Result<(), LoginError> {
+        let url = self.auth_url().ok_or(LoginError::Cancelled)?;
+        open::that_detached(&url).map_err(|e| LoginError::Network(format!("não consegui abrir o navegador: {e}")))
+    }
+
     pub async fn sign_in(&self, login_hint: Option<String>) -> Result<(Account, Profile), LoginError> {
+        // um login por vez: um pedido novo encerra o anterior
+        self.cancel.notify_waiters();
         let loopback = Loopback::bind().await.map_err(|e| LoginError::Network(e.to_string()))?;
         let redirect_uri = loopback.redirect_uri();
         let pkce = Pkce::generate();
@@ -59,9 +83,12 @@ impl GoogleSession {
             state: state.clone(),
             login_hint,
         });
-        open::that(&url).map_err(|e| LoginError::Network(format!("não consegui abrir o navegador: {e}")))?;
+        *self.auth_url.lock().expect("trava do login") = Some(url.clone());
+        open::that_detached(&url).map_err(|e| LoginError::Network(format!("não consegui abrir o navegador: {e}")))?;
 
-        let code = loopback.wait_for_code(&state, LOGIN_TIMEOUT).await?;
+        let waited = loopback.wait_for_code_or_cancel(&state, LOGIN_TIMEOUT, &self.cancel).await;
+        *self.auth_url.lock().expect("trava do login") = None;
+        let code = waited?;
         let tokens = self.client.exchange_code(&code, &pkce.verifier, &redirect_uri).await?;
         let profile = self.client.profile(&tokens.access_token).await?;
         let refresh = tokens

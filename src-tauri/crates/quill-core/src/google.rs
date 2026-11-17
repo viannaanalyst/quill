@@ -28,6 +28,8 @@ pub enum LoginError {
     Vault(String),
     /// o acesso expirou ou foi revogado: a conta precisa entrar de novo
     NeedsLogin,
+    /// a pessoa cancelou o login no Quill
+    Cancelled,
 }
 
 impl std::fmt::Display for LoginError {
@@ -40,6 +42,7 @@ impl std::fmt::Display for LoginError {
             LoginError::Google(e) => write!(f, "O Google recusou o pedido: {e}"),
             LoginError::Vault(e) => write!(f, "Não consegui usar as Chaves do sistema: {e}"),
             LoginError::NeedsLogin => write!(f, "Essa conta precisa entrar de novo."),
+            LoginError::Cancelled => write!(f, "Login cancelado."),
         }
     }
 }
@@ -370,6 +373,14 @@ impl Loopback {
     }
 
     /// Espera o navegador voltar com o código. Pedidos que não são o retorno (favicon) recebem 404.
+    /// Igual a `wait_for_code`, mas para na hora quando `cancel` é avisado (botão Cancelar no app).
+    pub async fn wait_for_code_or_cancel(self, state: &str, timeout: Duration, cancel: &tokio::sync::Notify) -> Result<String, LoginError> {
+        tokio::select! {
+            got = self.wait_for_code(state, timeout) => got,
+            _ = cancel.notified() => Err(LoginError::Cancelled),
+        }
+    }
+
     pub async fn wait_for_code(self, state: &str, timeout: Duration) -> Result<String, LoginError> {
         tokio::time::timeout(timeout, async {
             loop {
@@ -648,5 +659,18 @@ mod tests {
         let listener = Loopback::bind().await.unwrap();
         let got = listener.wait_for_code("S1", std::time::Duration::from_millis(50)).await;
         assert_eq!(got, Err(LoginError::TimedOut));
+    }
+
+    #[tokio::test]
+    async fn loopback_stops_when_cancelled() {
+        let listener = Loopback::bind().await.unwrap();
+        let cancel = std::sync::Arc::new(tokio::sync::Notify::new());
+        let c = cancel.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+            c.notify_waiters();
+        });
+        let got = listener.wait_for_code_or_cancel("S1", std::time::Duration::from_secs(5), &cancel).await;
+        assert_eq!(got, Err(LoginError::Cancelled));
     }
 }

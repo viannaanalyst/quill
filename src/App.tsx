@@ -2,6 +2,7 @@ import { lazy, Suspense, useState } from "react";
 import { devParams } from "./lib/platform";
 import { getPref, setPref } from "./lib/storage";
 import { navigate, type View } from "./state/store";
+import { useMailbox } from "./state/mailbox";
 
 // Cada parte grande carrega só quando é usada (o onboarding só aparece na primeira vez).
 const Onboarding = lazy(() => import("./onboarding/Onboarding"));
@@ -31,15 +32,35 @@ function initialScreen(): "onboarding" | "app" {
 
 export default function App() {
   const [screen, setScreen] = useState(initialScreen);
+  // "Rever o onboarding" nos Ajustes: mostra mesmo com conta conectada
+  const [replay, setReplay] = useState(false);
+  const hasAccount = useMailbox((s) => s.connected.length > 0);
+  const loaded = useMailbox((s) => s.status === "ready");
+  const [checked, setChecked] = useState(false);
+
+  // ao abrir: se já tem conta neste computador, pula o onboarding (ele só volta pelos Ajustes).
+  // Só na primeira carga, para não pular o passo final logo depois de entrar pelo onboarding.
+  if (loaded && !checked) {
+    setChecked(true);
+    if (screen === "onboarding" && hasAccount && !replay && !devParams.has("step") && devParams.get("screen") !== "onboarding") {
+      setPref("onboarded", true);
+      setScreen("app");
+    }
+  }
 
   return (
     <Suspense fallback={null}>
       {screen === "onboarding" ? (
-        <Onboarding onDone={() => setScreen("app")} />
+        <Onboarding
+          onDone={() => {
+            setReplay(false);
+            setScreen("app");
+          }}
+        />
       ) : (
         <AppShell
           onRestartOnboarding={() => {
-            setPref("onboarded", false);
+            setReplay(true);
             setScreen("onboarding");
           }}
         />

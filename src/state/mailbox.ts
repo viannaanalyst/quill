@@ -238,7 +238,9 @@ export async function signOutAll() {
   for (const a of state.connected) {
     await api.accountRemove(a.email).catch(() => undefined);
   }
-  set({ connected: [], accounts: [], folders: {}, counts: {}, live: false, bodies: {}, needsLogin: [], profiles: {} });
+  set({ connected: [], accounts: [], folders: {}, counts: {}, live: false, bodies: {}, attachments: {}, needsLogin: [], profiles: {} });
+  // avisa quem depende das contas (a agenda limpa os eventos)
+  await loadMailbox();
 }
 
 /** Marca como lido no Gmail (e na lista, na hora). */

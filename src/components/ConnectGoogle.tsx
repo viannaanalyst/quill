@@ -3,6 +3,7 @@ import { Logo } from "./Logo";
 import { LoaderCircle } from "./icons";
 import { friendlyError } from "../lib/api";
 import { signInWithGoogle } from "../state/mailbox";
+import { LoginWaiting } from "./LoginWaiting";
 
 /** Botão "Conectar com Google": abre o login no navegador e mostra o andamento ou o erro. */
 export function ConnectGoogleButton({
@@ -44,7 +45,7 @@ export function ConnectGoogleButton({
         )}
         {busy ? "Esperando o navegador…" : label}
       </button>
-      {busy && <p className="cg-note" role="status">Termine o login na janela do navegador que abriu. Depois, volte para cá.</p>}
+      {busy && <LoginWaiting className="cg-note" />}
       {error && (
         <p className="cg-note cg-error" role="alert">
           {error}
