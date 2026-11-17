@@ -2,6 +2,14 @@
 
 App de e-mail e calendário, **macOS primeiro**, depois Windows. Começou como uso pessoal do Gabriel, mas a ideia é que outras pessoas possam usar. **Sem IA dentro do app.** Responda sempre em português do Brasil, em linguagem simples (o Gabriel não é técnico).
 
+## Documentação
+
+- Comece por `Documentacoes/README.md`. Decisões ficam em `Documentacoes/02-decisoes-adrs/`.
+- Toda documentação segue `Documentacoes/_referencia/convencoes-documentacao.md`.
+- Ao mudar algo, atualize `Documentacoes/06-changelog.md` e os documentos afetados (decisão nova vira ADR novo, sem renumerar os antigos).
+- O guia de estilo continua em `docs/design.md`; a documentação aponta para ele.
+- Se código e documentação divergirem, investigue e corrija o que estiver errado.
+
 ## Stack
 
 - **Tauri v2**: app de desktop; a parte nativa fica em Rust, em `src-tauri/`.

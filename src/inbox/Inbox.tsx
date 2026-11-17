@@ -39,6 +39,7 @@ import { Banner } from "./Banner";
 import { isTauri } from "../lib/platform";
 import { markRead, markUnread, navigate, useStore } from "../state/store";
 import { getPref } from "../lib/storage";
+import { askConfirm } from "../components/ConfirmHost";
 import type { MessageAction } from "../lib/api";
 import { api, friendlyError } from "../lib/api";
 import { toast } from "../components/Toasts";
@@ -143,7 +144,17 @@ export default function Inbox({ folder: folderParam }: { folder: string }) {
     });
   const runBulk = (action: MessageAction) => {
     const ids = selectedVisible.map((m) => m.id);
-    if (action === "trash" && getPref("confirmDelete", false) && !window.confirm(`Mover ${ids.length} e-mail(s) para a Lixeira?`)) return;
+    if (action === "trash" && getPref("confirmDelete", true)) {
+      void askConfirm({
+        title: ids.length === 1 ? "Mover para a Lixeira?" : `Mover ${ids.length} e-mails para a Lixeira?`,
+        text: "Dá para tirar de lá depois, pela pasta Lixeira.",
+        action: "Mover para a Lixeira",
+      }).then((ok) => ok && doBulk(ids, action));
+      return;
+    }
+    doBulk(ids, action);
+  };
+  const doBulk = (ids: string[], action: MessageAction) => {
     if (action === "read") ids.forEach(markRead);
     if (action === "unread") ids.forEach(markUnread);
     setSelected(new Set());

@@ -6,6 +6,7 @@ import App from "./App";
 import { applyDevTheme, applyPlatformClass, applyTheme, type ThemePref } from "./lib/platform";
 import { getPref } from "./lib/storage";
 import { loadMailbox, startAutoRefresh } from "./state/mailbox";
+import { applyDockIcon } from "./lib/dockIcon";
 
 applyTheme(getPref<ThemePref>("theme", "system"));
 applyDevTheme();
@@ -14,6 +15,8 @@ applyPlatformClass();
 void loadMailbox();
 // e confere e-mails novos a cada 3 minutos enquanto a janela está à vista
 startAutoRefresh(3);
+// ícone do Dock escolhido em Ajustes → Aparência
+void applyDockIcon().catch(() => undefined);
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

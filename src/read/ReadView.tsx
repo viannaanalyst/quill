@@ -42,6 +42,7 @@ import { toast } from "../components/Toasts";
 import { THREADS, type Attachment, type Thread } from "./threads";
 import { FileIcon } from "../components/FileIcon";
 import { previewAttachment } from "../components/AttachmentPreview";
+import { askConfirm } from "../components/ConfirmHost";
 import { EmailFrame } from "./EmailFrame";
 import { FILE_LABEL, fileSize, fileType } from "../lib/files";
 
@@ -279,9 +280,14 @@ function ReadMessage({
       icon: Trash2,
       label: "Lixeira",
       onClick: () => {
-        if (getPref("confirmDelete", false) && !window.confirm("Mover este e-mail para a Lixeira?")) return;
-        void messageAction(m.id, "trash");
-        leave();
+        const go = () => {
+          void messageAction(m.id, "trash");
+          leave();
+        };
+        if (!getPref("confirmDelete", true)) return go();
+        void askConfirm({ title: "Mover para a Lixeira?", text: "Dá para tirar de lá depois, pela pasta Lixeira.", action: "Mover para a Lixeira" }).then(
+          (ok) => ok && go(),
+        );
       },
     },
     {

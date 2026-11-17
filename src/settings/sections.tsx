@@ -21,6 +21,7 @@ import { setPref } from "../lib/storage";
 import type { FolderId } from "../state/mailbox";
 import { ConfirmDialog, Panel, Row, Rows, Seg, Toggle } from "./parts";
 import { BannerPicker } from "../inbox/BannerScenes";
+import { applyDockIcon, DOCK_ICONS, DOCK_PREF } from "../lib/dockIcon";
 import { useClock } from "../calendar/shared";
 import { usePref } from "./usePref";
 
@@ -94,6 +95,7 @@ export function AppearanceSection() {
   const [density, setDensity] = usePref<"comfortable" | "compact">("density", "comfortable");
   const [banner, setBanner] = usePref("showBanner", true);
   const [preview, setPreview] = usePref("showPreview", true);
+  const [dockIcon, setDockIcon] = usePref(DOCK_PREF, "default");
   const clock = useClock();
 
   useEffect(() => {
@@ -151,6 +153,32 @@ export function AppearanceSection() {
         <Row title="Mostrar prévia do texto" sub="A primeira linha da mensagem embaixo do assunto.">
           <Toggle on={preview} onChange={setPreview} label="Mostrar prévia do texto" />
         </Row>
+        <div className="st-prow st-banner-block">
+          <div className="st-prow-text">
+            <div className="st-prow-title" id="st-dock-title">
+              Ícone no Dock
+            </div>
+            <div className="st-prow-sub">Muda na hora, enquanto o Quill está aberto. Com o app fechado, o Dock mostra o Clássico.</div>
+          </div>
+          <div className="st-dock-grid stagger" role="radiogroup" aria-labelledby="st-dock-title">
+            {DOCK_ICONS.map((i) => (
+              <button
+                key={i.id}
+                type="button"
+                role="radio"
+                aria-checked={dockIcon === i.id}
+                className="st-dock-item"
+                onClick={() => {
+                  setDockIcon(i.id);
+                  void applyDockIcon(i.id).catch(() => toast("Não consegui trocar o ícone", "error"));
+                }}
+              >
+                <img src={i.src} alt="" width={56} height={56} draggable={false} />
+                <span>{i.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
       </Rows>
     </Panel>
   );

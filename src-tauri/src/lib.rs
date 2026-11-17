@@ -3,6 +3,7 @@
 //! Agenda e contatos do iCloud vão por CalDAV/CardDAV (`ICloudDav`), com a mesma senha de app do e-mail.
 //! A lógica fica em `crates/quill-core` (testada); aqui só a ligação com o Tauri.
 
+mod dock;
 mod touchid;
 
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -371,6 +372,29 @@ async fn attachment_get(
     Ok(path.to_string_lossy().into_owned())
 }
 
+/// Troca o ícone do Dock (PNG em base64); vazio volta ao ícone padrão.
+#[tauri::command]
+async fn set_dock_icon(app: tauri::AppHandle, png_base64: String) -> Result<(), String> {
+    use base64::Engine;
+    let png = if png_base64.is_empty() {
+        None
+    } else {
+        Some(base64::engine::general_purpose::STANDARD.decode(png_base64.trim()).map_err(|_| "imagem inválida".to_string())?)
+    };
+    if png.as_ref().is_some_and(|b| b.len() > 4 * 1024 * 1024) {
+        return Err("imagem grande demais para o ícone".into());
+    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    // comando assíncrono (fora da linha principal): o AppKit roda na principal e a resposta volta pelo canal
+    app.run_on_main_thread(move || {
+        let _ = tx.send(dock::set_icon(png));
+    })
+    .map_err(|e| e.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || rx.recv().map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| e.to_string())??
+}
+
 /// O Mac pode pedir Touch ID (ou a senha do Mac)?
 #[tauri::command]
 fn touch_id_available() -> bool {
@@ -455,6 +479,7 @@ pub fn run() {
             reveal_download,
             open_link,
             touch_id_available,
+            set_dock_icon,
             touch_id_authenticate
         ])
         .run(tauri::generate_context!())

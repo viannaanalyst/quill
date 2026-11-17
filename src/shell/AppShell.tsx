@@ -10,6 +10,7 @@ import Inbox from "../inbox/Inbox";
 import { Toasts } from "../components/Toasts";
 import { UndoSendBar } from "../components/UndoSendBar";
 import { AttachmentPreview } from "../components/AttachmentPreview";
+import { ConfirmHost } from "../components/ConfirmHost";
 import { usePalette } from "../components/paletteState";
 import { useShortcuts } from "./shortcuts";
 
@@ -133,6 +134,7 @@ export default function AppShell({ onRestartOnboarding }: { onRestartOnboarding:
       <Toasts />
       <UndoSendBar />
       <AttachmentPreview />
+      <ConfirmHost />
     </div>
   );
 }

@@ -1681,3 +1681,12 @@
   font-size: 13px;
   margin-top: 6px;
 }
+.confirm-box {
+  align-items: stretch;
+  width: min(380px, calc(100vw - 32px));
+}
+.confirm-text {
+  font-size: 13.5px;
+  color: var(--ink2);
+  line-height: 1.5;
+}

@@ -26,8 +26,9 @@ quill-core = { path = "crates/quill-core", features = ["desktop"] }
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 block2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSError", "NSString"] }
+objc2-foundation = { version = "0.3", features = ["NSError", "NSString", "NSData"] }
 objc2-local-authentication = { version = "0.3", features = ["LAContext", "block2"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSImage"] }
 
 # App mais leve no build final: otimiza para tamanho, junta tudo e tira símbolos de depuração.
 [profile.release]
