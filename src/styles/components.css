@@ -327,3 +327,15 @@
 .cp-body {
   overflow-x: hidden;
 }
+
+/* janela grande: as telas ficam centralizadas numa largura confortável */
+.rd > .toolbar,
+.rd > .rd-content,
+.cp > .toolbar,
+.cp > .cp-content,
+.st {
+  width: 100%;
+  max-width: 1560px;
+  margin-left: auto;
+  margin-right: auto;
+}

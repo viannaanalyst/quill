@@ -145,15 +145,14 @@
   z-index: 10;
 }
 
-/* Na janela nativa a própria janela já é a moldura: o painel encosta nas bordas
-   (sem margem nem cantos próprios) e só uma linha separa a barra de ícones.
+/* Na janela nativa: uma única linha fina contornando o painel (o "ar moderno" do desenho),
+   com margem pequena e canto concêntrico ao da janela do macOS. Nada de linha extra na barra.
    A barra fica com 80px: os botões reais do macOS ocupam ~60px a partir de x=11. */
 .is-native .rail {
   width: 80px;
 }
 .is-native .panel {
-  margin: 0;
-  border: 0;
-  border-left: 1px solid var(--line);
-  border-radius: 0;
+  margin: 8px 8px 8px 0;
+  border: 1px solid var(--line);
+  border-radius: 16px;
 }
