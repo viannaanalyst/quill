@@ -6,6 +6,9 @@ import { getPref, setPref } from "./lib/storage";
 const Onboarding = lazy(() => import("./onboarding/Onboarding"));
 const AppShell = lazy(() => import("./shell/AppShell"));
 
+// Prévia: ?preload=onboarding carrega o onboarding junto, para pegar estilos que vazam entre telas.
+if (devParams.get("preload") === "onboarding") void import("./onboarding/Onboarding");
+
 function initialScreen(): "onboarding" | "app" {
   const forced = devParams.get("screen");
   if (forced === "inbox") return "app";

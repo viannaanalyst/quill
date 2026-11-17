@@ -290,7 +290,7 @@
   color: var(--ink2);
   font-weight: 600;
 }
-.cal-head .today b {
+.cal-head .cal-today b {
   background: var(--ink);
   color: var(--panel);
   border-radius: 999px;
@@ -350,7 +350,7 @@
   border-radius: 50%;
   background: var(--blue);
 }
-.invite {
+.ob-invite {
   position: absolute;
   width: 300px;
   padding: 16px;
@@ -362,7 +362,7 @@
   z-index: 4;
   animation: bob 5s var(--ease-loop) infinite;
 }
-.invite-h {
+.ob-invite-h {
   display: flex;
   align-items: center;
   gap: 7px;
@@ -370,23 +370,23 @@
   color: var(--ink3);
   font-weight: 500;
 }
-.invite-h i {
+.ob-invite-h i {
   width: 8px;
   height: 8px;
   border-radius: 50%;
 }
-.invite-t {
+.ob-invite-t {
   font-size: 16px;
   font-weight: 600;
   margin-top: 6px;
   letter-spacing: -0.01em;
 }
-.invite-m {
+.ob-invite-m {
   font-size: 12.5px;
   color: var(--ink2);
   margin-top: 2px;
 }
-.rsvp {
+.ob-rsvp {
   display: flex;
   gap: 8px;
   margin-top: 12px;

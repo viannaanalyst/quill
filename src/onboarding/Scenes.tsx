@@ -143,7 +143,7 @@ function Calendar() {
         </div>
         <div className="cal-head">
           {[["seg", 16], ["ter", 17], ["qua", 18], ["qui", 19], ["sex", 20]].map(([d, n]) => (
-            <div key={d} className={n === 17 ? "today" : ""}>
+            <div key={d} className={n === 17 ? "cal-today" : ""}>
               {d}
               <b>{n}</b>
             </div>
@@ -166,14 +166,14 @@ function Calendar() {
           ))}
         </div>
       </div>
-      <div className="invite" style={{ left: 330, top: 560 }}>
-        <div className="invite-h">
+      <div className="ob-invite" style={{ left: 330, top: 560 }}>
+        <div className="ob-invite-h">
           <i style={{ background: ACC.inchurch }} />
           Convite · inchurch
         </div>
-        <div className="invite-t">Planejamento Q1</div>
-        <div className="invite-m">Qui, 19 nov · 10:00 – 11:30</div>
-        <div className="rsvp" aria-hidden>
+        <div className="ob-invite-t">Planejamento Q1</div>
+        <div className="ob-invite-m">Qui, 19 nov · 10:00 – 11:30</div>
+        <div className="ob-rsvp" aria-hidden>
           <span className="btn solid sm">
             <Check size={14} />
             Aceitar

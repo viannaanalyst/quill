@@ -28,6 +28,7 @@ App de e-mail e calendário, **macOS primeiro**, depois Windows. Começou como u
 - Fonte da verdade: canvas "Quill" no Doop (https://sirus-vps.tail6e87c3.ts.net:10001/c/LmKkz1PF7S), guideline `quill-estilo`. Há uma cópia em `docs/design.md` e as imagens das telas estão em `design/telas/`.
 - Cada tela tem que ficar **igual ao desenho aprovado**, em modo claro e escuro.
 - Botões em pílula com degradê e brilho no topo (acabamento do runelay); nunca botão verde.
+- **Nomes de classe CSS exclusivos por tela.** O CSS de uma tela carregada sob demanda continua ativo depois que ela fecha, então nomes genéricos repetidos (`.invite`, `.today`, `.week`) vazam de uma tela para outra. Use um prefixo por tela (`ob-`, `inbox-`, `cal-`…) ou CSS Modules (`*.module.css`) nas telas novas.
 - Leveza é requisito:
   - nada de dependência grande sem necessidade;
   - telas pesadas com carregamento sob demanda (`React.lazy`);
