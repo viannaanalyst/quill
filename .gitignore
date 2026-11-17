@@ -17,3 +17,11 @@ xcuserdata/
 .env.*
 *.p12
 *.mobileprovision
+
+# Node / Vite
+node_modules/
+dist/
+
+# Tauri / Rust
+src-tauri/target/
+src-tauri/gen/schemas/

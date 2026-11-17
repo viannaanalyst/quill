@@ -1,0 +1,378 @@
+/* Quill: tokens de design (fonte: docs/design.md). Claro por padrão; escuro pelo sistema ou por data-theme. */
+/* Inter (tamanho óptico variável), só o alfabeto latino, guardada no app. Licença: assets/fonts/LICENSE-Inter.txt */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("../assets/fonts/inter-latin-opsz.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+:root {
+  --win: #f1f1f2;
+  --panel: #fcfcfc;
+  --surface: #ffffff;
+  --surface2: #f2f2f3;
+  --line: #e7e7e9;
+  --line2: #eeeef0;
+  --ink: #1b1c1e;
+  --ink2: #56585d;
+  --ink3: #8f9196;
+  --blue: #4f86b5;
+  --bluesoft: #eaf1f8;
+  --sage: #6f9068;
+  --sagesoft: #eaf0e7;
+  --sel: #f5f8fb;
+  --logobg: #ffffff;
+  --avp: #f6dec6;
+  --avpf: #6b4a2e;
+  --avb: #dde9f3;
+  --avbf: #2f5676;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --env: #ffffff;
+  --envline: #d3d8df;
+
+  /* botão principal (degradê + brilho, acabamento do runelay) */
+  --btop: #404145;
+  --bbot: #17181a;
+  --bedge: #0d0d0f;
+  --bhl: rgba(255, 255, 255, 0.24);
+  --bglow: rgba(27, 28, 30, 0.28);
+  --bink: #fcfcfc;
+  /* botão secundário */
+  --gfill: rgba(27, 28, 30, 0.045);
+  --gedge: rgba(27, 28, 30, 0.1);
+  --ghl: rgba(255, 255, 255, 0.7);
+
+  /* cores das contas */
+  --acc-pessoal: #5a8cb7;
+  --acc-moradah: #7c9a74;
+  --acc-inchurch: #c8925a;
+  --acc-outlook: #7a8ca8;
+  --acc-icloud: #a592b8;
+
+  --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --win: #0b0b0d;
+    --panel: #131416;
+    --surface: #1a1b1e;
+    --surface2: #232428;
+    --line: #2a2b2f;
+    --line2: #222327;
+    --ink: #f1f1f2;
+    --ink2: #b3b5ba;
+    --ink3: #7a7c82;
+    --blue: #7fb0d8;
+    --bluesoft: #1b2733;
+    --sage: #9bb893;
+    --sagesoft: #1d271c;
+    --sel: #181c21;
+    --logobg: #f1f1f2;
+    --avp: #3a2c20;
+    --avpf: #e7c6a6;
+    --avb: #1f2e3b;
+    --avbf: #9cc3e3;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --env: #f1f1f2;
+    --envline: #aeb4bc;
+    --btop: #ffffff;
+    --bbot: #d1d2d5;
+    --bedge: rgba(255, 255, 255, 0.55);
+    --bhl: rgba(255, 255, 255, 0.95);
+    --bglow: rgba(255, 255, 255, 0.16);
+    --bink: #141517;
+    --gfill: rgba(255, 255, 255, 0.05);
+    --gedge: rgba(255, 255, 255, 0.09);
+    --ghl: rgba(255, 255, 255, 0.1);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --win: #0b0b0d;
+  --panel: #131416;
+  --surface: #1a1b1e;
+  --surface2: #232428;
+  --line: #2a2b2f;
+  --line2: #222327;
+  --ink: #f1f1f2;
+  --ink2: #b3b5ba;
+  --ink3: #7a7c82;
+  --blue: #7fb0d8;
+  --bluesoft: #1b2733;
+  --sage: #9bb893;
+  --sagesoft: #1d271c;
+  --sel: #181c21;
+  --logobg: #f1f1f2;
+  --avp: #3a2c20;
+  --avpf: #e7c6a6;
+  --avb: #1f2e3b;
+  --avbf: #9cc3e3;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --env: #f1f1f2;
+  --envline: #aeb4bc;
+  --btop: #ffffff;
+  --bbot: #d1d2d5;
+  --bedge: rgba(255, 255, 255, 0.55);
+  --bhl: rgba(255, 255, 255, 0.95);
+  --bglow: rgba(255, 255, 255, 0.16);
+  --bink: #141517;
+  --gfill: rgba(255, 255, 255, 0.05);
+  --gedge: rgba(255, 255, 255, 0.09);
+  --ghl: rgba(255, 255, 255, 0.1);
+  color-scheme: dark;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font);
+  font-optical-sizing: auto;
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--win);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  user-select: none;
+  cursor: default;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+svg.lucide {
+  stroke-width: 1.75;
+  flex: none;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+/* ---------- botões (pílula do print + acabamento do runelay) ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 16px 0 13px;
+  border-radius: 999px;
+  font-size: 13.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  flex: none;
+  transition:
+    filter 0.2s ease,
+    transform 0.15s ease,
+    box-shadow 0.2s ease;
+}
+.btn:active {
+  transform: scale(0.97);
+}
+.btn.solid {
+  color: var(--bink);
+  background: linear-gradient(to bottom, var(--btop), var(--bbot));
+  box-shadow:
+    inset 0 1px 0 var(--bhl),
+    0 0 0 1px var(--bedge),
+    0 1px 2px rgba(0, 0, 0, 0.18),
+    0 8px 20px -8px var(--bglow);
+}
+.btn.solid:hover {
+  filter: brightness(1.06);
+}
+.btn.glass {
+  color: var(--ink);
+  background: var(--gfill);
+  box-shadow:
+    inset 0 1px 0 var(--ghl),
+    inset 0 0 0 1px var(--gedge),
+    0 1px 2px rgba(0, 0, 0, 0.05);
+}
+.btn.glass:hover {
+  background: color-mix(in srgb, var(--gfill), var(--ink) 4%);
+}
+.btn.lg {
+  height: 40px;
+  padding: 0 20px 0 16px;
+  font-size: 14px;
+}
+.btn.sm {
+  height: 30px;
+  padding: 0 13px;
+  font-size: 12.5px;
+  gap: 5px;
+}
+.btn.ic {
+  width: 36px;
+  padding: 0;
+}
+
+/* chave liga/desliga */
+.toggle {
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--surface2);
+  box-shadow: inset 0 0 0 1px var(--line);
+  position: relative;
+  flex: none;
+  transition: background 0.2s ease;
+}
+.toggle::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: left 0.2s ease;
+}
+.toggle[aria-checked="true"] {
+  background: var(--ink);
+  box-shadow: none;
+}
+.toggle[aria-checked="true"]::after {
+  left: 16px;
+  background: var(--panel);
+}
+
+/* etiqueta de conta (bolinha colorida + nome) */
+.acct {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--ink3);
+  padding: 2px 8px 2px 7px;
+  border-radius: 999px;
+  background: var(--surface2);
+  font-weight: 500;
+}
+.acct i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.chip {
+  font-size: 11.5px;
+  color: var(--ink3);
+  background: var(--surface2);
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* avatares */
+.av {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  flex: none;
+  display: grid;
+  place-items: center;
+  font-weight: 600;
+  font-size: 13.5px;
+}
+.av.peach {
+  background: var(--avp);
+  color: var(--avpf);
+}
+.av.blue {
+  background: var(--avb);
+  color: var(--avbf);
+}
+.av.neutral {
+  background: var(--surface2);
+  color: var(--ink2);
+}
+.av.logo {
+  background: var(--logobg);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.av.logo img {
+  width: 50%;
+  height: 50%;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* botões de janela desenhados só na prévia pelo navegador */
+.window-lights {
+  position: absolute;
+  display: flex;
+  gap: 7px;
+  z-index: 20;
+}
+.window-lights span {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+/* imagens diferentes para claro e escuro */
+.only-dark {
+  display: none;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .only-dark {
+    display: block;
+  }
+  :root:not([data-theme="light"]) .only-light {
+    display: none;
+  }
+}
+:root[data-theme="dark"] .only-dark {
+  display: block;
+}
+:root[data-theme="dark"] .only-light {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
