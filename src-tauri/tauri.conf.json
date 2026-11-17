@@ -57,7 +57,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "PREENCHER_NO_MAC",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk5ODIwQ0QwOUU1NUQ1QjkKUldTNTFWV2UwQXlDbVo3VytRYkN6Wm9MSktZbEpwamFlbmtNRGY1Ty9QZGRMUUxPNzgxbVlUS3YK",
       "endpoints": [
         "https://github.com/viannaanalyst/quill/releases/latest/download/latest.json"
       ]
