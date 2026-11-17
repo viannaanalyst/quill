@@ -147,9 +147,9 @@
 
 /* Na janela nativa a própria janela já é a moldura: o painel encosta nas bordas
    (sem margem nem cantos próprios) e só uma linha separa a barra de ícones.
-   A barra fica com 72px para os botões reais do macOS caberem sem encostar no painel. */
+   A barra fica com 80px: os botões reais do macOS ocupam ~60px a partir de x=11. */
 .is-native .rail {
-  width: 72px;
+  width: 80px;
 }
 .is-native .panel {
   margin: 0;

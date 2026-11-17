@@ -313,3 +313,17 @@
 .saved-note svg {
   color: var(--sage);
 }
+
+/* colunas e listas que rolam só na vertical (sem barra horizontal por causa de sombras) */
+.col-side,
+.rd-side,
+.cp-side,
+.cal-side,
+.st-side,
+.st-main,
+.list-scroll,
+.rd-thread,
+.cal-scroll,
+.cp-body {
+  overflow-x: hidden;
+}
