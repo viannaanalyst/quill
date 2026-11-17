@@ -285,13 +285,13 @@ export default function Calendar({ mode }: { mode: CalendarMode }) {
         <div className="toolbar cal-toolbar">
           <div className="cal-tb-main">
             <div className="cal-nav" role="group" aria-label="Período">
-              <button className="cal-nav-btn" aria-label={prevLabel} data-tip="Anterior" onClick={() => step(-1)}>
+              <button className="btn glass ic" aria-label={prevLabel} data-tip="Anterior" onClick={() => step(-1)}>
                 <ChevronLeft size={17} aria-hidden />
               </button>
               <span className="cal-range" aria-live="polite">
                 {rangeTitle(mode, anchor)}
               </span>
-              <button className="cal-nav-btn" aria-label={nextLabel} data-tip="Próximo" onClick={() => step(1)}>
+              <button className="btn glass ic" aria-label={nextLabel} data-tip="Próximo" onClick={() => step(1)}>
                 <ChevronRight size={17} aria-hidden />
               </button>
             </div>

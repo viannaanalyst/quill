@@ -189,3 +189,5 @@ Baseado no `git log` e nas mensagens dos commits. Horários em Brasília (UTC−
   `chat_delete`; 17 testes novos (264 no total). Decisões no acréscimo do
   [ADR-023](02-decisoes-adrs/ADR-023-google-chat-pela-api-so-workspace.md).
 - Conferido na prévia (claro e escuro); ainda não testado no Mac.
+- Calendário: as setas voltaram a ser bolinhas separadas, sem a pílula em volta da data (‹ data ›), e o hífen de
+  "Quarta-feira" não ganha mais espaço extra.
