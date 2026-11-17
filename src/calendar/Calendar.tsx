@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import "./calendar.css";
 import { TopBar } from "../components/TopBar";
+import { isTauri } from "../lib/platform";
 import { RsvpButtons } from "../components/Rsvp";
 import {
   Bell,
@@ -81,7 +82,8 @@ function useVisibleEvents(created: CalEvent[]) {
   const hidden = useStore((s) => s.hiddenCalendars);
   const rsvp = useStore((s) => s.rsvp);
   return useMemo(() => {
-    return [...EVENTS, ...created]
+    // no app, a agenda do Mac ainda não está ligada: só aparecem os eventos criados agora
+    return [...(isTauri ? [] : EVENTS), ...created]
       .filter((e) => !hidden.has(e.calendar))
       .filter((e) => !(e.invite && rsvp.value === "declined" && rsvp.phase !== "idle"))
       .map((e) => (e.invite && rsvp.value && rsvp.value !== "declined" ? { ...e, invite: false } : e));

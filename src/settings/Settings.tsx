@@ -28,6 +28,7 @@ import { SENDER_EMAILS } from "../compose/contacts";
 import { isTauri } from "../lib/platform";
 import { friendlyError } from "../lib/api";
 import { disconnect, signInWithGoogle, useMailbox } from "../state/mailbox";
+import { ConnectGoogleButton } from "../components/ConnectGoogle";
 
 type Vars = CSSProperties & Record<`--${string}`, string>;
 
@@ -153,7 +154,7 @@ export default function Settings({ onRestartOnboarding }: { onRestartOnboarding:
                   <div>
                     <h2 className="st-title">Suas contas</h2>
                     <div className="st-sub">
-                      {live ? connected.length : ACCOUNTS.length} {(live ? connected.length : ACCOUNTS.length) === 1 ? "conta" : "contas"} · arraste para mudar a ordem na caixa de entrada
+                      {isTauri ? connected.length : ACCOUNTS.length} {(isTauri ? connected.length : ACCOUNTS.length) === 1 ? "conta" : "contas"} · arraste para mudar a ordem na caixa de entrada
                     </div>
                   </div>
                   <button className="btn solid" onClick={() => void addAccount("Google")}>
@@ -187,6 +188,11 @@ export default function Settings({ onRestartOnboarding }: { onRestartOnboarding:
                       </li>
                     ))}
                   </ul>
+                ) : isTauri ? (
+                  <div style={{ padding: "22px" }}>
+                    <p className="st-sub" style={{ marginBottom: 14 }}>Nenhuma conta conectada ainda.</p>
+                    <ConnectGoogleButton size="md" />
+                  </div>
                 ) : (
                 <ul className="st-accounts">
                   {ACCOUNTS.map((a) => {
@@ -257,6 +263,7 @@ export default function Settings({ onRestartOnboarding }: { onRestartOnboarding:
               </section>
             </div>
 
+            {!isTauri && (
             <aside className="st-side" aria-label={`Detalhes de ${sel.nickname}`}>
               <section className="card st-card">
                 <div className="st-detail-head">
@@ -367,6 +374,7 @@ export default function Settings({ onRestartOnboarding }: { onRestartOnboarding:
                 </div>
               </section>
             </aside>
+            )}
           </>
         )}
       </div>

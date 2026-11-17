@@ -26,6 +26,7 @@ import {
 import { devParams, isTauri } from "../lib/platform";
 import { friendlyError } from "../lib/api";
 import { signInWithGoogle, useMailbox } from "../state/mailbox";
+import { ConnectGoogleButton } from "../components/ConnectGoogle";
 import { getPref, setPref } from "../lib/storage";
 
 const STAGE_W = 717;
@@ -299,33 +300,49 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
       content = (
         <>
           <span className="eyebrow"><CircleCheck size={14} />Quase lá</span>
-          <h1 className="ob-title">{isTauri ? "Conta conectada." : waiting ? "Suas contas estão chegando." : "Tudo pronto."}</h1>
-          <p className="ob-lead">Os e-mails mais recentes já aparecem. O resto vai baixando em segundo plano.</p>
-          <ul className="conn-list">
-            {isTauri ? (
-              connected.map((a) => (
-                <ConnRow
-                  key={a.email}
-                  logo={a.email.includes("inchurch") ? "inchurch" : "gmail"}
-                  name={a.email.endsWith("@gmail.com") ? a.email.split("@")[0] : a.email.split("@")[1].split(".")[0]}
-                  mail={a.email}
-                  ok
-                />
-              ))
-            ) : (
-              <>
-                <ConnRow logo="gmail" name="Pessoal" mail="voce@gmail.com" ok />
-                <ConnRow logo="gmail" name="Moradah" mail="projeto@gmail.com" ok />
-                <ConnRow logo="inchurch" name="inchurch" mail="voce@empresa.com.br" ok={!waiting} />
-              </>
-            )}
-          </ul>
+          <h1 className="ob-title">
+            {isTauri ? (connected.length ? "Conta conectada." : "Conecte seu Gmail.") : waiting ? "Suas contas estão chegando." : "Tudo pronto."}
+          </h1>
+          <p className="ob-lead">
+            {isTauri && !connected.length
+              ? "Entre com a sua conta Google pela página oficial. Depois dá para conectar outras."
+              : "Os e-mails mais recentes já aparecem. O resto vai baixando em segundo plano."}
+          </p>
+          {isTauri ? (
+            <>
+              {connected.length > 0 && (
+                <ul className="conn-list">
+                  {connected.map((a) => (
+                    <ConnRow
+                      key={a.email}
+                      logo={a.email.includes("inchurch") ? "inchurch" : "gmail"}
+                      name={a.email.endsWith("@gmail.com") ? a.email.split("@")[0] : a.email.split("@")[1].split(".")[0]}
+                      mail={a.email}
+                      ok
+                    />
+                  ))}
+                </ul>
+              )}
+              <div style={{ marginTop: 22 }}>
+                <ConnectGoogleButton label={connected.length ? "Conectar outra conta Google" : "Conectar com Google"} />
+              </div>
+            </>
+          ) : (
+            <ul className="conn-list">
+              <ConnRow logo="gmail" name="Pessoal" mail="voce@gmail.com" ok />
+              <ConnRow logo="gmail" name="Moradah" mail="projeto@gmail.com" ok />
+              <ConnRow logo="inchurch" name="inchurch" mail="voce@empresa.com.br" ok={!waiting} />
+            </ul>
+          )}
         </>
       );
       footer = (
         <>
-          <button className="btn glass lg" onClick={() => goTo(5)}><Plus size={16} />Adicionar outra conta</button>
-          <button className="btn solid lg" onClick={finish}>Abrir caixa de entrada<ArrowRight size={17} /></button>
+          {!isTauri && <button className="btn glass lg" onClick={() => goTo(5)}><Plus size={16} />Adicionar outra conta</button>}
+          <button className={`btn ${isTauri && !connected.length ? "glass" : "solid"} lg`} onClick={finish}>
+            {isTauri && !connected.length ? "Pular por enquanto" : "Abrir caixa de entrada"}
+            <ArrowRight size={17} />
+          </button>
         </>
       );
   }

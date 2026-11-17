@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Bell, Search } from "./icons";
+import { AccountMenu } from "./AccountMenu";
 
 /** Cabeçalho das telas: título • complemento, busca, ações e o avatar no canto direito. */
 export function TopBar({
@@ -45,7 +46,7 @@ export function TopBar({
       <button className="btn glass ic" aria-label="Notificações" data-tip="Notificações">
         <Bell size={17} aria-hidden />
       </button>
-      <div className="me" role="img" aria-label="Gabriel Vianna">GV</div>
+      <AccountMenu />
     </header>
   );
 }

@@ -27,10 +27,11 @@ interface MailboxState {
 const COLORS = ["var(--acc-pessoal)", "var(--acc-moradah)", "var(--acc-inchurch)", "var(--acc-outlook)", "var(--acc-icloud)", "#c77b8b"];
 const TONES = ["peach", "blue", "neutral"] as const;
 
+// No app, sem conta conectada, não há nada de exemplo; os exemplos ficam só na prévia de design.
 let state: MailboxState = {
   connected: [],
-  accounts: ACCOUNTS,
-  messages: MESSAGES,
+  accounts: isTauri ? [] : ACCOUNTS,
+  messages: isTauri ? [] : MESSAGES,
   live: false,
   status: "idle",
   error: null,
@@ -95,7 +96,7 @@ export async function loadMailbox() {
   try {
     const connected = await api.accountsList();
     if (connected.length === 0) {
-      set({ connected, accounts: ACCOUNTS, messages: MESSAGES, live: false, status: "ready" });
+      set({ connected, accounts: [], messages: [], live: false, status: "ready" });
       return;
     }
     const needsLogin: string[] = [];
@@ -151,4 +152,12 @@ export async function loadBody(id: string) {
   } catch (e) {
     set({ bodies: { ...state.bodies, [id]: `Não consegui abrir este e-mail: ${friendlyError(e)}` } });
   }
+}
+
+/** Sai de todas as contas neste computador (nada é apagado no Google). */
+export async function signOutAll() {
+  for (const a of state.connected) {
+    await api.accountRemove(a.email).catch(() => undefined);
+  }
+  set({ connected: [], accounts: [], messages: [], live: false, bodies: {}, needsLogin: [] });
 }

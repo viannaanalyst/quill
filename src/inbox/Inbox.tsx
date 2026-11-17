@@ -27,6 +27,8 @@ import {
 import { ACCOUNT_BY_ID, AGENDA, PENDING_INVITE, TODAY_LABEL, WEEK } from "./sampleData";
 import type { Account, AccountId, AgendaItem, Message } from "./types";
 import { loadMailbox, markReadRemote, useMailbox } from "../state/mailbox";
+import { ConnectGoogleButton } from "../components/ConnectGoogle";
+import { isTauri } from "../lib/platform";
 import { markRead, navigate, useStore } from "../state/store";
 
 type Filter = "all" | AccountId;
@@ -113,7 +115,7 @@ export default function Inbox({ folder }: { folder: string }) {
 
         <div className="content">
           <div className="col-main">
-            <AccountsBar accounts={accounts} filter={filter} onChange={setFilter} />
+            {accounts.length > 0 && <AccountsBar accounts={accounts} filter={filter} onChange={setFilter} />}
 
             <section className="card list" aria-label="E-mails">
               <div className="list-head">
@@ -131,7 +133,17 @@ export default function Inbox({ folder }: { folder: string }) {
               </div>
 
               <div className="list-scroll">
-                {folder === "inbox" && <Banner unread={messages.filter(isUnread).length} accounts={accounts.length} />}
+                {isTauri && !live && status !== "loading" && (
+                  <div className="inbox-connect">
+                    <h2>Conecte seu e-mail</h2>
+                    <p>
+                      Entre com a sua conta Google pela página oficial. Gmail e Google Workspace funcionam; Microsoft, iCloud e IMAP
+                      chegam em seguida.
+                    </p>
+                    <ConnectGoogleButton />
+                  </div>
+                )}
+                {folder === "inbox" && (live || !isTauri) && <Banner unread={messages.filter(isUnread).length} accounts={accounts.length} />}
                 {needsLogin.length > 0 && (
                   <p className="list-empty" role="alert">
                     {needsLogin.join(", ")} precisa entrar de novo. Abra Ajustes → Contas.
@@ -139,7 +151,7 @@ export default function Inbox({ folder }: { folder: string }) {
                 )}
                 {visible.length === 0 && live && status === "loading" ? (
                   <p className="list-empty" role="status">Carregando seus e-mails…</p>
-                ) : visible.length === 0 ? (
+                ) : visible.length === 0 && isTauri && !live ? null : visible.length === 0 ? (
                   <p className="list-empty">
                     {folder === "inbox" ? "Nenhum e-mail com esse filtro." : `Nada em ${folderInfo.label} por enquanto.`}
                   </p>
@@ -156,6 +168,7 @@ export default function Inbox({ folder }: { folder: string }) {
 
           <aside className="col-side" aria-label="Hoje">
             <TodayCard />
+            {!isTauri && (
             <InviteGate>
               <section className="card invite" aria-label="Convite pendente">
                 <div className="section-label">
@@ -168,10 +181,13 @@ export default function Inbox({ folder }: { folder: string }) {
                 <RsvpButtons />
               </section>
             </InviteGate>
-            <p className="sync">
-              <CircleCheck size={15} aria-hidden />
-              Tudo sincronizado · há 1 min
-            </p>
+            )}
+            {(live || !isTauri) && (
+              <p className="sync">
+                <CircleCheck size={15} aria-hidden />
+                {status === "loading" ? "Atualizando…" : "Tudo sincronizado"}
+              </p>
+            )}
           </aside>
         </div>
       </div>
@@ -267,11 +283,17 @@ function TodayCard() {
           </li>
         ))}
       </ul>
-      <ul className="agenda">
-        {AGENDA.map((e) => (
-          <AgendaRow key={e.id} item={e} />
-        ))}
-      </ul>
+      {isTauri ? (
+        <p className="list-empty" style={{ padding: "18px 4px 6px", textAlign: "left" }}>
+          A agenda do Mac entra na próxima etapa. Por enquanto só os e-mails são de verdade.
+        </p>
+      ) : (
+        <ul className="agenda">
+          {AGENDA.map((e) => (
+            <AgendaRow key={e.id} item={e} />
+          ))}
+        </ul>
+      )}
       <button className="btn glass" onClick={() => navigate({ name: "calendar", mode: "day" })}>
         <CalendarDays size={15} aria-hidden />
         Abrir calendário
