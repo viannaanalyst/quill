@@ -209,7 +209,7 @@ export default function Inbox({ folder: folderParam }: { folder: string }) {
     <>
       <TopBar
         title="Caixa de entrada"
-        sub={live ? `${folderInfo.label} · ${messages.length} recentes` : "1.284 e-mails"}
+        sub={live ? `${folderInfo.label} · ${visible.length} ${visible.length === 1 ? "e-mail" : "e-mails"}` : "1.284 e-mails"}
         actions={
           <button className="btn glass ic" aria-label="Atualizar" data-tip="Atualizar" onClick={() => void refreshMailbox()} disabled={refreshing}>
             <span className={refreshing ? "spinning" : undefined} style={{ display: "flex" }}>
@@ -518,7 +518,7 @@ function TodayCard() {
       </div>
       <ul className="week" aria-label="Esta semana">
         {week.map((d) => (
-          <li key={d.t} className={`${sameDay(d.t, clock) ? "is-today" : ""}${d.busy ? " has-events" : ""}`}>
+          <li key={d.t} className={sameDay(d.t, clock) ? "is-today" : ""}>
             <button
               className={`inbox-week-day${d.t === day && !sameDay(d.t, clock) ? " is-picked" : ""}`}
               aria-pressed={d.t === day}
