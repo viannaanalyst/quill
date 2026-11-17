@@ -121,7 +121,7 @@
   display: grid;
   grid-template-columns: 56px 1fr;
   position: relative;
-  height: calc(var(--hh) * 12);
+  height: calc(var(--hh) * 24);
 }
 .cal-times {
   position: relative;

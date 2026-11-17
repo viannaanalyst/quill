@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import "./calendar.css";
 import { TopBar } from "../components/TopBar";
 import { RsvpButtons } from "../components/Rsvp";
@@ -39,8 +39,40 @@ import {
   type CalendarId,
 } from "./events";
 
-const H0 = 8;
-const HOURS = 12;
+/** A grade mostra o dia inteiro (0h–24h). */
+const H0 = 0;
+const HOURS = 24;
+/** Quantas horas cabem na tela, no mínimo; com janela alta cada hora cresce para preencher o espaço. */
+const VISIBLE_HOURS = 13;
+const MIN_HOUR_PX = 44;
+/** Ao abrir, a grade começa às 7h30. */
+const START_SCROLL_HOUR = 7.5;
+
+/**
+ * Ajusta a altura de cada hora ao espaço disponível (--hh) e rola até o começo do dia útil.
+ * A altura só muda com o tamanho da janela; nada é medido durante animações.
+ */
+function useHourGrid() {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let first = true;
+    const apply = (height: number) => {
+      const hh = Math.max(MIN_HOUR_PX, Math.floor(height / VISIBLE_HOURS));
+      el.style.setProperty("--hh", `${hh}px`);
+      if (first) {
+        el.scrollTop = hh * START_SCROLL_HOUR;
+        first = false;
+      }
+    };
+    apply(el.clientHeight);
+    const ro = new ResizeObserver(([entry]) => apply(entry.contentRect.height));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return ref;
+}
 const WEEK_DAYS = [16, 17, 18, 19, 20, 21, 22];
 type Vars = CSSProperties & Record<`--${string}`, string>;
 
@@ -345,6 +377,7 @@ function EventDetails({ e, onClose }: { e: CalEvent; onClose?: () => void }) {
 function DayView({ events }: { events: CalEvent[] }) {
   const today = eventsOn(events, TODAY).filter((e) => !e.allDay);
   const [selectedId, setSelectedId] = useState("daily-17");
+  const gridRef = useHourGrid();
   const selected = today.find((e) => e.id === selectedId) ?? today[0];
 
   return (
@@ -357,7 +390,7 @@ function DayView({ events }: { events: CalEvent[] }) {
               <b>{TODAY}</b>
               <span className="count">{today.length} compromissos</span>
             </div>
-            <div className="cal-scroll">
+            <div className="cal-scroll" ref={gridRef}>
               <div className="cal-grid cal-oneday">
                 <Times />
                 <div className="cal-cols one">
@@ -475,6 +508,7 @@ function DayDetail({ e }: { e: CalEvent }) {
 
 function WeekView({ events }: { events: CalEvent[] }) {
   const [openId, setOpenId] = useState<string | null>("q1");
+  const gridRef = useHourGrid();
   const open = events.find((e) => e.id === openId) ?? null;
   const close = () => setOpenId(null);
   useEscape(close, !!open);
@@ -508,7 +542,7 @@ function WeekView({ events }: { events: CalEvent[] }) {
             </div>
           ))}
         </div>
-        <div className="cal-scroll">
+        <div className="cal-scroll" ref={gridRef}>
           <div className="cal-grid">
             <Times />
             <div className="cal-cols">
@@ -529,13 +563,14 @@ function WeekView({ events }: { events: CalEvent[] }) {
                 </div>
               ))}
             </div>
+            {/* o cartão fica dentro da grade para rolar junto com o evento */}
+            {open && !open.allDay && (
+              <div className="cal-pop" role="dialog" aria-label={open.title} style={{ left: popLeft, top: `max(8px, calc(var(--hh) * ${open.start! - H0} - 40px))` }}>
+                <EventDetails e={open} onClose={close} />
+              </div>
+            )}
           </div>
         </div>
-        {open && !open.allDay && (
-          <div className="cal-pop" role="dialog" aria-label={open.title} style={{ left: popLeft, top: `calc(86px + var(--hh) * ${Math.max(0, open.start! - H0)} - 40px)` }}>
-            <EventDetails e={open} onClose={close} />
-          </div>
-        )}
         {open && open.allDay && (
           <div className="cal-pop" role="dialog" aria-label={open.title} style={{ left: popLeft, top: 96 }}>
             <EventDetails e={open} onClose={close} />
