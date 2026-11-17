@@ -15,10 +15,10 @@ inchurch-contratos e na techbpo.
 | Você quer | Leia |
 |---|---|
 | Instalar, conectar contas ou resolver "o Google desconectou" | [guia-rapido.md](guia-rapido.md) |
-| Aprender a usar o dia a dia (ler, responder, agenda, Touch ID…) | [04-tutorial-uso.md](04-tutorial-uso.md) |
+| Aprender a usar o dia a dia (ler, responder, agenda, Chat, Touch ID…) | [04-tutorial-uso.md](04-tutorial-uso.md) |
 | Entender para que o app serve, o que já funciona e o que falta | [00-visao-geral.md](00-visao-geral.md) |
 | Mexer no código | [01-arquitetura-tecnica.md](01-arquitetura-tecnica.md) |
-| Saber por que algo foi feito de um jeito | [02-decisoes-adrs/](02-decisoes-adrs/) (22 decisões) |
+| Saber por que algo foi feito de um jeito | [02-decisoes-adrs/](02-decisoes-adrs/) (23 decisões) |
 | Consultar termos, preferências, cores e parâmetros da prévia | [05-referencia.md](05-referencia.md) |
 | Ver o que mudou e quando | [06-changelog.md](06-changelog.md) |
 | Ver o guia de estilo visual | [`docs/design.md`](../docs/design.md) e [`design/telas/`](../design/telas/) |
@@ -49,6 +49,7 @@ inchurch-contratos e na techbpo.
 | [020](02-decisoes-adrs/ADR-020-dados-de-exemplo-so-na-previa.md) | Dados de exemplo só na prévia |
 | [021](02-decisoes-adrs/ADR-021-anexos-so-em-downloads-e-previa-sem-baixar.md) | Anexos só em Downloads e prévia sem baixar |
 | [022](02-decisoes-adrs/ADR-022-login-google-na-folha-do-macos.md) | Login do Google na janela de login do macOS |
+| [023](02-decisoes-adrs/ADR-023-google-chat-pela-api-so-workspace.md) | Google Chat pela API (só Workspace), atualização por consulta periódica |
 
 ## O que das convenções não se aplica ainda
 

@@ -43,7 +43,7 @@ provedores), para o Gabriel parar de alternar entre Gmail, Calendário e apps di
 
 | Fornece | Entra | Processo | Sai | Recebe |
 |---|---|---|---|---|
-| Google (Gmail, Agenda, Contatos) | E-mails, pastas, eventos, convites, contatos e foto do perfil | 1. Abre o app (Touch ID, se ligado) | Caixa de entrada unificada com contadores | Gabriel |
+| Google (Gmail, Agenda, Contatos, Chat) | E-mails, pastas, eventos, convites, contatos, foto do perfil e conversas do Google Chat (Workspace) | 1. Abre o app (Touch ID, se ligado) | Caixa de entrada unificada com contadores | Gabriel |
 | Apple iCloud | E-mails (IMAP/SMTP), agendas (CalDAV), contatos (CardDAV) | 2. Conecta as contas na página oficial (Google) ou com senha de app (iCloud, outros) | E-mails enviados, respondidos e encaminhados | Destinatários dos e-mails |
 | Outros provedores IMAP | E-mails | 3. Lê, organiza e busca (⌘K) os e-mails de todas as contas | Rascunhos salvos no próprio servidor | Gabriel, em qualquer outro app de e-mail |
 | Chaves do macOS | Tokens do Google e senhas de app | 4. Escreve e envia, com tempo para desfazer | Convites respondidos e eventos criados ou editados | Quem convidou ou foi convidado |
@@ -88,6 +88,7 @@ montado (próxima montagem: a do commit da documentação).
 | Saudação | "Bom dia/Boa tarde/Boa noite" com ilustração automática pelo horário, escolhida ou foto própria | Prévia |
 | Fotos dos remetentes | Gravatar e ícones de sites, desligável | Mac (logos); Gravatar só na prévia |
 | Touch ID | Pede a digital (ou a senha do Mac) ao abrir | Prévia (não dá para testar Touch ID fora do Mac) |
+| Google Chat | Conversas, grupos e espaços das contas Workspace; ler, responder na conversa, enviar texto, arquivos (até 200 MB) e áudio gravado; imagem, vídeo, áudio e PDF com prévia; não lidas; fixadas | Prévia + testes |
 | Ícone do Dock | 8 opções em Ajustes → Aparência (Clássico, Escuro e 6 variações do Codex); vale com o app aberto | Prévia |
 
 ## Fora do escopo por enquanto
@@ -105,6 +106,8 @@ montado (próxima montagem: a do commit da documentação).
 | Publicar o app do Google (sair de "Testando" e do login a cada 7 dias) | Google Cloud → aba Branding: página inicial e política de privacidade |
 | Cache local dos e-mails em SQLite (previsto no `AGENTS.md`) | Ainda não existe: hoje os e-mails vêm do servidor a cada abertura e atualização |
 | Agendar envio | Só existe a tela no Escrever; ainda não agenda de verdade |
+| Google Chat: testar no Mac com a conta da empresa (entrar de novo para as permissões novas; microfone; anexos grandes) e configurar o app de Chat no Google Cloud se a API pedir | Mac + Google Cloud → Google Chat API → Configuração |
+| Google Chat: notificações do sistema, reações, criar conversa nova, editar e apagar mensagem, menções com sugestão | Próximas etapas ([ADR-023](02-decisoes-adrs/ADR-023-google-chat-pela-api-so-workspace.md)) |
 | Avisos do sistema quando chega e-mail | Ajustes → Notificações guarda as escolhas, mas o aviso do sistema ainda não é disparado; hoje só o sino do cabeçalho mostra os novos |
 | Chaves "E-mail" e "Agenda" por conta e "buscar e-mails a cada…" | Existem só na prévia (dados de exemplo); nas contas reais ainda não |
 | Atalhos R (responder), E (arquivar) e # (lixeira) | Aparecem em Ajustes → Atalhos, mas ainda não estão ligados em `src/shell/shortcuts.ts` |
@@ -119,12 +122,12 @@ montado (próxima montagem: a do commit da documentação).
 | Risco | Probabilidade | Impacto | Mitigação |
 |---|---|---|---|
 | Google desconecta a cada 7 dias (app em "Testando") | Alta (certa) | Médio | Entrar de novo em Ajustes → Contas; publicar o app do Google |
-| Google recusar a publicação ou exigir verificação de segurança por causa dos escopos do Gmail | Média | Alto | Manter só os escopos necessários; preparar política de privacidade; seguir em "Testando" para uso pessoal |
+| Google recusar a publicação ou exigir verificação de segurança por causa dos escopos do Gmail e do Chat | Média | Alto | Manter só os escopos necessários; preparar política de privacidade; seguir em "Testando" para uso pessoal |
 | Senha de app do iCloud revogada ou trocada | Baixa | Médio | O app pede para conectar de novo (`needs_login`) |
 | Funções novas falharem no Mac (testadas só na prévia) | Média | Médio | Próxima montagem no Mac com roteiro de teste das pendências acima |
 | E-mail malicioso (scripts, rastreadores) | Média | Alto | Quadro isolado sem scripts, imagens externas bloqueadas, links só http/https/mailto ([ADR-010](02-decisoes-adrs/ADR-010-email-formatado-em-quadro-isolado.md)) |
 | Vazamento de dado pessoal em prints | Baixa | Alto | Prints no Mac só da janela do Quill; prévia usa dados de exemplo |
-| Mudanças de API do Gmail, do iCloud ou do Tauri | Baixa | Médio | Lógica isolada e testada na `quill-core` (199 testes) |
+| Mudanças de API do Gmail, do iCloud ou do Tauri | Baixa | Médio | Lógica isolada e testada na `quill-core` (247 testes) |
 | Microsoft continuar sem login | Alta | Médio | Usar Google, iCloud ou IMAP; tentar o portal de novo |
 
 ## Histórico de versões

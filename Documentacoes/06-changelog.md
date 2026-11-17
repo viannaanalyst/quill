@@ -139,3 +139,29 @@ Baseado no `git log` e nas mensagens dos commits. Horários em Brasília (UTC−
 - "Mais cores" virou uma roda de cores (todas as cores; o centro é claro, a borda é forte), com barra de brilho, cinzas
   e código #RRGGBB; funciona com mouse e teclado.
 - Prévias do Chat no Doop mais leves: as animações rodam uma vez só e os ícones carregam sem travar o desenho.
+
+### Google Chat (contas Workspace)
+
+- Tela nova **Chat** na barra lateral (depois do Calendário, como no desenho do Doop), com bolinha de não lidas:
+  conversas diretas, grupos e espaços, busca, abas Todas / Não lidas / Espaços, Fixadas e Recentes, contador azul,
+  respostas da conversa ("2 respostas"), links clicáveis, busca dentro da conversa e seletor de conta quando há mais
+  de uma conta Workspace ([ADR-023](02-decisoes-adrs/ADR-023-google-chat-pela-api-so-workspace.md)).
+- Fotos reais das pessoas pela People API; a própria foto pelo avatar do Quill; espaços e grupos com as fotos das
+  pessoas empilhadas (a API não tem ícone de espaço).
+- Anexos: imagem e GIF em miniatura (clicar amplia), vídeo com play no lugar e botão de ampliar, áudio com player e
+  ondinha, PDF e outros arquivos com "Ver" e "Baixar" (Downloads), Google Drive abre no navegador.
+- Enviar arquivos pelo clipe, arrastando ou colando imagem (até 200 MB): o arquivo sobe na hora, com barra de
+  progresso real, prévia ao clicar na miniatura e "Tentar de novo".
+- Gravar áudio pelo microfone (segurar ou clicar), com tempo, ondinha ao vivo, descartar, ouvir antes e enviar.
+  `src-tauri/Info.plist` com a frase de permissão do microfone.
+- Sem conta Workspace, a tela explica e oferece "Conectar conta da empresa"; sem permissão, "Entre de novo com a conta
+  para liberar o Chat"; app de Chat não configurado no Google Cloud vira aviso próprio.
+- Login do Google pede 4 permissões novas (Chat e diretório da empresa): as contas Google precisam entrar de novo.
+- `quill-core`: módulos `chat` (leitura e pedidos) e `chat_client` (cache de pessoas, membros e prévias); métodos novos
+  no `GoogleClient`; reqwest com o recurso `stream` (progresso do envio). 48 testes novos: **247** com `net`.
+- Parte nativa: comandos `chat_spaces`, `chat_messages`, `chat_members`, `chat_send`, `chat_attachment`,
+  `chat_attachment_save` e `chat_upload` (o arquivo chega sem base64; o progresso sai no evento
+  `chat-upload-progress`).
+- Prévia do navegador: `?screen=chat`, com `&chat=none` (sem Workspace), `&chat=rec` (gravando) e `&chat=att`
+  (enviando anexos), com conversas de exemplo. Ainda não testado no Mac.
+

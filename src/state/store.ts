@@ -25,6 +25,8 @@ export type View =
   | { name: "read"; id: string }
   | { name: "compose"; draft?: ComposeDraft }
   | { name: "calendar"; mode: CalendarMode }
+  /** Google Chat (contas Workspace); `space` = conversa aberta (`spaces/<id>`) */
+  | { name: "chat"; space?: string }
   | { name: "settings" };
 
 /**

@@ -8,7 +8,7 @@ use tokio::net::TcpListener;
 use crate::oauth::{self, AuthError};
 
 /// Escopos pedidos: ler/organizar e enviar e-mail, e a agenda.
-pub const SCOPES: [&str; 8] = [
+pub const SCOPES: [&str; 12] = [
     "openid",
     "email",
     "profile",
@@ -18,6 +18,12 @@ pub const SCOPES: [&str; 8] = [
     // sugestões de destinatário como no Gmail (contatos e "Outros contatos"), só leitura
     "https://www.googleapis.com/auth/contacts.readonly",
     "https://www.googleapis.com/auth/contacts.other.readonly",
+    // Google Chat (só contas Workspace): conversas, mensagens (ler e enviar) e pessoas de cada conversa
+    "https://www.googleapis.com/auth/chat.spaces.readonly",
+    "https://www.googleapis.com/auth/chat.messages",
+    "https://www.googleapis.com/auth/chat.memberships.readonly",
+    // nomes e fotos das pessoas da empresa (People API), porque o Chat só devolve o id de quem enviou
+    "https://www.googleapis.com/auth/directory.readonly",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -83,7 +89,14 @@ pub struct GoogleClient {
     upload_api: String,
     /// contatos (People API)
     people_api: String,
+    /// Google Chat
+    chat_api: String,
+    /// envio de arquivos do Google Chat
+    chat_upload_api: String,
 }
+
+/// Avisa quanto do envio já foi (bytes enviados, total).
+pub type Progress = std::sync::Arc<dyn Fn(u64, u64) + Send + Sync>;
 
 fn net(e: reqwest::Error) -> LoginError {
     LoginError::Network(e.to_string())
@@ -96,6 +109,8 @@ impl GoogleClient {
         c.cal_api = crate::calendar::CALENDAR_API.into();
         c.upload_api = crate::gmail::GMAIL_UPLOAD_API.into();
         c.people_api = crate::contacts::PEOPLE_API.into();
+        c.chat_api = crate::chat::CHAT_API.into();
+        c.chat_upload_api = crate::chat::CHAT_UPLOAD_API.into();
         c
     }
 
@@ -115,6 +130,8 @@ impl GoogleClient {
             cal_api: format!("{}/calendar", api.trim_end_matches('/')),
             upload_api: format!("{}/upload", api.trim_end_matches('/')),
             people_api: format!("{}/people", api.trim_end_matches('/')),
+            chat_api: format!("{}/chat", api.trim_end_matches('/')),
+            chat_upload_api: format!("{}/chatup", api.trim_end_matches('/')),
         }
     }
 
@@ -338,6 +355,184 @@ impl GoogleClient {
             return Err(LoginError::Google(format!("{status}: {text}")));
         }
         Ok(text)
+    }
+
+    // ---------- Google Chat (só Workspace) ----------
+
+    fn check_space(space: &str) -> Result<(), LoginError> {
+        if crate::chat::valid_space_name(space) {
+            Ok(())
+        } else {
+            Err(LoginError::Google("conversa inválida".into()))
+        }
+    }
+
+    /// Conversas da conta (até 3 páginas de 200), da mais recente para a mais antiga.
+    pub async fn chat_spaces(&self, token: &str) -> Result<Vec<crate::chat::RawSpace>, LoginError> {
+        let mut out = Vec::new();
+        let mut page: Option<String> = None;
+        for _ in 0..3 {
+            let mut url = format!("{}/spaces?pageSize=200", self.chat_api);
+            if let Some(p) = &page {
+                url.push_str(&format!("&pageToken={}", url::form_urlencoded::byte_serialize(p.as_bytes()).collect::<String>()));
+            }
+            let body = self.request(reqwest::Method::GET, url, token, None).await?;
+            let (list, next) = crate::chat::parse_spaces(&body).map_err(LoginError::Google)?;
+            out.extend(list);
+            match next {
+                Some(n) if !n.is_empty() => page = Some(n),
+                _ => break,
+            }
+        }
+        crate::chat::sort_spaces(&mut out);
+        Ok(out)
+    }
+
+    /// Pessoas (`users/<id>`) de uma conversa.
+    pub async fn chat_members(&self, token: &str, space: &str) -> Result<Vec<String>, LoginError> {
+        Self::check_space(space)?;
+        let body = self.request(reqwest::Method::GET, format!("{}/{space}/members?pageSize=100", self.chat_api), token, None).await?;
+        crate::chat::parse_members(&body).map_err(LoginError::Google)
+    }
+
+    /// Uma página de mensagens (mais novas primeiro, como a API devolve).
+    pub async fn chat_messages(
+        &self,
+        token: &str,
+        space: &str,
+        page_token: Option<&str>,
+        page_size: u32,
+    ) -> Result<(Vec<crate::chat::RawMessage>, Option<String>), LoginError> {
+        Self::check_space(space)?;
+        let url = format!("{}/{space}/messages?{}", self.chat_api, crate::chat::messages_query(page_token, page_size));
+        let body = self.request(reqwest::Method::GET, url, token, None).await?;
+        crate::chat::parse_messages(&body).map_err(LoginError::Google)
+    }
+
+    /// Envia uma mensagem (texto e/ou anexos já enviados); com `thread`, responde naquela conversa.
+    pub async fn chat_send(
+        &self,
+        token: &str,
+        space: &str,
+        text: &str,
+        thread: Option<&str>,
+        attachments: &[crate::chat::AttachmentRef],
+    ) -> Result<crate::chat::RawMessage, LoginError> {
+        Self::check_space(space)?;
+        if thread.is_some_and(|t| !t.starts_with(&format!("{space}/threads/"))) {
+            return Err(LoginError::Google("conversa inválida".into()));
+        }
+        let (body, query) = crate::chat::send_request(text, thread, attachments);
+        let url = if query.is_empty() { format!("{}/{space}/messages", self.chat_api) } else { format!("{}/{space}/messages?{query}", self.chat_api) };
+        let resp = self.request(reqwest::Method::POST, url, token, Some(body)).await?;
+        crate::chat::parse_message(&resp).map_err(LoginError::Google)
+    }
+
+    /// Conteúdo de um anexo do Chat (`media.download`), até `max` bytes.
+    pub async fn chat_media(&self, token: &str, resource: &str, max: u64) -> Result<Vec<u8>, LoginError> {
+        if !crate::chat::valid_media_resource(resource) {
+            return Err(LoginError::Google("anexo inválido".into()));
+        }
+        let too_big = || LoginError::Google(format!("arquivo grande demais para abrir no Quill (mais de {} MB)", max / (1024 * 1024)));
+        let mut resp = self
+            .http
+            .get(format!("{}/media/{resource}?alt=media", self.chat_api))
+            .bearer_auth(token)
+            .timeout(Duration::from_secs(300))
+            .send()
+            .await
+            .map_err(net)?;
+        let status = resp.status();
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(LoginError::NeedsLogin);
+        }
+        if !status.is_success() {
+            let text = resp.text().await.map_err(net)?;
+            return Err(LoginError::Google(format!("{status}: {text}")));
+        }
+        if resp.content_length().is_some_and(|n| n > max) {
+            return Err(too_big());
+        }
+        let mut out = Vec::new();
+        while let Some(chunk) = resp.chunk().await.map_err(net)? {
+            if (out.len() + chunk.len()) as u64 > max {
+                return Err(too_big());
+            }
+            out.extend_from_slice(&chunk);
+        }
+        Ok(out)
+    }
+
+    /// Envia um arquivo para uma conversa (`attachments:upload`) e devolve a referência para a mensagem.
+    /// `progress` recebe (bytes já entregues à conexão, total).
+    pub async fn chat_upload(
+        &self,
+        token: &str,
+        space: &str,
+        filename: &str,
+        content_type: &str,
+        bytes: Vec<u8>,
+        progress: Progress,
+    ) -> Result<crate::chat::AttachmentRef, LoginError> {
+        if bytes.len() > crate::chat::MAX_UPLOAD {
+            return Err(LoginError::Google("O Google Chat aceita arquivos de até 200 MB.".into()));
+        }
+        Self::check_space(space)?;
+        let boundary = format!("quill-chat-{}", oauth::random_token(12));
+        let body = crate::chat::upload_body(filename, content_type, &bytes, &boundary);
+        drop(bytes);
+        let total = body.len() as u64;
+        let body = std::sync::Arc::new(body);
+        const CHUNK: usize = 256 * 1024;
+        let chunks = (0..body.len()).step_by(CHUNK).map(move |start| {
+            let end = (start + CHUNK).min(body.len());
+            progress(end as u64, total);
+            Ok::<_, std::io::Error>(body[start..end].to_vec())
+        });
+        let resp = self
+            .http
+            .post(format!("{}/{space}/attachments:upload?uploadType=multipart", self.chat_upload_api))
+            .bearer_auth(token)
+            .header("Content-Type", format!("multipart/related; boundary={boundary}"))
+            .header("Content-Length", total)
+            .timeout(Duration::from_secs(900))
+            .body(reqwest::Body::wrap_stream(futures_util::stream::iter(chunks)))
+            .send()
+            .await
+            .map_err(net)?;
+        let status = resp.status();
+        let text = resp.text().await.map_err(net)?;
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(LoginError::NeedsLogin);
+        }
+        if !status.is_success() {
+            return Err(LoginError::Google(format!("{status}: {text}")));
+        }
+        crate::chat::parse_upload(&text).map_err(LoginError::Google)
+    }
+
+    /// Nome, foto e e-mail de várias pessoas do Chat (`users/<id>`) pela People API (de 50 em 50).
+    /// Ids que não são de pessoas (apps) ficam de fora.
+    pub async fn people_batch(&self, token: &str, user_ids: &[String]) -> Result<Vec<crate::chat::ChatPerson>, LoginError> {
+        let resources: Vec<String> = user_ids.iter().filter_map(|u| crate::chat::people_resource(u)).collect();
+        let mut out = Vec::new();
+        for chunk in resources.chunks(50) {
+            let q: String = chunk
+                .iter()
+                .map(|r| format!("resourceNames={}", url::form_urlencoded::byte_serialize(r.as_bytes()).collect::<String>()))
+                .collect::<Vec<_>>()
+                .join("&");
+            let url = format!("{}/people:batchGet?{q}&personFields=names,photos,emailAddresses", self.people_api);
+            let body = self.request(reqwest::Method::GET, url, token, None).await?;
+            out.extend(crate::chat::parse_people_batch(&body).map_err(LoginError::Google)?);
+        }
+        Ok(out)
+    }
+
+    /// Id do Chat (`users/<id>`) da própria conta.
+    pub async fn people_me(&self, token: &str) -> Result<String, LoginError> {
+        let body = self.request(reqwest::Method::GET, format!("{}/people/me?personFields=names", self.people_api), token, None).await?;
+        crate::chat::parse_me(&body).map_err(LoginError::Google)
     }
 
     /// Contatos do Google: os salvos (peso 5) e os "Outros contatos" que o Gmail cria (peso 2). Até 3 páginas de cada.
@@ -610,17 +805,40 @@ mod tests {
 
     /// Servidor falso: responde cada pedido com o próximo corpo JSON e guarda o que recebeu.
     async fn fake_google(bodies: Vec<&'static str>) -> (String, tokio::task::JoinHandle<Vec<String>>) {
+        fake_google_with(bodies.into_iter().map(|b| (200, b)).collect()).await
+    }
+
+    /// Igual a `fake_google`, com o código HTTP de cada resposta. Lê o pedido inteiro (cabeçalhos + Content-Length).
+    async fn fake_google_with(replies: Vec<(u16, &'static str)>) -> (String, tokio::task::JoinHandle<Vec<String>>) {
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
         let base = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
         let handle = tokio::spawn(async move {
             let mut seen = Vec::new();
-            for body in bodies {
+            for (status, body) in replies {
                 let (mut s, _) = listener.accept().await.unwrap();
-                let mut buf = vec![0u8; 16384];
-                let n = s.read(&mut buf).await.unwrap();
-                seen.push(String::from_utf8_lossy(&buf[..n]).into_owned());
+                let mut buf = Vec::new();
+                let mut chunk = vec![0u8; 65536];
+                loop {
+                    let n = s.read(&mut chunk).await.unwrap();
+                    if n == 0 {
+                        break;
+                    }
+                    buf.extend_from_slice(&chunk[..n]);
+                    let text = String::from_utf8_lossy(&buf);
+                    if let Some(end) = text.find("\r\n\r\n") {
+                        let len = text[..end]
+                            .lines()
+                            .find_map(|l| l.to_ascii_lowercase().strip_prefix("content-length:").map(|v| v.trim().parse::<usize>().unwrap_or(0)))
+                            .unwrap_or(0);
+                        if buf.len() >= end + 4 + len {
+                            break;
+                        }
+                    }
+                }
+                seen.push(String::from_utf8_lossy(&buf).into_owned());
+                let reason = if status == 200 { "OK" } else { "Erro" };
                 let resp = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                     body.len()
                 );
                 s.write_all(resp.as_bytes()).await.unwrap();
@@ -877,6 +1095,148 @@ mod tests {
         let reqs = srv.await.unwrap();
         assert!(reqs[0].starts_with("PATCH /gmail/calendar/calendars/eu%40x.com/events/e1?sendUpdates=all"));
         assert!(reqs[1].starts_with("DELETE /gmail/calendar/calendars/eu%40x.com/events/e1?sendUpdates=all"));
+    }
+
+    // ---------- Google Chat ----------
+
+    #[tokio::test]
+    async fn chat_spaces_follow_pages_and_sort() {
+        let (base, srv) = fake_google(vec![
+            r#"{"spaces":[{"name":"spaces/A","spaceType":"SPACE","displayName":"A","lastActiveTime":"2026-11-17T10:00:00Z"}],"nextPageToken":"p2"}"#,
+            r#"{"spaces":[{"name":"spaces/B","spaceType":"DIRECT_MESSAGE","lastActiveTime":"2026-11-17T11:00:00Z"}]}"#,
+        ])
+        .await;
+        let list = client(&base).chat_spaces("ya29").await.unwrap();
+        assert_eq!(list.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(), ["spaces/B", "spaces/A"]);
+        let reqs = srv.await.unwrap();
+        assert!(reqs[0].starts_with("GET /gmail/chat/spaces?pageSize="));
+        assert!(reqs[0].to_ascii_lowercase().contains("authorization: bearer ya29"));
+        assert!(reqs[1].contains("pageToken=p2"));
+    }
+
+    #[tokio::test]
+    async fn chat_members_and_messages_use_space_path() {
+        let (base, srv) = fake_google(vec![
+            r#"{"memberships":[{"member":{"name":"users/1","type":"HUMAN"}}]}"#,
+            r#"{"messages":[{"name":"spaces/B/messages/1","sender":{"name":"users/1"},"createTime":"2026-11-17T11:00:00Z","text":"oi"}],"nextPageToken":"old"}"#,
+        ])
+        .await;
+        let c = client(&base);
+        assert_eq!(c.chat_members("ya29", "spaces/B").await.unwrap(), ["users/1"]);
+        let (msgs, next) = c.chat_messages("ya29", "spaces/B", Some("tok"), 50).await.unwrap();
+        assert_eq!(msgs[0].text, "oi");
+        assert_eq!(next.as_deref(), Some("old"));
+        let reqs = srv.await.unwrap();
+        assert!(reqs[0].starts_with("GET /gmail/chat/spaces/B/members?pageSize="));
+        assert!(reqs[1].starts_with("GET /gmail/chat/spaces/B/messages?orderBy=createTime%20desc&pageSize=50&pageToken=tok"));
+    }
+
+    #[tokio::test]
+    async fn chat_rejects_strange_space_names_without_network() {
+        let c = client("http://127.0.0.1:9");
+        assert!(c.chat_messages("ya29", "spaces/../x", None, 50).await.is_err());
+        assert!(c.chat_members("ya29", "users/1").await.is_err());
+        assert!(c.chat_send("ya29", "spaces/a/b", "oi", None, &[]).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn chat_send_replies_in_thread() {
+        let (base, srv) = fake_google(vec![
+            r#"{"name":"spaces/B/messages/9","sender":{"name":"users/me1"},"createTime":"2026-11-17T12:00:00Z","text":"ok","thread":{"name":"spaces/B/threads/T"}}"#,
+        ])
+        .await;
+        let m = client(&base).chat_send("ya29", "spaces/B", "ok", Some("spaces/B/threads/T"), &[]).await.unwrap();
+        assert_eq!(m.name, "spaces/B/messages/9");
+        let req = &srv.await.unwrap()[0];
+        assert!(req.starts_with("POST /gmail/chat/spaces/B/messages?messageReplyOption=REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD"));
+        assert!(req.contains(r#""thread":{"name":"spaces/B/threads/T"}"#));
+    }
+
+    #[tokio::test]
+    async fn chat_permission_error_keeps_google_reason() {
+        let (base, _srv) = fake_google_with(vec![(
+            403,
+            r#"{"error":{"code":403,"message":"Request had insufficient authentication scopes.","status":"PERMISSION_DENIED","details":[{"reason":"ACCESS_TOKEN_SCOPE_INSUFFICIENT"}]}}"#,
+        )])
+        .await;
+        let e = client(&base).chat_spaces("ya29").await.unwrap_err();
+        let LoginError::Google(msg) = e else { panic!("esperava erro do Google") };
+        assert_eq!(crate::chat::classify_error(&msg), crate::chat::ChatErrorKind::Permission);
+    }
+
+    #[tokio::test]
+    async fn chat_expired_token_needs_login() {
+        let (base, _srv) = fake_google_with(vec![(401, r#"{"error":{"code":401}}"#)]).await;
+        assert_eq!(client(&base).chat_spaces("ya29").await.unwrap_err(), LoginError::NeedsLogin);
+    }
+
+    #[tokio::test]
+    async fn chat_media_downloads_bytes() {
+        let (base, srv) = fake_google(vec!["GIF89a"]).await;
+        let bytes = client(&base).chat_media("ya29", "ClxD/abc==", 1024).await.unwrap();
+        assert_eq!(bytes, b"GIF89a");
+        let req = &srv.await.unwrap()[0];
+        assert!(req.starts_with("GET /gmail/chat/media/ClxD/abc==?alt=media"));
+    }
+
+    #[tokio::test]
+    async fn chat_media_refuses_big_files_and_bad_names() {
+        let (base, _srv) = fake_google(vec!["0123456789"]).await;
+        let e = client(&base).chat_media("ya29", "abc", 5).await.unwrap_err();
+        assert!(e.to_string().contains("grande demais"));
+        assert!(client("http://127.0.0.1:9").chat_media("ya29", "a?alt=json", 5).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn chat_upload_sends_multipart_and_reports_progress() {
+        let (base, srv) = fake_google(vec![r#"{"attachmentDataRef":{"resourceName":"res1","attachmentUploadToken":"tok1"}}"#]).await;
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let s2 = seen.clone();
+        let progress = std::sync::Arc::new(move |sent: u64, total: u64| s2.lock().unwrap().push((sent, total)));
+        let r = client(&base)
+            .chat_upload("ya29", "spaces/B", "nota.m4a", "audio/mp4", b"AUDIO-BYTES".to_vec(), progress)
+            .await
+            .unwrap();
+        assert_eq!(r.attachment_upload_token.as_deref(), Some("tok1"));
+        let req = &srv.await.unwrap()[0];
+        assert!(req.starts_with("POST /gmail/chatup/spaces/B/attachments:upload?uploadType=multipart"));
+        assert!(req.to_ascii_lowercase().contains("content-type: multipart/related; boundary="));
+        assert!(req.contains(r#"{"filename":"nota.m4a"}"#));
+        assert!(req.contains("Content-Type: audio/mp4\r\n\r\nAUDIO-BYTES"));
+        let seen = seen.lock().unwrap();
+        let (last_sent, total) = *seen.last().unwrap();
+        assert_eq!(last_sent, total);
+        assert!(total > 11);
+    }
+
+    #[tokio::test]
+    async fn chat_upload_refuses_files_over_limit() {
+        let big = vec![0u8; crate::chat::MAX_UPLOAD + 1];
+        let e = client("http://127.0.0.1:9").chat_upload("ya29", "spaces/B", "x.bin", "", big, std::sync::Arc::new(|_, _| {})).await.unwrap_err();
+        assert!(e.to_string().contains("200 MB"));
+    }
+
+    #[tokio::test]
+    async fn people_batch_and_me() {
+        let (base, srv) = fake_google(vec![
+            r#"{"responses":[{"person":{"resourceName":"people/1","names":[{"displayName":"Ana"}]}}]}"#,
+            r#"{"resourceName":"people/77"}"#,
+        ])
+        .await;
+        let c = client(&base);
+        let list = c.people_batch("ya29", &["users/1".to_string(), "users/app".to_string()]).await.unwrap();
+        assert_eq!(list[0].name, "Ana");
+        assert_eq!(c.people_me("ya29").await.unwrap(), "users/77");
+        let reqs = srv.await.unwrap();
+        assert!(reqs[0].starts_with("GET /gmail/people/people:batchGet?resourceNames=people%2F1&personFields=names,photos,emailAddresses"));
+        assert!(!reqs[0].contains("app"));
+        assert!(reqs[1].starts_with("GET /gmail/people/people/me?personFields=names"));
+    }
+
+    #[tokio::test]
+    async fn people_batch_without_valid_ids_skips_network() {
+        let list = client("http://127.0.0.1:9").people_batch("ya29", &["users/app".to_string()]).await.unwrap();
+        assert!(list.is_empty());
     }
 
     #[tokio::test]

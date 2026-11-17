@@ -27,6 +27,7 @@ Consulta rápida. O guia de estilo completo (cores, tipografia, botões, estrutu
 | Prévia | As telas abertas no navegador (`npm run dev`), sem a parte nativa, com dados de exemplo | Desenvolvimento |
 | App / janela nativa | O Quill montado pelo Tauri e aberto no Mac | `npm run tauri build` |
 | Montar | Gerar o `Quill.app` no Mac a partir do código | [guia rápido](guia-rapido.md#pedir-uma-montagem-nova-do-app) |
+| Espaço (Chat) | Conversa do Google Chat: espaço com nome, grupo sem nome ou mensagem direta (`spaces/<id>`) | Tela Chat |
 | Onboarding | Apresentação em 6 passos na primeira abertura, terminando na tela de entrar | `src/onboarding/` |
 | Saudação / banner | Cartão "Bom dia, …" com o resumo do dia e uma ilustração | Caixa de entrada |
 | Cartão "Hoje" | Coluna da direita com a semana, compromissos do dia e o convite pendente | Caixa de entrada |
@@ -93,6 +94,15 @@ dados deste Mac" (Ajustes → Privacidade) apaga todas. Nunca guardam senha nem 
 | `quietHours` | boolean | `true`, `false` | `false` | Horário silencioso (**ainda sem efeito**) |
 | `quietFrom` / `quietTo` | string | `"00:00"` a `"23:00"`, de hora em hora | `"22:00"` / `"07:00"` | Começo e fim do horário silencioso (**ainda sem efeito**) |
 
+**Google Chat** ([ADR-023](02-decisoes-adrs/ADR-023-google-chat-pela-api-so-workspace.md)):
+
+| Chave | Tipo | Valores válidos | Padrão | Significado |
+|---|---|---|---|---|
+| `chat.account` | string | e-mail de uma conta Workspace conectada | a primeira conta Workspace | Conta mostrada no Chat |
+| `chat.seen` | objeto | `{"<conta>\|<spaces/id>": ms}` | `{}` | Até quando cada conversa foi vista (base das não lidas) |
+| `chat.baseline.<conta>` | boolean | `true`, `false` | `false` | Já abriu o Chat dessa conta (na primeira vez, o que existe conta como lido) |
+| `chat.pinned` | lista | `["<conta>\|<spaces/id>", …]` | `[]` | Conversas fixadas (só neste Mac; a API não informa as do Google Chat) |
+
 **Nota sobre `confirmDelete`:** ligado por padrão em todo o app (corrigido em 2026-11-17). A pergunta usa a janela
 própria do Quill (`askConfirm`, em `src/components/ConfirmHost.tsx`), porque o `window.confirm` do navegador não
 funciona dentro do app.
@@ -156,7 +166,8 @@ Valem só em `npm run dev` (http://localhost:1420). Podem ser combinados (`?scre
 
 | Parâmetro | Valores | Efeito |
 |---|---|---|
-| `?screen=` | `inbox`, `read`, `compose`, `day`, `week`, `month`, `settings`, `onboarding` | Abre direto nessa tela |
+| `?screen=` | `inbox`, `read`, `compose`, `day`, `week`, `month`, `chat`, `settings`, `onboarding` | Abre direto nessa tela |
+| `&chat=` | `none`, `rec`, `att` | Com `?screen=chat`: sem conta Workspace, gravando áudio, ou enviando anexos |
 | `?theme=` | `light`, `dark` | Força o tema |
 | `?step=` | `1` a `6` | Abre o onboarding nesse passo (5 = tela de entrar; 6 = depois de entrar) |
 | `?native=1` | — | Simula a janela do Mac (barra para os botões nativos, linha fina em volta do painel) |

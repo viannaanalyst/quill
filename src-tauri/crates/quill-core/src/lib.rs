@@ -12,9 +12,13 @@ pub mod ical;
 pub mod dav;
 pub mod caldav;
 pub mod carddav;
+pub mod chat;
 
 #[cfg(feature = "net")]
 pub mod google;
+
+#[cfg(feature = "net")]
+pub mod chat_client;
 
 #[cfg(feature = "net")]
 pub mod imap_client;

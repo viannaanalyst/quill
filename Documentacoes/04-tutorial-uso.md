@@ -168,6 +168,32 @@ Limitações: eventos de agendas só de leitura (como feriados) não podem ser e
 No Calendário, abra **Calendários** e ligue ou desligue cada agenda. As agendas ficam agrupadas por conta. A escolha
 fica salva neste Mac.
 
+### Usar o Google Chat
+Só funciona com conta **Google Workspace** (da empresa); contas Gmail pessoais não têm Chat pela API
+([ADR-023](02-decisoes-adrs/ADR-023-google-chat-pela-api-so-workspace.md)).
+
+1. Clique no ícone de balão na barra lateral (depois do Calendário). A bolinha azul avisa que há conversas não lidas.
+2. Se aparecer **"Entre de novo com a conta para liberar o Chat"**, clique em **Entrar de novo**: o Chat pede
+   permissões que o login antigo não tinha.
+3. Na coluna da esquerda, escolha a conversa. Use a busca, as abas **Todas / Não lidas / Espaços** e o seletor de conta
+   (quando há mais de uma conta da empresa). O número azul é quantas mensagens chegaram desde que você abriu a conversa.
+4. Escreva embaixo: **Enter** envia, **⇧Enter** quebra a linha. A mensagem aparece na hora com "Enviando…"; se falhar,
+   aparece **Tentar de novo**.
+5. Para responder dentro de uma conversa (fio), passe o mouse na mensagem e clique na seta, ou abra "N respostas" e
+   clique em **Responder na conversa**.
+
+Anexos e áudio:
+- **Enviar arquivo:** clipe, arrastar para a conversa ou colar uma imagem (até 200 MB por arquivo). O arquivo começa a
+  subir na hora, com barra de progresso; dá para escrever uma mensagem junto e clicar na miniatura para ver antes.
+- **Gravar áudio:** clique no microfone (ou segure e solte). Aparecem o tempo e a ondinha; a lixeira descarta, o botão
+  de pausa para e deixa ouvir antes, e o avião envia. Na primeira vez o Mac pede permissão do microfone.
+- **Receber:** imagem abre grande ao clicar; vídeo toca no lugar (o botão do canto amplia); áudio toca na própria
+  mensagem; PDF e outros arquivos têm **Ver** e **Baixar** (vai para Downloads); arquivo do Google Drive abre no
+  navegador.
+
+Outros botões: **fixar** a conversa (fica em "Fixadas", só neste Mac), **buscar** nas mensagens carregadas, **ligar**
+e **nova conversa** (abrem o Google Chat no navegador). As mensagens novas chegam a cada 8 segundos com a tela aberta.
+
 ### Mudar a aparência
 - **Tema:** menu do avatar → Aparência, ou **Ajustes → Aparência**, ou ⌘K → "Tema claro/escuro/do sistema".
 - **Densidade da lista:** Confortável ou Compacta.
@@ -215,4 +241,9 @@ do cabeçalho.
 | Anexo não vai | Passou de 25 MB no total | Mandar em mais de um e-mail ou por link |
 | Não consigo editar um evento | Agenda só de leitura (feriados, agenda de outra pessoa) | Editar no dono da agenda |
 | Sem Google Meet no evento | Agenda do iCloud | Meet só existe em agendas do Google |
+| Chat: "O Google Chat funciona com contas do Google Workspace" | A conta é pessoal (Gmail) ou iCloud/IMAP | Conectar a conta da empresa |
+| Chat: "Entre de novo com a conta para liberar o Chat" | A conta entrou antes das permissões do Chat | Clicar em **Entrar de novo** |
+| Chat: "ainda não foi liberado para o Quill no Google Cloud" | Falta configurar o app de Chat no projeto do Google Cloud | Google Cloud → Google Chat API → Configuração |
+| Chat: não grava áudio | Microfone negado ao Quill | Ajustes do Sistema → Privacidade e Segurança → Microfone → ligar o Quill |
+| Chat: mensagem nova demora | A tela busca a cada 8 s, só com a janela à vista | Esperar alguns segundos ou trocar de conversa e voltar |
 | Agendei o envio e não saiu | Agendar envio ainda não funciona | Enviar na hora |

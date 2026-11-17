@@ -32,7 +32,8 @@ não entram aqui.
 | Google OAuth | Login | Página oficial na janela de login do macOS (ou no navegador), PKCE, volta em `127.0.0.1` |
 | Gmail API | Ler, organizar, enviar, rascunhos, anexos, contadores | HTTPS com token de acesso |
 | Google Agenda | Agendas, eventos, convites, criar/editar/apagar, Meet | HTTPS com token de acesso |
-| People API | Contatos e "Outros contatos" (só leitura) para sugestões | HTTPS com token de acesso |
+| People API | Contatos e "Outros contatos" (só leitura) para sugestões; nome e foto das pessoas do Google Chat (diretório da empresa) | HTTPS com token de acesso |
+| Google Chat API | Conversas, mensagens, pessoas de cada conversa, anexos (baixar e enviar) — só contas Workspace | HTTPS com token de acesso; consulta a cada 8 s/30 s com a tela aberta |
 | iCloud IMAP/SMTP | E-mail das contas iCloud | TLS (rustls), senha de app |
 | iCloud CalDAV/CardDAV | Agenda e contatos do iCloud | HTTPS, senha de app, só `*.icloud.com` |
 | Outros provedores IMAP/SMTP | E-mail de "Outro e-mail" | TLS (rustls), senha do provedor |
@@ -44,7 +45,7 @@ não entram aqui.
 | Peça | Tecnologia | Onde | Papel |
 |---|---|---|---|
 | Telas | React 19, Vite, TypeScript, CSS puro com tokens, Radix (Dialog, Popover, Select), ícones Lucide | `src/` | Tudo o que se vê; chama a parte nativa por `invoke` |
-| Parte nativa | Tauri v2 (Rust) | `src-tauri/src/` | Janela do Mac, 31 comandos, Touch ID; liga as telas à `quill-core` |
+| Parte nativa | Tauri v2 (Rust) | `src-tauri/src/` | Janela do Mac, 39 comandos, Touch ID; liga as telas à `quill-core` |
 | Lógica | Crate Rust `quill-core` | `src-tauri/crates/quill-core/` | Login, Gmail, Agenda, IMAP/SMTP, CalDAV/CardDAV, contas, anexos; testada sozinha |
 
 ```
@@ -84,6 +85,7 @@ src/
   read/                     leitura, EmailFrame (quadro isolado), conversas
   compose/                  Escrever, barra de formatação, sugestões de destinatário
   calendar/                 dia, semana, mês e formulário de evento (prefixo cal-)
+  chat/                     Google Chat: lista, conversa, caixa de escrever, gravação, anexos (prefixo chat-)
   settings/                 Ajustes e suas seções (prefixo st-)
   components/               peças comuns: Select, DatePicker, SliderGroup, Toasts, CommandPalette,
                             AccountMenu, ImapConnect, LockScreen, MessageAvatar, FileIcon, PhotoCropper…
@@ -94,7 +96,7 @@ src/
   assets/                   fonte Inter, logos dos serviços, ilustrações da saudação (WebP), ícone
 ```
 
-Telas pesadas carregam sob demanda (`React.lazy`): onboarding, AppShell, Calendário, Escrever, Ajustes, busca ⌘K,
+Telas pesadas carregam sob demanda (`React.lazy`): onboarding, AppShell, Calendário, Chat, Escrever, Ajustes, busca ⌘K,
 formulário do iCloud/IMAP. O Vite separa React e ícones em pacotes próprios.
 
 ### Parte nativa (`src-tauri/`)
@@ -106,7 +108,7 @@ src-tauri/
   build.rs                  embute as credenciais do Google na montagem
   Cargo.toml                perfil de release enxuto (opt-level "s", LTO, strip)
   src/main.rs               chama quill_lib::run()
-  src/lib.rs                os 31 comandos e o estado do app
+  src/lib.rs                os 39 comandos e o estado do app
   src/touchid.rs            Touch ID (LocalAuthentication; só compila no Mac)
   src/websheet.rs           janela de login do Google no Mac (ASWebAuthenticationSession)
   crates/quill-core/        a lógica (abaixo)
@@ -131,12 +133,14 @@ do sistema (`keyring`) e abrir o navegador (`open`). O app usa `desktop`; os tes
 | `dav` | — | WebDAV: corpo dos pedidos e leitura das respostas `multistatus` | 7 |
 | `caldav` | — | Agenda do iCloud: agendas, eventos, repetições, fusos; monta os `.ics` | 23 |
 | `carddav` | — | Contatos do iCloud: catálogos e vCards (nome, e-mails, foto) | 8 |
-| `google` | `net` | Conversa com o Google: volta do navegador, troca e renovação de tokens, Gmail, Agenda, People | 26 |
+| `chat` | — | Google Chat: lê conversas, membros, mensagens, anexos e pessoas (People API); monta envio e upload; classifica erros (permissão, app não configurado, conta sem Workspace) | 29 |
+| `google` | `net` | Conversa com o Google: volta do navegador, troca e renovação de tokens, Gmail, Agenda, People, Chat (com download e upload de anexos) | 38 |
+| `chat_client` | `net` | `ChatService`: cache na memória do próprio id, das pessoas, dos membros e das prévias; resolve nomes e fotos | 7 |
 | `imap_client` | `net` | Conversa com servidores IMAP e SMTP (TLS com rustls), palpite de servidores | 17 |
 | `dav_client` | `net` | CalDAV/CardDAV com o iCloud: HTTP Basic só em HTTPS e só para `*.icloud.com`; redirecionamentos à mão | 14 |
 | `session` | `desktop` | Sessão das contas Google: login (tempo máximo de 4 min, cancelável, com o jeito de abrir a página escolhido pelo app), tokens nas Chaves, renovação, ações | 2 |
 | `imap_session` | `desktop` | Contas iCloud/IMAP: senha de app nas Chaves, servidores no `accounts.json` | 0 |
-| **Total** | | | **201** |
+| **Total** | | | **249** (247 com `net`) |
 
 `session` e `imap_session` só juntam o cofre do sistema e a rede; a lógica que eles usam está testada nos outros
 módulos.
@@ -177,6 +181,13 @@ contatos do iCloud vão por CalDAV/CardDAV com a mesma senha de app. Erros que p
 | Anexos | `attachment_get` | `save` (Downloads), `open` (app padrão) ou `preview` (Quick Look) |
 | | `attachment_data` | Conteúdo em base64 para a prévia dentro do app |
 | | `reveal_download` | Mostra o arquivo no Finder (só aceita a pasta Downloads) |
+| Google Chat | `chat_spaces` | Conversas da conta Workspace, mais recentes primeiro, com nome, fotos, prévia e horários para as não lidas (iCloud/IMAP: vazio) |
+| | `chat_messages` | Uma página de mensagens (da mais antiga para a mais nova); `pageToken` busca as anteriores |
+| | `chat_members` | Pessoas da conversa (a própria conta por último, como "Você") |
+| | `chat_send` | Envia texto e/ou anexos já enviados; `thread` responde na conversa (até 4.096 caracteres) |
+| | `chat_attachment` | Conteúdo de um anexo em base64 (até 50 MB), para miniatura, player e prévia |
+| | `chat_attachment_save` | Baixa um anexo para Downloads (até 200 MB); `open` também abre |
+| | `chat_upload` | Envia um arquivo (até 200 MB) cru no corpo do pedido, dados nos cabeçalhos `x-quill-*`; progresso no evento `chat-upload-progress` |
 | Sistema | `open_link` | Abre link no navegador (só http, https, mailto) |
 | | `touch_id_available` | O Mac pode pedir Touch ID ou senha? |
 | | `touch_id_authenticate` | Pede o Touch ID (true = confirmado, false = cancelado) |
@@ -190,11 +201,12 @@ contatos do iCloud vão por CalDAV/CardDAV com a mesma senha de app. Erros que p
 | `calendar.ts` | Agendas e eventos de todas as contas, juntando cópias do mesmo convite (iCalUID + início) e escondendo feriados repetidos em outro idioma; criar, editar, apagar, responder |
 | `contacts.ts` | Sugestões de destinatário, com cache em `quill.contacts.cache` |
 | `outbox.ts` | Caixa de saída com "Desfazer": segura o e-mail N segundos antes de enviar |
+| `chat.ts` | Google Chat: conta escolhida, conversas, mensagens por conversa, pessoas, mensagens saindo (com progresso e "Tentar de novo"), não lidas (`quill.chat.seen`) e fixadas (`quill.chat.pinned`); com o Chat fechado, atualiza junto com os e-mails |
 
 Preferências que várias telas leem ficam no `localStorage` (prefixo `quill.`) por `usePref`/`getPref`. Lista completa
 em [05-referencia.md](05-referencia.md).
 
-Na prévia do navegador, `mailbox.ts` e `calendar.ts` usam dados de exemplo; no app sem conta, nada
+Na prévia do navegador, `mailbox.ts`, `calendar.ts` e `chat.ts` usam dados de exemplo; no app sem conta, nada
 ([ADR-020](02-decisoes-adrs/ADR-020-dados-de-exemplo-so-na-previa.md)).
 
 ## Fluxos principais
@@ -233,6 +245,8 @@ Na prévia do navegador, `mailbox.ts` e `calendar.ts` usam dados de exemplo; no 
 | Senha do iCloud | Enviada só por HTTPS e só para `icloud.com` / `*.icloud.com`; redirecionamentos seguidos à mão e conferidos; a senha nunca aparece em erro |
 | IMAP/SMTP | Sempre TLS com rustls e o verificador de certificados do sistema |
 | Anexos | Nome de arquivo limpo, sem sobrescrever; `reveal_download` só aceita caminhos dentro de Downloads |
+| Google Chat | Nomes de conversa (`spaces/<id>`), de conteúdo (download) e de conversa da resposta conferidos antes de montar o caminho na API; `spaceUri` só se for `https://*.google.com`; erros do Google viram frase curta (nunca o token); limites de 50 MB (mostrar), 200 MB (baixar/enviar) e 4.096 caracteres |
+| Microfone | Só quando a pessoa grava no Chat; frase de permissão em `src-tauri/Info.plist` (`NSMicrophoneUsageDescription`), que o Tauri junta ao app |
 | Credenciais do Google | Embutidas na montagem pelo `build.rs` (Infisical ou `oauth.local.env`, fora do git); nunca no repositório |
 | Touch ID | `LocalAuthentication` do macOS (`DeviceOwnerAuthentication`: digital ou senha do Mac) |
 
@@ -278,9 +292,14 @@ infisical run --env=prod -- npm run tauri build
 
 Em 2026-11-17, na VPS:
 
-- **Testes da `quill-core`:** `cargo test --features net` → **199 testes passaram, 0 falharam**. Cobrem OAuth, leitura
-  do Gmail e da Agenda, contatos, contas, anexos, IMAP (com servidor falso), iCalendar/vCard, WebDAV, CalDAV e
-  CardDAV, e as conversas com o Google e o iCloud (com servidores falsos). Não falam com servidores reais.
+- **Testes da `quill-core`:** `cargo test --features net` → **247 testes passaram, 0 falharam** (249 com
+  `--features desktop`). Cobrem OAuth, leitura do Gmail e da Agenda, contatos, contas, anexos, IMAP (com servidor
+  falso), iCalendar/vCard, WebDAV, CalDAV e CardDAV, Google Chat (leitura, envio, download e upload com progresso,
+  cache de pessoas) e as conversas com o Google e o iCloud (com servidores falsos). Não falam com servidores reais.
+- **`src-tauri/src/lib.rs` na VPS (sem GTK, o Tauri de verdade não compila no Linux):** um projeto temporário com um
+  "Tauri de mentira" (só os tipos e assinaturas que o `lib.rs` usa: `State`, `AppHandle`, `Manager`, `Emitter`,
+  `ipc::Request`, `generate_handler!`…) e o `lib.rs` real como biblioteca, conferido com `cargo check`. Pega erro de
+  tipo e de chamada, mas não substitui montar no Mac.
 - **Telas:** `npm run build` sem erros de tipo. Atenção: rodou com mudanças de outros agentes ainda não commitadas na
   pasta (ícone do Dock).
 - **Prévia do navegador:** as telas foram conferidas por prints em claro e escuro durante o desenvolvimento, com os

@@ -10,6 +10,7 @@ mod websheet;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use quill_core::chat_client::ChatService;
 use quill_core::dav_client::{Creds, DavError, ICloudDav};
 use quill_core::gmail::MessageSummary;
 use quill_core::google::LoginError;
@@ -17,7 +18,7 @@ use quill_core::imap::{ImapConfig, ImapError};
 use quill_core::imap_session::ImapSession;
 use quill_core::session::GoogleSession;
 use serde::Serialize;
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 
 struct AppState {
     google: Option<GoogleSession>,
@@ -25,6 +26,8 @@ struct AppState {
     imap: ImapSession,
     /// agenda e contatos das contas iCloud (CalDAV/CardDAV)
     icloud: ICloudDav,
+    /// Google Chat das contas Workspace (mesmas credenciais do Google)
+    chat: Option<ChatService>,
     accounts_file: std::path::PathBuf,
 }
 
@@ -407,6 +410,148 @@ async fn attachment_get(
     Ok(path.to_string_lossy().into_owned())
 }
 
+// ---------- Google Chat (só contas Google Workspace) ----------
+
+/// Contas sem Chat pela API (Gmail pessoal, iCloud, IMAP).
+const CHAT_NOT_WORKSPACE: &str = "chat_not_workspace";
+
+/// Erros do Chat para a tela: "needs_login", "chat_permission" (entrar de novo para liberar o Chat),
+/// "chat_not_configured" (app de Chat não configurado no Google Cloud), "chat_not_workspace" ou uma frase curta.
+fn chat_err(e: LoginError) -> String {
+    match e {
+        LoginError::NeedsLogin => "needs_login".into(),
+        LoginError::Google(msg) => quill_core::chat::classify_error(&msg).code(),
+        other => other.to_string(),
+    }
+}
+
+/// Serviço do Chat e token de acesso da conta (só contas Google Workspace).
+async fn chat_ctx<'a>(state: &'a AppState, email: &str) -> Result<(&'a ChatService, String), String> {
+    if state.imap.is_imap(email) || quill_core::chat::is_consumer_email(email) {
+        return Err(CHAT_NOT_WORKSPACE.into());
+    }
+    let chat = state.chat.as_ref().ok_or_else(|| "not_configured".to_string())?;
+    let token = google(state)?.access_token(email).await.map_err(err)?;
+    Ok((chat, token))
+}
+
+/// Conversas da conta (diretas, grupos e espaços), mais recentes primeiro. Contas iCloud/IMAP: vazio.
+#[tauri::command]
+async fn chat_spaces(state: State<'_, AppState>, email: String) -> Result<Vec<quill_core::chat::ChatSpace>, String> {
+    if state.imap.is_imap(&email) {
+        return Ok(Vec::new());
+    }
+    let (chat, token) = chat_ctx(&state, &email).await?;
+    chat.spaces(&email, &token).await.map_err(chat_err)
+}
+
+/// Mensagens de uma conversa (da mais antiga para a mais nova); `page_token` busca as anteriores.
+#[tauri::command]
+async fn chat_messages(state: State<'_, AppState>, email: String, space: String, page_token: Option<String>) -> Result<quill_core::chat::ChatPage, String> {
+    let (chat, token) = chat_ctx(&state, &email).await?;
+    chat.messages(&email, &token, &space, page_token.as_deref()).await.map_err(chat_err)
+}
+
+/// Pessoas de uma conversa (nome e foto); a própria conta vem por último, como "Você".
+#[tauri::command]
+async fn chat_members(state: State<'_, AppState>, email: String, space: String) -> Result<Vec<quill_core::chat::ChatPerson>, String> {
+    let (chat, token) = chat_ctx(&state, &email).await?;
+    chat.members(&email, &token, &space).await.map_err(chat_err)
+}
+
+/// Envia uma mensagem (texto e/ou anexos já enviados por `chat_upload`); `thread` responde numa conversa.
+#[tauri::command]
+async fn chat_send(
+    state: State<'_, AppState>,
+    email: String,
+    space: String,
+    text: String,
+    thread: Option<String>,
+    attachments: Option<Vec<quill_core::chat::AttachmentRef>>,
+) -> Result<quill_core::chat::ChatMessage, String> {
+    let attachments = attachments.unwrap_or_default();
+    if text.trim().is_empty() && attachments.is_empty() {
+        return Err("Escreva uma mensagem.".into());
+    }
+    if text.chars().count() > 4096 {
+        return Err("Mensagem longa demais: o Google Chat aceita até 4.096 caracteres.".into());
+    }
+    let (chat, token) = chat_ctx(&state, &email).await?;
+    chat.send(&email, &token, &space, &text, thread.as_deref(), &attachments).await.map_err(chat_err)
+}
+
+/// Conteúdo de um anexo do Chat em base64 (miniatura, player, prévia), até 50 MB.
+#[tauri::command]
+async fn chat_attachment(state: State<'_, AppState>, email: String, resource_name: String) -> Result<String, String> {
+    use base64::Engine;
+    let (chat, token) = chat_ctx(&state, &email).await?;
+    let bytes = chat.media(&token, &resource_name, quill_core::chat::MAX_INLINE).await.map_err(chat_err)?;
+    Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
+}
+
+/// Baixa um anexo do Chat para Downloads (até 200 MB): "save" só guarda, "open" guarda e abre. Devolve o caminho.
+#[tauri::command]
+async fn chat_attachment_save(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    email: String,
+    resource_name: String,
+    name: String,
+    action: String,
+) -> Result<String, String> {
+    let (chat, token) = chat_ctx(&state, &email).await?;
+    let bytes = chat.media(&token, &resource_name, quill_core::chat::MAX_DOWNLOAD).await.map_err(chat_err)?;
+    let dir = app.path().download_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = quill_core::files::unique_path(&dir, &name);
+    std::fs::write(&path, bytes).map_err(|e| format!("não consegui salvar o arquivo: {e}"))?;
+    if action == "open" {
+        quill_core::files::open_file(&path)?;
+    }
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// Progresso de um envio de arquivo do Chat (evento "chat-upload-progress").
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UploadProgress {
+    id: String,
+    sent: u64,
+    total: u64,
+}
+
+/// Envia um arquivo para uma conversa do Chat (até 200 MB). O conteúdo chega cru no corpo do pedido
+/// (sem base64); conta, conversa, nome, tipo e id do envio vêm nos cabeçalhos `x-quill-*`
+/// (nome codificado com encodeURIComponent). O progresso sai no evento "chat-upload-progress".
+#[tauri::command]
+async fn chat_upload(app: tauri::AppHandle, state: State<'_, AppState>, request: tauri::ipc::Request<'_>) -> Result<quill_core::chat::AttachmentRef, String> {
+    let header = |k: &str| request.headers().get(k).and_then(|v| v.to_str().ok()).map(quill_core::chat::decode_component).unwrap_or_default();
+    let (email, space, name, kind, id) = (header("x-quill-email"), header("x-quill-space"), header("x-quill-name"), header("x-quill-type"), header("x-quill-upload"));
+    let tauri::ipc::InvokeBody::Raw(data) = request.body() else {
+        return Err("arquivo não recebido".into());
+    };
+    if data.is_empty() {
+        return Err("arquivo vazio".into());
+    }
+    if data.len() > quill_core::chat::MAX_UPLOAD {
+        return Err("O Google Chat aceita arquivos de até 200 MB.".into());
+    }
+    let bytes = data.clone();
+    let (chat, token) = chat_ctx(&state, &email).await?;
+    let name = if name.trim().is_empty() { "arquivo".to_string() } else { name };
+    // avisa a tela a cada 1% (no máximo ~100 eventos por arquivo)
+    let last = std::sync::Mutex::new(u64::MAX);
+    let progress: quill_core::google::Progress = std::sync::Arc::new(move |sent, total| {
+        let pct = if total == 0 { 100 } else { sent * 100 / total };
+        let mut l = last.lock().expect("trava do progresso");
+        if *l != pct {
+            *l = pct;
+            let _ = app.emit("chat-upload-progress", UploadProgress { id: id.clone(), sent, total });
+        }
+    });
+    chat.upload(&token, &space, &name, &kind, bytes, progress).await.map_err(chat_err)
+}
+
 /// Troca o ícone do Dock (PNG em base64); vazio volta ao ícone padrão.
 #[tauri::command]
 async fn set_dock_icon(app: tauri::AppHandle, png_base64: String) -> Result<(), String> {
@@ -479,8 +624,12 @@ pub fn run() {
                 (Some(id), Some(secret)) => Some(GoogleSession::new(id, secret, accounts_file.clone())),
                 _ => None,
             };
+            let chat = match (option_env!("QUILL_GOOGLE_CLIENT_ID"), option_env!("QUILL_GOOGLE_CLIENT_SECRET")) {
+                (Some(id), Some(secret)) => Some(ChatService::new(quill_core::google::GoogleClient::new(id, secret))),
+                _ => None,
+            };
             let imap = ImapSession::new(accounts_file.clone());
-            app.manage(AppState { google, imap, icloud: ICloudDav::default(), accounts_file });
+            app.manage(AppState { google, imap, icloud: ICloudDav::default(), chat, accounts_file });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -515,7 +664,14 @@ pub fn run() {
             open_link,
             touch_id_available,
             set_dock_icon,
-            touch_id_authenticate
+            touch_id_authenticate,
+            chat_spaces,
+            chat_messages,
+            chat_members,
+            chat_send,
+            chat_attachment,
+            chat_attachment_save,
+            chat_upload
         ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o Quill");
