@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, type CSSProperties } from "react";
+import { useEffect, lazy, Suspense, useState, type CSSProperties } from "react";
 import "./settings.css";
 import { TopBar } from "../components/TopBar";
 import { Logo } from "../components/Logo";
@@ -14,7 +14,6 @@ import {
   LogOut,
   OctagonAlert,
   Pencil,
-  Plus,
   RefreshCw,
   RotateCcw,
   Server,
@@ -27,8 +26,9 @@ import type { AccountId } from "../inbox/types";
 import { SENDER_EMAILS } from "../compose/contacts";
 import { isTauri } from "../lib/platform";
 import { friendlyError } from "../lib/api";
-import { accountName, disconnect, getMailbox, providerOf, signInWithGoogle, useMailbox } from "../state/mailbox";
+import { accountName, applyAccountLook, disconnect, getMailbox, providerOf, signInWithGoogle, useMailbox } from "../state/mailbox";
 import type { ImapProvider } from "../components/ImapConnect";
+import { MoreColors } from "../components/ColorPicker";
 
 const ImapConnect = lazy(() => import("../components/ImapConnect"));
 import { LoginWaiting } from "../components/LoginWaiting";
@@ -148,6 +148,8 @@ function RealDetails({ email, index, onDisconnect }: { email: string; index: num
   const [nickname, setNickname] = usePref(`account:${email}:nickname`, accountName(email));
   const [color, setColor] = usePref(`account:${email}:color`, REAL_COLORS[index % REAL_COLORS.length]);
   const [sig, setSig] = usePref(`account:${email}:signature`, "account");
+  // a cor e o apelido aparecem na hora no resto do app (lista, filtros, calendário)
+  useEffect(() => applyAccountLook(), [nickname, color]);
   return (
     <aside className="st-side screen-enter" aria-label={`Detalhes de ${nickname}`}>
       <section className="card st-card">
@@ -171,6 +173,7 @@ function RealDetails({ email, index, onDisconnect }: { email: string; index: num
             {SWATCHES.map((c) => (
               <button key={c} className="st-swatch" role="radio" aria-checked={color === c} aria-label={`Cor ${c}`} style={{ "--c": c } as Vars} onClick={() => setColor(c)} />
             ))}
+            <MoreColors value={color} onChange={setColor} presets={SWATCHES} />
           </div>
         </div>
         <div className="st-field">
@@ -307,10 +310,6 @@ export default function Settings({ onRestartOnboarding }: { onRestartOnboarding:
                       {isTauri ? connected.length : ACCOUNTS.length} {(isTauri ? connected.length : ACCOUNTS.length) === 1 ? "conta" : "contas"} · arraste para mudar a ordem na caixa de entrada
                     </div>
                   </div>
-                  <button className="btn solid" onClick={() => void addAccount("Google")}>
-                    <Plus size={16} aria-hidden />
-                    Adicionar conta
-                  </button>
                 </div>
                 {live ? (
                   <ul className="st-accounts">
@@ -435,6 +434,7 @@ export default function Settings({ onRestartOnboarding }: { onRestartOnboarding:
                         onClick={() => update(selected, { color: c })}
                       />
                     ))}
+                    <MoreColors value={sel.color} onChange={(c) => update(selected, { color: c })} presets={SWATCHES} />
                   </div>
                 </div>
                 <div className="st-field">

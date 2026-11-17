@@ -29,7 +29,7 @@ function sanitize(html: string): { html: string; hasRemote: boolean } {
  * O papel é branco mesmo no modo escuro, porque os e-mails são desenhados para fundo claro.
  */
 export function EmailFrame({ html, inline }: { html: string; inline?: Record<string, () => Promise<string>> }) {
-  const [blockImages] = usePref("blockRemoteImages", true);
+  const [blockImages] = usePref("blockRemoteImages", false);
   const [showOnce, setShowOnce] = useState(false);
   const ref = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(120);

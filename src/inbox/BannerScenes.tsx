@@ -10,10 +10,11 @@ import { getPref } from "../lib/storage";
  * clara e escura (as cores ficam em bannerScenes.css e trocam com o tema), mais a foto do usuário.
  */
 
-export type SceneId = "sky" | "mountains" | "sea" | "city" | "aurora" | "field";
+export type SceneId = "original" | "sky" | "mountains" | "sea" | "city" | "aurora" | "field";
 export type BannerChoice = "auto" | SceneId | "photo" | "none";
 
 export const SCENES: { id: SceneId; label: string }[] = [
+  { id: "original", label: "Original" },
   { id: "sky", label: "Céu" },
   { id: "mountains", label: "Montanhas" },
   { id: "sea", label: "Mar" },
@@ -88,7 +89,64 @@ import fieldLight from "../assets/banners/field-light.webp";
 import fieldDark from "../assets/banners/field-dark.webp";
 
 /** Imagem clara/escura de cada cena e a altura (em %) que fica à mostra na faixa baixa do cartão. */
-const ART: Record<SceneId, { light: string; dark: string; y: string }> = {
+/** A primeira ilustração do Quill (desenho em SVG): céu, nuvens, sol/lua e envelopes numa trilha. */
+function Envelope({ x, y, w, rotate }: { x: number; y: number; w: number; rotate: number }) {
+  const h = w * 0.66;
+  return (
+    <g transform={`translate(${x} ${y}) rotate(${rotate})`}>
+      <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={w * 0.09} fill="var(--env)" stroke="var(--envline)" strokeWidth="1.2" />
+      <path d={`M${-w / 2 + 2} ${-h / 2 + 2} L0 ${h * 0.08} L${w / 2 - 2} ${-h / 2 + 2}`} fill="none" stroke="var(--envline)" strokeWidth="1.2" strokeLinejoin="round" />
+    </g>
+  );
+}
+
+function OriginalArt({ thumb }: { thumb?: boolean }) {
+  return (
+    <svg className="banner-original" viewBox={thumb ? "560 -10 440 150" : "0 0 1000 112"} preserveAspectRatio="xMaxYMid slice" aria-hidden focusable="false">
+      <defs>
+        <linearGradient id="quill-sky-o" x1="0" x2="1" y1="0" y2=".5">
+          <stop offset=".25" stopColor="var(--o-sky1)" />
+          <stop offset="1" stopColor="var(--o-sky2)" />
+        </linearGradient>
+        <radialGradient id="quill-glow-o">
+          <stop offset="0" stopColor="var(--o-sun)" stopOpacity=".9" />
+          <stop offset="1" stopColor="var(--o-sun)" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <rect x="-200" width="1400" height="160" fill="url(#quill-sky-o)" />
+      <g fill="var(--o-star)">
+        <circle cx="560" cy="18" r="1.2" />
+        <circle cx="640" cy="40" r="1" />
+        <circle cx="720" cy="14" r="1.4" />
+        <circle cx="790" cy="52" r="1" />
+        <circle cx="960" cy="22" r="1.2" />
+        <circle cx="600" cy="70" r=".9" />
+      </g>
+      <circle cx="905" cy="32" r="44" fill="url(#quill-glow-o)" />
+      <circle cx="905" cy="32" r="15" fill="var(--o-sun)" />
+      <g fill="var(--o-cloud2)">
+        <circle cx="700" cy="122" r="40" />
+        <circle cx="760" cy="104" r="38" />
+        <circle cx="830" cy="114" r="44" />
+        <circle cx="900" cy="98" r="36" />
+        <circle cx="970" cy="108" r="42" />
+      </g>
+      <g fill="var(--o-cloud)">
+        <circle cx="760" cy="132" r="34" />
+        <circle cx="815" cy="120" r="30" />
+        <circle cx="870" cy="134" r="36" />
+        <circle cx="940" cy="124" r="30" />
+        <circle cx="1000" cy="130" r="34" />
+      </g>
+      <path d="M470 82 C540 56 590 88 650 62 S770 28 860 46" fill="none" stroke="#8FAA87" strokeWidth="2" strokeDasharray="1 7" strokeLinecap="round" />
+      <Envelope x={470} y={82} w={24} rotate={-10} />
+      <Envelope x={600} y={58} w={30} rotate={8} />
+      <Envelope x={745} y={36} w={38} rotate={-6} />
+    </svg>
+  );
+}
+
+const ART: Record<Exclude<SceneId, "original">, { light: string; dark: string; y: string }> = {
   sky: { light: skyLight, dark: skyDark, y: "38%" },
   mountains: { light: mountainsLight, dark: mountainsDark, y: "62%" },
   sea: { light: seaLight, dark: seaDark, y: "58%" },
@@ -99,6 +157,13 @@ const ART: Record<SceneId, { light: string; dark: string; y: string }> = {
 
 /** Ilustração de uma cena. Os detalhes ficam à direita, então ela se corta pela esquerda (onde vai o texto). */
 export function SceneArt({ scene, className, thumb = false }: { scene: SceneId; className?: string; thumb?: boolean }) {
+  if (scene === "original") {
+    return (
+      <span className={`banner-art banner-img${className ? ` ${className}` : ""}`} data-scene={scene} aria-hidden>
+        <OriginalArt thumb={thumb} />
+      </span>
+    );
+  }
   const art = ART[scene] ?? ART.sky;
   const style = { objectPosition: thumb ? "85% 70%" : `right ${art.y}` };
   return (

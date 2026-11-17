@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { api, friendlyError, NEEDS_LOGIN, type AccountInfo, type AttachmentInfo, type ImapConfig, type MessageAction, type MessageSummaryDto, type OutgoingMessage } from "../lib/api";
 import { isTauri } from "../lib/platform";
+import { getPref } from "../lib/storage";
 import { ACCOUNTS, MESSAGES } from "../inbox/sampleData";
 import type { Account, Message } from "../inbox/types";
 import type { LogoName } from "../components/Logo";
@@ -113,12 +114,19 @@ function toAccount(info: AccountInfo, index: number, unread: number): Account {
   const { label, logo } = providerOf(info);
   return {
     id: info.email,
-    name: accountName(info.email),
+    // apelido e cor escolhidos em Ajustes → Contas valem no app todo
+    name: getPref<string>(`account:${info.email}:nickname`, "").trim() || accountName(info.email),
     provider: label,
     logo,
-    color: COLORS[index % COLORS.length],
+    color: getPref<string>(`account:${info.email}:color`, COLORS[index % COLORS.length]),
     unread,
   };
+}
+
+/** Reaplica apelido e cor das contas (depois de mudar nos Ajustes), sem buscar nada de novo. */
+export function applyAccountLook() {
+  if (state.connected.length === 0) return;
+  set({ accounts: state.connected.map((a, i) => toAccount(a, i, state.accounts.find((x) => x.id === a.email)?.unread ?? 0)) });
 }
 
 function hash(s: string) {

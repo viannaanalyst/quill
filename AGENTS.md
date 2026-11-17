@@ -56,7 +56,8 @@ App de e-mail e calendário, **macOS primeiro**, depois Windows. Começou como u
 
 ## Fluxo de trabalho
 
-- Conferir as telas na **prévia** (navegador) com prints, em claro e escuro. **Não remontar o app no Mac a cada mudança** (pedido do Gabriel, para economizar): montar só quando terminar uma etapa grande ou quando for preciso ver algo que só existe na janela nativa.
+- Conferir as telas na **prévia** (navegador) com prints, em claro e escuro.
+- **REGRA: nunca gerar, montar ou instalar o app no Mac sem o Gabriel pedir na hora.** Ele avisa quando quer o app novo. Vale também para agentes no Mac: se for indispensável compilar para conferir código só de Mac, compile sem instalar, sem abrir e sem trocar o app em /Applications.
 - No Mac, os prints são só da janela do Quill (`screencapture -l <id>`), nunca da tela inteira, porque ela mostra os e-mails pessoais.
 
 ## Padrões de interface

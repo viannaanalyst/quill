@@ -111,3 +111,11 @@ Baseado no `git log` e nas mensagens dos commits. Horários em Brasília (UTC−
   texto de rodapé da lista.
 - A saudação aparece em todas as pastas (contando os não lidos da Entrada); saíram as bolinhas coloridas dos eventos no
   cartão "Hoje".
+- Ícone do Dock: corrigido o erro "Não consegui trocar o ícone" (a regra de segurança do app, CSP, não deixava o
+  Quill ler a própria imagem; `connect-src` ganhou `'self'`). O aviso de erro agora mostra o motivo.
+- Saudação: saiu a faixa escura sobre a ilustração; a ilustração original (SVG com envelopes) voltou como opção
+  "Original".
+- Imagens dentro dos e-mails aparecem por padrão, como no Gmail (dá para bloquear em Ajustes → Privacidade).
+- Ajustes → Contas: saiu o botão "Adicionar conta" (os quatro cartões abrem o fluxo); "Cor da conta" ganhou o botão
+  "+" com uma paleta de 60 cores, cinzas e código #RRGGBB. Apelido e cor escolhidos agora valem no app todo.
+- Regra registrada: nunca gerar ou instalar o app no Mac sem o Gabriel pedir.

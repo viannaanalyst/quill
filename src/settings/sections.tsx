@@ -170,7 +170,7 @@ export function AppearanceSection() {
                 className="st-dock-item"
                 onClick={() => {
                   setDockIcon(i.id);
-                  void applyDockIcon(i.id).catch(() => toast("Não consegui trocar o ícone", "error"));
+                  void applyDockIcon(i.id).catch((e) => toast(`Não consegui trocar o ícone: ${String(e?.message ?? e)}`, "error"));
                 }}
               >
                 <img src={i.src} alt="" width={56} height={56} draggable={false} />
@@ -351,7 +351,7 @@ export function PrivacySection() {
       toast("Touch ID ligado: o Quill vai pedir sua digital ao abrir");
     }
   };
-  const [blockImages, setBlockImages] = usePref("blockRemoteImages", true);
+  const [blockImages, setBlockImages] = usePref("blockRemoteImages", false);
   const [senderLogos, setSenderLogos] = usePref("senderLogos", true);
   const [confirming, setConfirming] = useState(false);
 
