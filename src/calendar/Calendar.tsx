@@ -9,11 +9,11 @@ import { EventForm, PersonAvatar, QuickCreate, useContactPhotos } from "./EventF
 import {
   CalendarDays,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleCheck,
   Clock,
-  Cloud,
   Ellipsis,
   LoaderCircle,
   MapPin,
@@ -26,6 +26,8 @@ import {
   X,
 } from "../components/icons";
 import { useMailbox } from "../state/mailbox";
+import * as Popover from "@radix-ui/react-popover";
+import { AccountPhoto } from "../components/MyAvatar";
 import { navigate, type CalendarMode } from "../state/store";
 import {
   addDays,
@@ -45,6 +47,7 @@ import {
   type AgendaEvent,
   type Attendee,
   type RsvpStatus,
+  setCalendarsHidden,
 } from "../state/calendar";
 import {
   calendarMap,
@@ -281,18 +284,20 @@ export default function Calendar({ mode }: { mode: CalendarMode }) {
       <div className="cal">
         <div className="toolbar cal-toolbar">
           <div className="cal-tb-main">
-            <button className="btn glass ic" aria-label={prevLabel} data-tip="Anterior" onClick={() => step(-1)}>
-              <ChevronLeft size={17} aria-hidden />
-            </button>
-            <button className="btn glass ic" aria-label={nextLabel} data-tip="Próximo" onClick={() => step(1)}>
-              <ChevronRight size={17} aria-hidden />
-            </button>
+            <div className="cal-nav" role="group" aria-label="Período">
+              <button className="cal-nav-btn" aria-label={prevLabel} data-tip="Anterior" onClick={() => step(-1)}>
+                <ChevronLeft size={17} aria-hidden />
+              </button>
+              <span className="cal-range" aria-live="polite">
+                {rangeTitle(mode, anchor)}
+              </span>
+              <button className="cal-nav-btn" aria-label={nextLabel} data-tip="Próximo" onClick={() => step(1)}>
+                <ChevronRight size={17} aria-hidden />
+              </button>
+            </div>
             <button className="btn glass lg" onClick={() => pick(clock)}>
               Hoje
             </button>
-            <span className="cal-range" aria-live="polite">
-              {rangeTitle(mode, anchor)}
-            </span>
             {loading && (
               <span className="cal-status" role="status">
                 <span className="spinning" style={{ display: "flex" }}>
@@ -632,23 +637,76 @@ function Calendars() {
   const calendars = useCalendar((s) => s.calendars);
   const hidden = useCalendar((s) => s.hidden);
   const accounts = useMailbox((s) => s.accounts);
+  const connected = useMailbox((s) => s.connected);
   // agrupadas por conta, a principal primeiro
   const groups = useMemo(() => {
     const by = new Map<string, typeof calendars>();
     for (const c of calendars) by.set(c.account, [...(by.get(c.account) ?? []), c]);
     return [...by.entries()].map(([k, list]) => [k, list.toSorted((a, b) => Number(b.primary) - Number(a.primary))] as const);
   }, [calendars]);
+  const byAccount = new Map(groups);
+  // conta "ligada" = pelo menos uma agenda dela à mostra
+  const accountOn = (email: string) => (byAccount.get(email) ?? []).some((c) => !hidden.has(c.key));
+  const shownGroups = isTauri ? groups.filter(([account]) => accountOn(account)) : groups;
+  const onCount = connected.filter((a) => accountOn(a.email)).length;
+
   return (
     <section className="card cal-list" aria-label="Calendários">
-      <div className="section-label">
-        <CalendarDays size={14} aria-hidden />
-        Calendários
+      <div className="cal-list-head">
+        <div className="section-label">
+          <CalendarDays size={14} aria-hidden />
+          Calendários
+        </div>
+        {isTauri && connected.length > 0 && (
+          <Popover.Root>
+            <Popover.Trigger asChild>
+              <button className="cal-acc-trigger" aria-label="Escolher as contas do calendário">
+                {onCount === connected.length ? "Todas as contas" : `${onCount} de ${connected.length} contas`}
+                <ChevronDown size={13} aria-hidden />
+              </button>
+            </Popover.Trigger>
+            <Popover.Portal>
+              <Popover.Content className="qp-content cal-acc-pop" align="end" sideOffset={8} collisionPadding={12} aria-label="Contas do calendário">
+                <div className="cal-acc-title">Contas</div>
+                {connected.map((a) => {
+                  const list = byAccount.get(a.email) ?? [];
+                  const has = list.length > 0;
+                  const on = accountOn(a.email);
+                  const acct = accounts.find((x) => x.id === a.email);
+                  return (
+                    <button
+                      key={a.email}
+                      className="cal-acc-row"
+                      role="switch"
+                      aria-checked={has && on}
+                      disabled={!has}
+                      onClick={() => setCalendarsHidden(list.map((c) => c.key), on)}
+                    >
+                      <AccountPhoto email={a.email} size={26} />
+                      <span className="cal-acc-text">
+                        <span className="cal-acc-mail">{a.email}</span>
+                        <span className="cal-acc-sub">{has ? `${acct?.provider ?? ""} · ${list.length} ${list.length === 1 ? "agenda" : "agendas"}` : "Sem agenda (só e-mail)"}</span>
+                      </span>
+                      {has && <span className="toggle" aria-hidden aria-checked={on} />}
+                    </button>
+                  );
+                })}
+              </Popover.Content>
+            </Popover.Portal>
+          </Popover.Root>
+        )}
       </div>
       <div style={{ marginTop: 8 }}>
         {calendars.length === 0 && <p className="cal-list-empty">Nenhuma agenda ainda.</p>}
-        {groups.map(([account, list]) => (
+        {isTauri && calendars.length > 0 && shownGroups.length === 0 && <p className="cal-list-empty">Todas as contas estão escondidas. Escolha em “Todas as contas”.</p>}
+        {shownGroups.map(([account, list]) => (
           <div key={account} className="cal-list-group">
-            {isTauri ? <div className="cal-list-account">{accounts.find((a) => a.id === account)?.id ?? account}</div> : null}
+            {isTauri ? (
+              <div className="cal-list-account">
+                <AccountPhoto email={account} size={16} />
+                {account}
+              </div>
+            ) : null}
             {list.map((c) => {
               const on = !hidden.has(c.key);
               return (
@@ -668,10 +726,6 @@ function Calendars() {
           </div>
         ))}
       </div>
-      <p className="cal-note">
-        <Cloud size={14} aria-hidden />
-        As agendas vêm das contas Google conectadas em Ajustes → Contas.
-      </p>
     </section>
   );
 }

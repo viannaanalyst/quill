@@ -208,6 +208,17 @@ export function visibleEvents(s: CalendarState): AgendaEvent[] {
   return out;
 }
 
+/** Esconde ou mostra várias agendas de uma vez (ex.: todas de uma conta). */
+export function setCalendarsHidden(keys: string[], hide: boolean) {
+  const hidden = new Set(state.hidden);
+  for (const k of keys) {
+    if (hide) hidden.add(k);
+    else hidden.delete(k);
+  }
+  setPref("calendar.hidden", [...hidden]);
+  set({ hidden });
+}
+
 export function toggleCalendar(key: string) {
   const hidden = new Set(state.hidden);
   if (hidden.has(key)) hidden.delete(key);

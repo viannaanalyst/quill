@@ -1130,3 +1130,117 @@
 .cal-allday {
   padding-right: 10px;
 }
+
+/* setas em volta da data: ‹ 16 – 22 de novembro de 2026 › */
+.cal-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 40px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--gfill);
+  box-shadow:
+    inset 0 1px 0 var(--ghl),
+    inset 0 0 0 1px var(--gedge);
+}
+.cal-nav .cal-range {
+  margin: 0 6px;
+  min-width: 0;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.cal-nav-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--ink2);
+  transition: background 0.14s ease, color 0.14s ease, transform 0.12s ease;
+}
+.cal-nav-btn:hover {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  color: var(--ink);
+}
+.cal-nav-btn:active {
+  transform: scale(0.92);
+}
+
+/* escolha das contas na lista de agendas */
+.cal-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.cal-acc-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink2);
+  background: var(--surface2);
+  transition: color 0.14s ease, background 0.14s ease;
+}
+.cal-acc-trigger:hover,
+.cal-acc-trigger[data-state="open"] {
+  color: var(--ink);
+  background: var(--line);
+}
+.cal-acc-pop {
+  width: 300px;
+  padding: 6px;
+}
+.cal-acc-title {
+  padding: 8px 10px 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink3);
+}
+.cal-acc-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 12px;
+  text-align: left;
+  transition: background 0.14s ease;
+}
+.cal-acc-row:hover:not(:disabled) {
+  background: var(--surface2);
+}
+.cal-acc-row:disabled {
+  opacity: 0.6;
+}
+.cal-acc-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.cal-acc-mail {
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cal-acc-sub {
+  font-size: 11.5px;
+  color: var(--ink3);
+}
+.cal-acc-row .toggle {
+  pointer-events: none;
+  flex: none;
+}
+.cal-list-account {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}

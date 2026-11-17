@@ -106,3 +106,6 @@ Baseado no `git log` e nas mensagens dos commits. Horários em Brasília (UTC−
   `window.confirm` do navegador não funciona dentro do app.
 - Filtro de contas mostra a foto real de cada conta (a do Google, ou a escolhida no Quill para a conta principal), com
   o logo do serviço só quando não há foto.
+- Calendário: a data fica entre as setas (‹ período ›) com "Hoje" ao lado; menu "Todas as contas" na lista de agendas
+  para mostrar ou esconder as agendas de cada conta conectada (contas sem agenda aparecem como "só e-mail"); saiu o
+  texto de rodapé da lista.
