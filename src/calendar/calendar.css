@@ -152,9 +152,6 @@
 .cal-cols.one .cal-col {
   border-left: 0;
 }
-.cal-col.weekend {
-  background: color-mix(in srgb, var(--surface2) 45%, transparent);
-}
 
 /* eventos: fundo suave na cor da agenda, sem barrinha lateral */
 .cal-ev {
@@ -394,9 +391,6 @@
 }
 .cal-cell:nth-last-child(-n + 7) {
   border-bottom: none;
-}
-.cal-cell.weekend {
-  background: color-mix(in srgb, var(--surface2) 45%, var(--surface));
 }
 .cal-cell.selected {
   box-shadow: inset 0 0 0 2px var(--blue);
@@ -1085,4 +1079,44 @@
 }
 .cal-notice-box > svg {
   color: var(--ink3);
+}
+
+/* barra de cima: navegação + período à esquerda, "Novo evento" no fim do calendário; visões em cima da coluna */
+.cal-toolbar {
+  gap: 20px;
+}
+.cal-tb-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cal-tb-main > .btn.solid {
+  margin-left: auto;
+}
+.cal-tb-side {
+  width: 290px;
+  flex: none;
+  display: flex;
+}
+.cal-tb-side .cal-views {
+  margin-left: 0;
+  flex: 1;
+}
+.cal-tb-side .cal-views .pill {
+  flex: 1;
+  justify-content: center;
+}
+.cal-list-group + .cal-list-group {
+  margin-top: 12px;
+}
+.cal-list-account {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink3);
+  padding: 2px 0 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

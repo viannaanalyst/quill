@@ -50,7 +50,7 @@ export interface OutAttachment {
   data: string;
 }
 
-export type MessageAction = "archive" | "unarchive" | "spam" | "notspam" | "star" | "unstar" | "unread" | "read" | "trash";
+export type MessageAction = "archive" | "unarchive" | "spam" | "notspam" | "star" | "unstar" | "unread" | "read" | "trash" | "untrash";
 
 /** Erros conhecidos que a parte nativa devolve como texto. */
 export const NEEDS_LOGIN = "needs_login";
@@ -80,7 +80,9 @@ export const api = {
   search: (email: string, q: string) => call<MessageSummaryDto[]>("folder_fetch", { email, folder: `search:${q}`, tzOffsetMin: tzOffsetMin() }),
   counts: (email: string) => call<Record<string, number>>("folder_counts", { email }),
   profile: (email: string) => call<{ name?: string | null; picture?: string | null }>("account_profile", { email }),
-  body: (email: string, id: string) => call<{ text: string; attachments: AttachmentInfo[] }>("message_body", { email, id }),
+  body: (email: string, id: string) => call<{ text: string; html?: string | null; attachments: AttachmentInfo[] }>("message_body", { email, id }),
+  /** abre link (http, https, mailto) no navegador */
+  openLink: (url: string) => call<void>("open_link", { url }),
   /** baixa um anexo: "save" (Downloads), "open" (app padrão) ou "preview" (Quick Look) */
   attachment: (email: string, messageId: string, attachmentId: string, name: string, action: "save" | "open" | "preview") =>
     call<string>("attachment_get", { email, messageId, attachmentId, name, action }),

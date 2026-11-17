@@ -295,6 +295,7 @@ export function ShortcutsSection() {
 export function PrivacySection() {
   const [touchId, setTouchId] = usePref("touchId", false);
   const [blockImages, setBlockImages] = usePref("blockRemoteImages", true);
+  const [senderLogos, setSenderLogos] = usePref("senderLogos", true);
   const [confirming, setConfirming] = useState(false);
 
   /** Apaga as preferências deste Mac (as contas e senhas ficam nas Chaves do sistema) e recarrega. */
@@ -318,6 +319,9 @@ export function PrivacySection() {
           </Row>
           <Row title="Bloquear imagens externas" sub="Impede que remetentes saibam que você abriu o e-mail.">
             <Toggle on={blockImages} onChange={setBlockImages} label="Bloquear imagens externas nos e-mails" />
+          </Row>
+          <Row title="Logo das empresas nos remetentes" sub="Mostra o ícone do site de quem enviou (ex.: Nubank, Indeed). O ícone vem do Google, que fica sabendo só o domínio.">
+            <Toggle on={senderLogos} onChange={setSenderLogos} label="Mostrar logo das empresas nos remetentes" />
           </Row>
           <Row title="Apagar dados deste Mac" sub="Limpa as preferências do Quill e recomeça do zero. Seus e-mails continuam no servidor.">
             <button className="btn glass sm danger" onClick={() => setConfirming(true)}>

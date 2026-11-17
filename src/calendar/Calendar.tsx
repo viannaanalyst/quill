@@ -239,7 +239,7 @@ export default function Calendar({ mode }: { mode: CalendarMode }) {
   });
   useEffect(() => clearCalendarIntent(), []);
 
-  const [query, setQuery] = useState("");
+  const query = "";
   const clock = useClock();
   const all = useCalendar(visibleEvents);
   const status = useCalendar((s) => s.status);
@@ -280,48 +280,50 @@ export default function Calendar({ mode }: { mode: CalendarMode }) {
         title="Calendário"
         sub={todayCount ? `${plural(todayCount, "compromisso", "compromissos")} hoje` : "Nenhum compromisso hoje"}
         searchPlaceholder="Buscar eventos e pessoas"
-        search={query}
-        onSearch={setQuery}
       />
       <div className="cal">
-        <div className="toolbar">
-          <button className="btn solid lg" onClick={() => setCreating({ day: anchor })}>
-            <Plus size={17} aria-hidden />
-            Novo evento
-          </button>
-          <button className="btn glass lg" onClick={() => pick(clock)}>
-            Hoje
-          </button>
-          <button className="btn glass ic" aria-label={prevLabel} data-tip="Anterior" onClick={() => step(-1)}>
-            <ChevronLeft size={17} aria-hidden />
-          </button>
-          <button className="btn glass ic" aria-label={nextLabel} data-tip="Próximo" onClick={() => step(1)}>
-            <ChevronRight size={17} aria-hidden />
-          </button>
-          <span className="cal-range" aria-live="polite">
-            {rangeTitle(mode, anchor)}
-          </span>
-          {loading && (
-            <span className="cal-status" role="status">
-              <span className="spinning" style={{ display: "flex" }}>
-                <LoaderCircle size={14} aria-hidden />
-              </span>
-              Carregando agenda…
+        <div className="toolbar cal-toolbar">
+          <div className="cal-tb-main">
+            <button className="btn glass ic" aria-label={prevLabel} data-tip="Anterior" onClick={() => step(-1)}>
+              <ChevronLeft size={17} aria-hidden />
+            </button>
+            <button className="btn glass ic" aria-label={nextLabel} data-tip="Próximo" onClick={() => step(1)}>
+              <ChevronRight size={17} aria-hidden />
+            </button>
+            <button className="btn glass lg" onClick={() => pick(clock)}>
+              Hoje
+            </button>
+            <span className="cal-range" aria-live="polite">
+              {rangeTitle(mode, anchor)}
             </span>
-          )}
-          <SliderGroup activeKey={mode} className="cal-views" role="group" label="Visão">
-            {(
-              [
-                ["day", "Dia"],
-                ["week", "Semana"],
-                ["month", "Mês"],
-              ] as const
-            ).map(([m, label]) => (
-              <button key={m} className="pill" aria-pressed={mode === m} onClick={() => navigate({ name: "calendar", mode: m })}>
-                {label}
-              </button>
-            ))}
-          </SliderGroup>
+            {loading && (
+              <span className="cal-status" role="status">
+                <span className="spinning" style={{ display: "flex" }}>
+                  <LoaderCircle size={14} aria-hidden />
+                </span>
+                Carregando agenda…
+              </span>
+            )}
+            <button className="btn solid lg" onClick={() => setCreating({ day: anchor })}>
+              <Plus size={17} aria-hidden />
+              Novo evento
+            </button>
+          </div>
+          <div className="cal-tb-side">
+            <SliderGroup activeKey={mode} className="cal-views" role="group" label="Visão">
+              {(
+                [
+                  ["day", "Dia"],
+                  ["week", "Semana"],
+                  ["month", "Mês"],
+                ] as const
+              ).map(([m, label]) => (
+                <button key={m} className="pill" aria-pressed={mode === m} onClick={() => navigate({ name: "calendar", mode: m })}>
+                  {label}
+                </button>
+              ))}
+            </SliderGroup>
+          </div>
         </div>
         <div className="cal-content">
           {mode === "day" && <DayView events={events} anchor={anchor} clock={clock} onPick={pick} />}
@@ -509,6 +511,12 @@ function Calendars() {
   const calendars = useCalendar((s) => s.calendars);
   const hidden = useCalendar((s) => s.hidden);
   const accounts = useMailbox((s) => s.accounts);
+  // agrupadas por conta, a principal primeiro
+  const groups = useMemo(() => {
+    const by = new Map<string, typeof calendars>();
+    for (const c of calendars) by.set(c.account, [...(by.get(c.account) ?? []), c]);
+    return [...by.entries()].map(([k, list]) => [k, list.toSorted((a, b) => Number(b.primary) - Number(a.primary))] as const);
+  }, [calendars]);
   return (
     <section className="card cal-list" aria-label="Calendários">
       <div className="section-label">
@@ -517,25 +525,27 @@ function Calendars() {
       </div>
       <div style={{ marginTop: 8 }}>
         {calendars.length === 0 && <p className="cal-list-empty">Nenhuma agenda ainda.</p>}
-        {calendars.map((c) => {
-          const on = !hidden.has(c.key);
-          const acct = accounts.find((a) => a.id === c.account);
-          const sub = acct ? (c.primary ? acct.provider : acct.name) : c.primary ? c.account : "";
-          return (
-            <button
-              key={c.key}
-              className="cal-check"
-              role="switch"
-              aria-checked={on}
-              onClick={() => toggleCalendar(c.key)}
-              style={{ "--c": c.color } as Vars}
-            >
-              <span className="cal-box">{on && <Check size={12} aria-hidden />}</span>
-              <span className="cal-check-name">{c.name}</span>
-              {sub && <span className="cal-check-sub">{sub}</span>}
-            </button>
-          );
-        })}
+        {groups.map(([account, list]) => (
+          <div key={account} className="cal-list-group">
+            {isTauri ? <div className="cal-list-account">{accounts.find((a) => a.id === account)?.id ?? account}</div> : null}
+            {list.map((c) => {
+              const on = !hidden.has(c.key);
+              return (
+                <button
+                  key={c.key}
+                  className="cal-check"
+                  role="switch"
+                  aria-checked={on}
+                  onClick={() => toggleCalendar(c.key)}
+                  style={{ "--c": c.color } as Vars}
+                >
+                  <span className="cal-box">{on && <Check size={12} aria-hidden />}</span>
+                  <span className="cal-check-name">{isTauri && c.primary ? "Agenda principal" : c.name}</span>
+                </button>
+              );
+            })}
+          </div>
+        ))}
       </div>
       <p className="cal-note">
         <Cloud size={14} aria-hidden />

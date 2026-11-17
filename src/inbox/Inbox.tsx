@@ -14,7 +14,12 @@ import {
   FileText,
   Inbox as InboxIcon,
   Layers,
-  ListFilter,
+  Check,
+  Mail,
+  MailOpen,
+  Minus,
+  Trash2,
+  X,
   MapPin,
   OctagonAlert,
   Paperclip,
@@ -26,12 +31,14 @@ import {
   Video,
 } from "../components/icons";
 import type { Account, AccountId, Message } from "./types";
-import { folderMessages, loadFolder, markReadRemote, refreshMailbox, useMailbox, type FolderId } from "../state/mailbox";
+import { bulkAction, folderMessages, loadFolder, markReadRemote, refreshMailbox, useMailbox, type FolderId } from "../state/mailbox";
 import { SliderGroup } from "../components/SliderGroup";
 import { usePref } from "../lib/usePref";
 import { ConnectGoogleButton } from "../components/ConnectGoogle";
 import { isTauri } from "../lib/platform";
-import { markRead, navigate, useStore } from "../state/store";
+import { markRead, markUnread, navigate, useStore } from "../state/store";
+import { getPref } from "../lib/storage";
+import type { MessageAction } from "../lib/api";
 import { addDays, eventsOnDay, loadRange, sameDay, startOfDay, startOfWeek, timeRange, useCalendar, visibleEvents, type AgendaEvent } from "../state/calendar";
 import { calendarMap, dayLong, dayShort, dowShort, fmtDuration, fmtTime, openCalendarAt, useClock } from "../calendar/shared";
 
@@ -46,11 +53,39 @@ export const FOLDERS: { id: FolderId; label: string; icon: typeof InboxIcon }[] 
   { id: "spam", label: "Spam", icon: OctagonAlert },
 ];
 
+/** Ações em massa de cada caixa (marcar lido/não lido entra em todas, menos Rascunhos). */
+const BULK: Record<FolderId, { action: MessageAction; label: string; icon: typeof InboxIcon }[]> = {
+  inbox: [
+    { action: "archive", label: "Arquivar", icon: Archive },
+    { action: "trash", label: "Lixeira", icon: Trash2 },
+    { action: "spam", label: "Spam", icon: OctagonAlert },
+  ],
+  starred: [
+    { action: "unstar", label: "Tirar de Importantes", icon: Star },
+    { action: "archive", label: "Arquivar", icon: Archive },
+    { action: "trash", label: "Lixeira", icon: Trash2 },
+  ],
+  sent: [{ action: "trash", label: "Lixeira", icon: Trash2 }],
+  drafts: [{ action: "trash", label: "Descartar", icon: Trash2 }],
+  archive: [
+    { action: "unarchive", label: "Mover para a Entrada", icon: InboxIcon },
+    { action: "trash", label: "Lixeira", icon: Trash2 },
+  ],
+  spam: [
+    { action: "notspam", label: "Não é spam", icon: InboxIcon },
+    { action: "trash", label: "Lixeira", icon: Trash2 },
+  ],
+  trash: [{ action: "untrash", label: "Mover para a Entrada", icon: InboxIcon }],
+};
+
 export default function Inbox({ folder: folderParam }: { folder: string }) {
   const folder = (FOLDERS.some((f) => f.id === folderParam) ? folderParam : folderParam === "trash" ? "trash" : "inbox") as FolderId;
   const [filter, setFilter] = useState<Filter>("all");
   const [unreadOnly, setUnreadOnly] = useState(false);
-  const [query, setQuery] = useState("");
+  const query = "";
+  // seleção para ações em massa; zera ao trocar de caixa ou de conta
+  const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
+  const [selKey, setSelKey] = useState(`${folderParam}|all`);
   const readIds = useStore((s) => s.readIds);
   const accounts = useMailbox((s) => s.accounts);
   const messages = useMailbox((s) => folderMessages(s, folder));
@@ -74,6 +109,10 @@ export default function Inbox({ folder: folderParam }: { folder: string }) {
   }, [live, folder]);
 
   const isUnread = (m: Message) => m.unread && !readIds.has(m.id);
+  if (selKey !== `${folder}|${filter}`) {
+    setSelKey(`${folder}|${filter}`);
+    setSelected(new Set());
+  }
 
   // Filtros calculados na renderização (sem efeitos).
   const visible = useMemo(() => {
@@ -86,6 +125,25 @@ export default function Inbox({ folder: folderParam }: { folder: string }) {
     });
   }, [filter, unreadOnly, query, readIds, messages]);
 
+  const selectedVisible = visible.filter((m) => selected.has(m.id));
+  const allSelected = visible.length > 0 && selectedVisible.length === visible.length;
+  const anyUnreadSelected = selectedVisible.some(isUnread);
+  const bulkActions = BULK[folder];
+  const toggleSelect = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const runBulk = (action: MessageAction) => {
+    const ids = selectedVisible.map((m) => m.id);
+    if (action === "trash" && getPref("confirmDelete", false) && !window.confirm(`Mover ${ids.length} e-mail(s) para a Lixeira?`)) return;
+    if (action === "read") ids.forEach(markRead);
+    if (action === "unread") ids.forEach(markUnread);
+    setSelected(new Set());
+    void bulkAction(ids, action);
+  };
   const loadingList = live && (folderStatus === "loading" || (status === "loading" && messages.length === 0));
   const showsRecipient = folder === "sent" || folder === "drafts";
 
@@ -102,8 +160,6 @@ export default function Inbox({ folder: folderParam }: { folder: string }) {
       <TopBar
         title="Caixa de entrada"
         sub={live ? `${folderInfo.label} · ${messages.length} recentes` : "1.284 e-mails"}
-        search={query}
-        onSearch={setQuery}
         actions={
           <button className="btn glass ic" aria-label="Atualizar" data-tip="Atualizar" onClick={() => void refreshMailbox()} disabled={refreshing}>
             <span className={refreshing ? "spinning" : undefined} style={{ display: "flex" }}>
@@ -139,21 +195,48 @@ export default function Inbox({ folder: folderParam }: { folder: string }) {
 
         <div className="content">
           <div className="col-main">
-            {accounts.length > 0 && <AccountsBar accounts={accounts} filter={filter} onChange={setFilter} />}
+            {accounts.length > 1 && <AccountsBar accounts={accounts} filter={filter} onChange={setFilter} />}
 
             <section className="card list" aria-label="E-mails">
-              <div className="list-head">
-                <span className="checkbox" aria-hidden />
-                <span>
-                  {folderInfo.label} · {filter === "all" ? "todas as contas" : accountById.get(filter)?.name}
-                </span>
-                <SliderGroup activeKey={String(unreadOnly)} className="segmented" role="group" label="Mostrar" style={{ marginLeft: "auto" }}>
-                  <button aria-pressed={!unreadOnly} onClick={() => setUnreadOnly(false)}>Todas</button>
-                  <button aria-pressed={unreadOnly} onClick={() => setUnreadOnly(true)}>Não lidas</button>
-                </SliderGroup>
-                <button className="btn ic" aria-label="Filtros" data-tip="Filtros" style={{ color: "var(--ink2)" }}>
-                  <ListFilter size={18} aria-hidden />
-                </button>
+              <div className={`list-head${selectedVisible.length ? " selecting" : ""}`}>
+                <Checkbox
+                  checked={allSelected ? true : selectedVisible.length ? "mixed" : false}
+                  label={allSelected ? "Desmarcar todos" : "Selecionar todos"}
+                  disabled={visible.length === 0}
+                  onChange={() => setSelected(allSelected ? new Set() : new Set(visible.map((m) => m.id)))}
+                />
+                {selectedVisible.length > 0 ? (
+                  <div className="inbox-bulk" role="toolbar" aria-label="Ações nos selecionados">
+                    <span className="inbox-bulk-count">
+                      {selectedVisible.length} {selectedVisible.length === 1 ? "selecionado" : "selecionados"}
+                    </span>
+                    {bulkActions.map((b) => (
+                      <button key={b.action} className="btn glass sm" onClick={() => runBulk(b.action)}>
+                        <b.icon size={15} aria-hidden />
+                        {b.label}
+                      </button>
+                    ))}
+                    {folder !== "drafts" && (
+                      <button className="btn glass sm" onClick={() => runBulk(anyUnreadSelected ? "read" : "unread")}>
+                        {anyUnreadSelected ? <MailOpen size={15} aria-hidden /> : <Mail size={15} aria-hidden />}
+                        {anyUnreadSelected ? "Marcar como lido" : "Marcar como não lido"}
+                      </button>
+                    )}
+                    <button className="btn ic inbox-bulk-close" aria-label="Limpar seleção" data-tip="Limpar seleção" onClick={() => setSelected(new Set())}>
+                      <X size={16} aria-hidden />
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <span>
+                      {folderInfo.label} · {filter === "all" ? "todas as contas" : accountById.get(filter)?.name}
+                    </span>
+                    <SliderGroup activeKey={String(unreadOnly)} className="segmented" role="group" label="Mostrar" style={{ marginLeft: "auto" }}>
+                      <button aria-pressed={!unreadOnly} onClick={() => setUnreadOnly(false)}>Todas</button>
+                      <button aria-pressed={unreadOnly} onClick={() => setUnreadOnly(true)}>Não lidas</button>
+                    </SliderGroup>
+                  </>
+                )}
               </div>
 
               <div className={`list-scroll${density === "compact" ? " compact" : ""}${showPreview ? "" : " no-preview"}`}>
@@ -188,6 +271,9 @@ export default function Inbox({ folder: folderParam }: { folder: string }) {
                         account={accountById.get(m.account)}
                         unread={isUnread(m)}
                         showRecipient={showsRecipient}
+                        selected={selected.has(m.id)}
+                        selecting={selectedVisible.length > 0}
+                        onSelect={() => toggleSelect(m.id)}
                         onOpen={() => open(m.id)}
                       />
                     ))}
@@ -213,34 +299,47 @@ export default function Inbox({ folder: folderParam }: { folder: string }) {
   );
 }
 
+/** Filtro por conta: pílulas compactas com o destaque que desliza (some quando há uma conta só). */
 function AccountsBar({ accounts, filter, onChange }: { accounts: Account[]; filter: Filter; onChange: (f: Filter) => void }) {
   const total = accounts.reduce((sum, a) => sum + a.unread, 0);
   return (
-    <div className="card accounts" role="group" aria-label="Contas">
-      <button className="account" aria-pressed={filter === "all"} onClick={() => onChange("all")}>
-        <span className="account-logo">
-          <Layers size={17} aria-hidden />
-        </span>
-        <span className="account-text">
-          <span className="account-name" style={{ display: "block" }}>Todas</span>
-          <span className="account-sub" style={{ display: "block" }}>{accounts.length} {accounts.length === 1 ? "conta" : "contas"}</span>
-        </span>
-        <span className="account-count" aria-label={`${total} não lidos`}>{total}</span>
+    <SliderGroup activeKey={filter} className="inbox-accounts" role="group" label="Contas">
+      <button className="inbox-acc" aria-pressed={filter === "all"} onClick={() => onChange("all")}>
+        <Layers size={15} aria-hidden />
+        Todas
+        {total > 0 && <span className="inbox-acc-count" aria-label={`${total} não lidos`}>{total}</span>}
       </button>
       {accounts.map((a) => (
-        <button key={a.id} className="account" aria-pressed={filter === a.id} onClick={() => onChange(a.id)}>
-          <span className="account-logo">
-            <Logo name={a.logo} size={17} />
+        <button key={a.id} className="inbox-acc" aria-pressed={filter === a.id} onClick={() => onChange(a.id)} data-tip={a.id}>
+          <span className="inbox-acc-logo">
+            <Logo name={a.logo} size={13} />
             <i style={{ background: a.color }} />
           </span>
-          <span className="account-text">
-            <span className="account-name" style={{ display: "block" }}>{a.name}</span>
-            <span className="account-sub" style={{ display: "block" }}>{a.provider}</span>
-          </span>
-          <span className="account-count" aria-label={`${a.unread} não lidos`}>{a.unread}</span>
+          {a.name}
+          {a.unread > 0 && <span className="inbox-acc-count" aria-label={`${a.unread} não lidos`}>{a.unread}</span>}
         </button>
       ))}
-    </div>
+    </SliderGroup>
+  );
+}
+
+/** Caixinha de seleção no estilo do Quill (marcada, desmarcada ou "alguns"). */
+function Checkbox({ checked, onChange, label, disabled }: { checked: boolean | "mixed"; onChange: () => void; label: string; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      className="qcheck"
+      aria-checked={checked}
+      aria-label={label}
+      disabled={disabled}
+      onClick={(e) => {
+        e.stopPropagation();
+        onChange();
+      }}
+    >
+      {checked === "mixed" ? <Minus size={12} aria-hidden /> : checked ? <Check size={12} aria-hidden /> : null}
+    </button>
   );
 }
 
@@ -249,19 +348,30 @@ function MessageRow({
   account,
   unread,
   showRecipient,
+  selected,
+  selecting,
+  onSelect,
   onOpen,
 }: {
   message: Message;
   account?: Account;
   unread: boolean;
   showRecipient?: boolean;
+  selected: boolean;
+  selecting: boolean;
+  onSelect: () => void;
   onOpen: () => void;
 }) {
   const who = showRecipient && m.toName ? `Para: ${m.toName}` : m.from;
   return (
-    <li className={`row${unread ? " unread" : ""}`}>
-      <button className="row-hit" onClick={onOpen} aria-label={`${unread ? "Não lido. " : ""}${who}: ${m.subject}`} />
-      <MessageAvatar message={m} />
+    <li className={`row${unread ? " unread" : ""}${selected ? " is-selected" : ""}${selecting ? " selecting" : ""}`}>
+      <button className="row-hit" onClick={selecting ? onSelect : onOpen} aria-label={`${unread ? "Não lido. " : ""}${who}: ${m.subject}`} />
+      <span className="row-avatar">
+        <MessageAvatar message={m} />
+        <span className="row-check">
+          <Checkbox checked={selected} onChange={onSelect} label={`Selecionar ${who}`} />
+        </span>
+      </span>
       <div className="row-body">
         <div className="row-top">
           <span className="row-from">{who}</span>

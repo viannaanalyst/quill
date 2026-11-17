@@ -34,15 +34,17 @@ import type { Account, Message } from "../inbox/types";
 import { getMailbox, listContaining, loadBody, markReadRemote, messageAction, sendMessage, useMailbox } from "../state/mailbox";
 import { backToFolder, getStore, markRead, markUnread, navigate } from "../state/store";
 import { getPref } from "../lib/storage";
+import { isTauri } from "../lib/platform";
 import { escapeHtml, signatureHtml, textToHtml } from "../lib/signature";
 import { api, friendlyError, type AttachmentInfo } from "../lib/api";
 import { toast } from "../components/Toasts";
 import { THREADS, type Attachment, type Thread } from "./threads";
 import { FileIcon } from "../components/FileIcon";
+import { EmailFrame } from "./EmailFrame";
 import { FILE_LABEL, fileSize, fileType } from "../lib/files";
 
 /** Conversa de um e-mail: a de exemplo completa ou uma versão simples montada a partir da prévia. */
-function threadFor(m: Message, account: Account | undefined, body: string | undefined, atts: AttachmentInfo[] | undefined): Thread {
+function threadFor(m: Message, account: Account | undefined, body: string | undefined, atts: AttachmentInfo[] | undefined, html: string | null | undefined): Thread {
   if (THREADS[m.id]) return THREADS[m.id];
   const realAtts: Attachment[] = (atts ?? []).map((a) => ({
     name: a.name,
@@ -59,10 +61,40 @@ function threadFor(m: Message, account: Account | undefined, body: string | unde
     labels: [],
     earlier: [],
     body: text.split(/\n{2,}/),
+    html: html ?? undefined,
     attachments: m.accountEmail ? realAtts : m.attachment ? [{ name: m.attachment, kind: "file", size: "—" }] : [],
     senderRole: account?.name ?? "",
     history: [],
   };
+}
+
+/** Texto simples com links clicáveis (e-mails sem versão formatada). Links longos viram "domínio…". */
+function linkify(text: string) {
+  const parts = text.split(/(https?:\/\/[^\s<>"]+)/g);
+  return parts.map((part, i) => {
+    if (!/^https?:\/\//.test(part)) return part;
+    let label = part;
+    try {
+      const u = new URL(part);
+      label = part.length > 60 ? `${u.hostname}${u.pathname.length > 1 ? "/…" : ""}` : part;
+    } catch {
+      /* fica o texto */
+    }
+    return (
+      <a
+        key={i}
+        href={part}
+        className="rd-link"
+        onClick={(e) => {
+          e.preventDefault();
+          if (isTauri) void api.openLink(part).catch(() => undefined);
+          else window.open(part, "_blank", "noopener");
+        }}
+      >
+        {label}
+      </a>
+    );
+  });
 }
 
 /** Abre a prévia (Quick Look), abre no app padrão ou guarda em Downloads. */
@@ -84,6 +116,7 @@ export default function ReadView({ id }: { id: string }) {
   const accounts = useMailbox((s) => s.accounts);
   const body = useMailbox((s) => s.bodies[id]);
   const atts = useMailbox((s) => s.attachments[id]);
+  const html = useMailbox((s) => s.htmlBodies[id]);
   const index = messages.findIndex((x) => x.id === id);
 
   // e-mail real: busca o texto completo na primeira abertura
@@ -101,7 +134,7 @@ export default function ReadView({ id }: { id: string }) {
   }
   const m = messages[index];
   const account = accounts.find((a) => a.id === m.account);
-  return <ReadMessage key={id} m={m} t={threadFor(m, account, body, atts)} account={account} index={index} messages={messages} />;
+  return <ReadMessage key={id} m={m} t={threadFor(m, account, body, atts, html)} account={account} index={index} messages={messages} />;
 }
 
 const withPrefix = (prefix: string, subject: string) => (subject.toLowerCase().startsWith(prefix.toLowerCase()) ? subject : `${prefix} ${subject}`);
@@ -359,11 +392,15 @@ function ReadMessage({
                       </button>
                     </div>
                   </div>
-                  <div className="rd-body">
-                    {t.body.map((p, i) => (
-                      <p key={i}>{p}</p>
-                    ))}
-                  </div>
+                  {t.html ? (
+                    <EmailFrame html={t.html} />
+                  ) : (
+                    <div className="rd-body">
+                      {t.body.map((p, i) => (
+                        <p key={i}>{linkify(p)}</p>
+                      ))}
+                    </div>
+                  )}
                   {t.attachments.length > 0 && (
                     <div className="rd-atts">
                       {t.attachments.map((a) => (

@@ -899,3 +899,12 @@
   left: 14px;
   top: 22px;
 }
+
+/* aviso embaixo dos serviços: o ícone fica alinhado ao centro dos logos (12px de margem + metade do logo) */
+.providers ~ .small-note,
+.providers ~ .ob-login-wait {
+  padding-left: 26px;
+}
+.ob-login-wait {
+  margin-top: 18px;
+}

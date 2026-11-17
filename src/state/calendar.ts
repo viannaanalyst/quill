@@ -213,22 +213,46 @@ function accountColor(email: string) {
   return getMailbox().accounts.find((a) => a.id === email)?.color;
 }
 
+/** Agendas de feriados do Google ("pt.brazilian#holiday@…", "en.brazilian#holiday@…"): mesma região em idiomas diferentes. */
+const HOLIDAY_RE = /^([a-z-]+)\.([a-z_]+)#holiday@group\.v\.calendar\.google\.com$/i;
+
+/**
+ * Feriados da mesma região assinados em mais de um idioma (ou em mais de uma conta) repetem todos os dias.
+ * Fica só uma agenda por região, preferindo a em português.
+ */
+function holidayKeep(perAccount: { account: string; agenda: AgendaDto }[]): Set<string> {
+  const best = new Map<string, { key: string; score: number }>();
+  for (const { account, agenda } of perAccount) {
+    for (const c of agenda.calendars) {
+      const m = HOLIDAY_RE.exec(c.id);
+      if (!m || !c.selected) continue;
+      const score = m[1].startsWith("pt") ? 2 : 1;
+      const cur = best.get(m[2]);
+      if (!cur || score > cur.score) best.set(m[2], { key: `${account}|${c.id}`, score });
+    }
+  }
+  return new Set([...best.values()].map((b) => b.key));
+}
+
 function mergeAgendas(perAccount: { account: string; agenda: AgendaDto }[]) {
   const calendars: AgendaCalendar[] = [];
   const byKey = new Map<string, AgendaEvent>();
+  const keepHoliday = holidayKeep(perAccount);
+  const skip = (account: string, id: string) => HOLIDAY_RE.test(id) && !keepHoliday.has(`${account}|${id}`);
   for (const { account, agenda } of perAccount) {
-    for (const c of agenda.calendars.filter((c) => c.selected)) {
+    for (const c of agenda.calendars.filter((c) => c.selected && !skip(account, c.id))) {
       calendars.push({
         key: `${account}|${c.id}`,
         account,
         id: c.id,
-        name: c.primary ? (getMailbox().accounts.find((a) => a.id === account)?.name ?? c.name) : c.name,
+        name: c.primary ? (getMailbox().accounts.find((a) => a.id === account)?.name ?? c.name) : HOLIDAY_RE.test(c.id) ? "Feriados" : c.name,
         color: c.primary ? (accountColor(account) ?? c.color ?? "var(--blue)") : (c.color ?? "var(--blue)"),
         primary: c.primary,
         canEdit: c.canEdit,
       });
     }
     for (const e of agenda.events) {
+      if (skip(account, e.calendarId)) continue;
       const start = toMs(e.start);
       const end = toMs(e.end);
       if (Number.isNaN(start)) continue;

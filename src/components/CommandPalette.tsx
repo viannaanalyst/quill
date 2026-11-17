@@ -26,6 +26,8 @@ import { setPref } from "../lib/storage";
 import { markReadRemote, refreshMailbox, searchAll, useMailbox } from "../state/mailbox";
 import { markRead, navigate } from "../state/store";
 import type { Message } from "../inbox/types";
+import { useCalendar, visibleEvents, type AgendaEvent } from "../state/calendar";
+import { matchesQuery, openCalendarAt } from "../calendar/shared";
 
 interface Item {
   id: string;
@@ -86,7 +88,20 @@ function messageItem(m: Message, group: string): Item {
   };
 }
 
-/** Busca geral (⌘K): e-mails, telas e ações, tudo pelo teclado. */
+function eventItem(e: AgendaEvent): Item {
+  const d = new Date(e.start);
+  return {
+    id: `e-${e.key}`,
+    group: "Eventos",
+    label: e.title,
+    sub: e.location,
+    hint: `${d.toLocaleDateString("pt-BR", { day: "numeric", month: "short" }).replace(".", "")}${e.allDay ? "" : ` · ${d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`}`,
+    icon: <CalendarDays size={16} aria-hidden style={{ color: e.color }} />,
+    run: () => openCalendarAt("day", e.start),
+  };
+}
+
+/** Busca geral (⌘K): e-mails, eventos, telas e ações, tudo pelo teclado. */
 export default function CommandPalette() {
   const { open, query: initial } = usePalette();
   const [query, setQuery] = useState(initial);
@@ -94,6 +109,7 @@ export default function CommandPalette() {
   const [remote, setRemote] = useState<{ q: string; list: Message[] } | null>(null);
   const [searching, setSearching] = useState(false);
   const folders = useMailbox((s) => s.folders);
+  const events = useCalendar(visibleEvents);
   const listRef = useRef<HTMLDivElement>(null);
   const deferred = useDeferredValue(query);
 
@@ -138,8 +154,14 @@ export default function CommandPalette() {
     const local = loaded.filter((m) => norm(`${m.subject} ${m.from} ${m.fromEmail ?? ""} ${m.preview}`).includes(q)).slice(0, 6);
     const localIds = new Set(local.map((m) => m.id));
     const fromGmail = remote && norm(remote.q) === q ? remote.list.filter((m) => !localIds.has(m.id)).slice(0, 8) : [];
-    return [...local.map((m) => messageItem(m, "E-mails")), ...fromGmail.map((m) => messageItem(m, "No Gmail")), ...cmds];
-  }, [deferred, loaded, remote]);
+    const now = Date.now();
+    const evs = events
+      .filter((e) => matchesQuery(e, deferred.trim().toLocaleLowerCase("pt-BR")))
+      // os próximos primeiro, depois os que já passaram (mais recentes antes)
+      .toSorted((a, b) => (a.end < now ? 1 : 0) - (b.end < now ? 1 : 0) || (a.end < now ? b.start - a.start : a.start - b.start))
+      .slice(0, 5);
+    return [...local.map((m) => messageItem(m, "E-mails")), ...evs.map(eventItem), ...fromGmail.map((m) => messageItem(m, "No Gmail")), ...cmds];
+  }, [deferred, loaded, remote, events]);
 
   const safeActive = Math.min(active, Math.max(0, items.length - 1));
 

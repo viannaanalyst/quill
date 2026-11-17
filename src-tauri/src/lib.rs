@@ -183,6 +183,12 @@ async fn attachment_get(
     Ok(path.to_string_lossy().into_owned())
 }
 
+/// Abre um link de e-mail ou evento no navegador (só http, https e mailto).
+#[tauri::command]
+fn open_link(url: String) -> Result<(), String> {
+    quill_core::files::open_link(&url)
+}
+
 /// Mostra um arquivo baixado pelo Quill na pasta (Finder no Mac). Só aceita a pasta Downloads.
 #[tauri::command]
 fn reveal_download(app: tauri::AppHandle, path: String) -> Result<(), String> {
@@ -225,7 +231,8 @@ pub fn run() {
             calendar_rsvp,
             calendar_create,
             attachment_get,
-            reveal_download
+            reveal_download,
+            open_link
         ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o Quill");

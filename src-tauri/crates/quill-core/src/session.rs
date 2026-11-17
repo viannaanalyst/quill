@@ -199,7 +199,7 @@ impl GoogleSession {
         self.client.create_event(&token, calendar_id, e).await
     }
 
-    /// Ação num e-mail: archive, unarchive, spam, notspam, star, unstar, unread, read, trash.
+    /// Ação num e-mail: archive, unarchive, spam, notspam, star, unstar, unread, read, trash, untrash.
     pub async fn act(&self, email: &str, id: &str, action: &str) -> Result<(), LoginError> {
         let token = self.access_token(email).await?;
         let (add, remove): (&[&str], &[&str]) = match action {
@@ -212,6 +212,11 @@ impl GoogleSession {
             "unread" => (&["UNREAD"], &[]),
             "read" => (&[], &["UNREAD"]),
             "trash" => return self.client.trash(&token, id).await,
+            "untrash" => {
+                self.client.untrash(&token, id).await?;
+                // volta para a Entrada, que é o que a pessoa espera ao "mover para a Entrada"
+                (&["INBOX"], &[])
+            }
             other => return Err(LoginError::Google(format!("ação desconhecida: {other}"))),
         };
         self.client.modify(&token, id, add, remove).await

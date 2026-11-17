@@ -579,3 +579,153 @@
 .agenda .inbox-agenda-declined .agenda-title {
   text-decoration: line-through;
 }
+
+/* ---------- seleção e ações em massa ---------- */
+.qcheck {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: var(--bink);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--ink3) 75%, transparent);
+  transition: background 0.14s ease, box-shadow 0.14s ease, transform 0.12s ease;
+}
+.qcheck:hover {
+  box-shadow: inset 0 0 0 1.5px var(--ink2);
+}
+.qcheck:active {
+  transform: scale(0.9);
+}
+.qcheck[aria-checked="true"],
+.qcheck[aria-checked="mixed"] {
+  background: linear-gradient(to bottom, var(--btop), var(--bbot));
+  box-shadow: inset 0 1px 0 var(--bhl);
+}
+.qcheck svg {
+  animation: q-check-in 0.18s var(--ease-out-soft) both;
+}
+@keyframes q-check-in {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+}
+.qcheck:disabled {
+  opacity: 0.4;
+}
+.list-head {
+  min-height: 57px;
+}
+.inbox-bulk {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+  animation: q-pop-in 0.18s var(--ease-out-soft) both;
+}
+.inbox-bulk-count {
+  font-weight: 600;
+  color: var(--ink);
+  margin-right: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.inbox-bulk-close {
+  margin-left: auto;
+  color: var(--ink2);
+}
+
+/* avatar vira caixinha ao passar o mouse (ou quando já há algo selecionado) */
+.row-avatar {
+  position: relative;
+  flex: none;
+  align-self: flex-start;
+}
+.row-check {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--surface2);
+  opacity: 0;
+  transform: scale(0.85);
+  transition: opacity 0.14s ease, transform 0.14s var(--ease-out-soft);
+}
+.row:hover .row-check,
+.row.selecting .row-check,
+.row.is-selected .row-check,
+.row-check:focus-within {
+  opacity: 1;
+  transform: none;
+}
+.row.is-selected {
+  background: var(--sel);
+}
+
+/* ---------- filtro por conta (compacto) ---------- */
+.inbox-accounts {
+  flex: none;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.inbox-accounts .slider-indicator {
+  background: var(--surface);
+  box-shadow:
+    0 0 0 1px var(--line),
+    0 1px 2px rgba(0, 0, 0, 0.06);
+}
+.inbox-acc {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px 0 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink2);
+  white-space: nowrap;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.inbox-acc:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--surface2), transparent 50%);
+}
+.inbox-acc[aria-pressed="true"] {
+  color: var(--ink);
+  background: transparent;
+}
+.inbox-acc-logo {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  background: var(--logobg);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.inbox-acc-logo i {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px var(--panel);
+}
+.inbox-acc-count {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink2);
+  background: var(--surface2);
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-variant-numeric: tabular-nums;
+}

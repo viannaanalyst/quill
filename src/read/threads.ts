@@ -20,6 +20,8 @@ export interface EarlierMessage {
 }
 
 export interface Thread {
+  /** versão formatada do e-mail real (HTML) */
+  html?: string;
   email: string;
   to: string;
   date: string;

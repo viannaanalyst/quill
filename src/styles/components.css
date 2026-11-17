@@ -1324,3 +1324,7 @@
 .lw-actions .lw-cancel {
   color: var(--danger, #c2453d);
 }
+.av.av-site img {
+  border-radius: 6px;
+  object-fit: contain;
+}

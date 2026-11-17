@@ -33,6 +33,8 @@ interface MailboxState {
   error: string | null;
   needsLogin: string[];
   bodies: Record<string, string>;
+  /** versão formatada (HTML) de cada e-mail aberto */
+  htmlBodies: Record<string, string | null>;
   /** anexos de cada e-mail aberto */
   attachments: Record<string, AttachmentInfo[]>;
   /** quando a última atualização terminou (ms) */
@@ -56,6 +58,7 @@ let state: MailboxState = {
   error: null,
   needsLogin: [],
   bodies: {},
+  htmlBodies: {},
   attachments: {},
   updatedAt: null,
   refreshing: false,
@@ -263,7 +266,11 @@ export async function loadBody(id: string) {
   if (!m?.accountEmail || state.bodies[id] !== undefined) return;
   try {
     const body = await api.body(m.accountEmail, id);
-    set({ bodies: { ...state.bodies, [id]: body.text }, attachments: { ...state.attachments, [id]: body.attachments } });
+    set({
+      bodies: { ...state.bodies, [id]: body.text },
+      htmlBodies: { ...state.htmlBodies, [id]: body.html ?? null },
+      attachments: { ...state.attachments, [id]: body.attachments },
+    });
   } catch (e) {
     set({ bodies: { ...state.bodies, [id]: `Não consegui abrir este e-mail: ${friendlyError(e)}` } });
   }
@@ -323,12 +330,60 @@ function patchEverywhere(id: string, patch: Partial<Message>) {
   set({ folders });
 }
 
+const BULK_DONE: Partial<Record<MessageAction, (n: number) => string>> = {
+  archive: (n) => (n === 1 ? "Arquivado" : `${n} e-mails arquivados`),
+  trash: (n) => (n === 1 ? "Movido para a Lixeira" : `${n} e-mails na Lixeira`),
+  spam: (n) => (n === 1 ? "Marcado como spam" : `${n} marcados como spam`),
+  notspam: (n) => (n === 1 ? "Voltou para a Entrada" : `${n} e-mails voltaram para a Entrada`),
+  unarchive: (n) => (n === 1 ? "Voltou para a Entrada" : `${n} e-mails voltaram para a Entrada`),
+  untrash: (n) => (n === 1 ? "Voltou para a Entrada" : `${n} e-mails voltaram para a Entrada`),
+  read: (n) => (n === 1 ? "Marcado como lido" : `${n} marcados como lidos`),
+  unread: (n) => (n === 1 ? "Marcado como não lido" : `${n} marcados como não lidos`),
+};
+
+/** Tira/ajusta os e-mails nas listas na hora, conforme a ação. */
+function applyLocally(id: string, action: MessageAction) {
+  if (action === "archive") removeEverywhere(id, ["inbox"]);
+  else if (action === "trash") removeEverywhere(id);
+  else if (action === "spam") removeEverywhere(id, ["inbox", "starred", "archive"]);
+  else if (action === "notspam") removeEverywhere(id, ["spam"]);
+  else if (action === "untrash") removeEverywhere(id, ["trash"]);
+  else if (action === "unarchive") removeEverywhere(id, ["archive"]);
+  else if (action === "star" || action === "unstar") patchEverywhere(id, { starred: action === "star" });
+  else if (action === "unread" || action === "read") patchEverywhere(id, { unread: action === "unread" });
+}
+
+/** A mesma ação em vários e-mails (seleção na lista), com um aviso só no fim. */
+export async function bulkAction(ids: string[], action: MessageAction) {
+  const items = ids.map((id) => findMessage(id)).filter((m): m is Message => !!m);
+  if (items.length === 0) return;
+  const before = state.folders;
+  items.forEach((m) => applyLocally(m.id, action));
+  const done = BULK_DONE[action]?.(items.length);
+  const real = items.filter((m) => m.accountEmail);
+  if (real.length === 0) {
+    if (done) toast(done);
+    return;
+  }
+  const results = await Promise.allSettled(real.map((m) => api.action(m.accountEmail!, m.id, action)));
+  const failed = results.filter((r) => r.status === "rejected").length;
+  if (failed === 0) {
+    if (done) toast(done);
+  } else {
+    set({ folders: before });
+    toast(failed === real.length ? "Não deu certo. Tente de novo." : `${failed} de ${real.length} não deram certo. Atualize a lista.`, "error");
+  }
+  if (["untrash", "notspam", "unarchive"].includes(action)) void loadFolder("inbox");
+  void loadCounts();
+}
+
 const DONE: Partial<Record<MessageAction, string>> = {
   archive: "Arquivado",
   trash: "Movido para a Lixeira",
   spam: "Marcado como spam",
   notspam: "Não é spam: voltou para a Entrada",
   unarchive: "Voltou para a Entrada",
+  untrash: "Voltou para a Entrada",
 };
 
 /** Arquivar, lixeira, spam, estrela, não lido. Atualiza a tela na hora e desfaz se o Gmail recusar. */
@@ -336,12 +391,7 @@ export async function messageAction(id: string, action: MessageAction) {
   const m = findMessage(id);
   if (!m) return;
   const before = state.folders;
-  if (action === "archive") removeEverywhere(id, ["inbox"]);
-  else if (action === "trash") removeEverywhere(id);
-  else if (action === "spam") removeEverywhere(id, ["inbox", "starred", "archive"]);
-  else if (action === "notspam") removeEverywhere(id, ["spam"]);
-  else if (action === "star" || action === "unstar") patchEverywhere(id, { starred: action === "star" });
-  else if (action === "unread" || action === "read") patchEverywhere(id, { unread: action === "unread" });
+  applyLocally(id, action);
   if (!m.accountEmail) {
     if (DONE[action]) toast(DONE[action]!);
     return;

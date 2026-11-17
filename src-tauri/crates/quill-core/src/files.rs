@@ -30,6 +30,21 @@ pub fn unique_path(dir: &Path, name: &str) -> PathBuf {
         .expect("sempre acha um nome livre")
 }
 
+/// Link que pode ser aberto fora do app: só páginas da web e e-mail (nada de arquivos ou apps locais).
+pub fn is_safe_link(url: &str) -> bool {
+    let lower = url.trim().to_ascii_lowercase();
+    lower.starts_with("https://") || lower.starts_with("http://") || lower.starts_with("mailto:")
+}
+
+/// Abre um link da web (ou mailto) no navegador padrão.
+#[cfg(feature = "desktop")]
+pub fn open_link(url: &str) -> Result<(), String> {
+    if !is_safe_link(url) {
+        return Err("link não permitido".into());
+    }
+    open::that_detached(url.trim()).map_err(|e| e.to_string())
+}
+
 /// Abre o arquivo no app padrão do sistema.
 #[cfg(feature = "desktop")]
 pub fn open_file(path: &Path) -> Result<(), String> {
@@ -81,5 +96,16 @@ mod tests {
         std::fs::write(dir.join("LEIAME"), b"x").unwrap();
         assert_eq!(unique_path(&dir, "LEIAME"), dir.join("LEIAME (2)"));
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn so_abre_links_da_web_e_de_email() {
+        assert!(is_safe_link("https://indeed.com/vaga?id=1"));
+        assert!(is_safe_link("http://exemplo.com"));
+        assert!(is_safe_link("mailto:ana@x.com"));
+        assert!(!is_safe_link("file:///etc/passwd"));
+        assert!(!is_safe_link("javascript:alert(1)"));
+        assert!(!is_safe_link("/Applications/Calculator.app"));
+        assert!(!is_safe_link("smb://servidor/pasta"));
     }
 }

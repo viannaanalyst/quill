@@ -292,6 +292,8 @@ pub struct AttachmentInfo {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct MessageBody {
     pub text: String,
+    /// versão formatada (HTML) do e-mail, quando ele tem uma
+    pub html: Option<String>,
     pub attachments: Vec<AttachmentInfo>,
 }
 
@@ -320,7 +322,8 @@ pub fn parse_message_body(json: &str) -> Result<MessageBody, String> {
     let full: Full = serde_json::from_str(json).map_err(|e| e.to_string())?;
     let mut attachments = Vec::new();
     collect_attachments(&full.payload, &mut attachments);
-    Ok(MessageBody { text: extract_body_text(json)?, attachments })
+    let html = find_part(&full.payload, "text/html").and_then(decode_part);
+    Ok(MessageBody { text: extract_body_text(json)?, html, attachments })
 }
 
 /// Conteúdo de `messages.attachments.get` (base64url, com ou sem "=").
@@ -784,6 +787,7 @@ mod tests {
         ]}}"#;
         let body = parse_message_body(json).unwrap();
         assert_eq!(body.text, "Olá");
+        assert_eq!(body.html, None);
         assert_eq!(body.attachments.len(), 2);
         assert_eq!(body.attachments[0], AttachmentInfo { id: "ANX1".into(), name: "resumo.pdf".into(), mime_type: "application/pdf".into(), size: 1258291 });
         assert_eq!(body.attachments[1].name, "logo.png");
@@ -825,5 +829,16 @@ mod tests {
             "--B1\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{\"threadId\":\"t1\"}\r\n--B1\r\nContent-Type: message/rfc822\r\n\r\nFrom: eu\r\n\r\noi\r\n--B1--\r\n"
         );
         assert!(upload_body("x", None, "B").contains("\r\n\r\n{}\r\n"));
+    }
+
+    #[test]
+    fn corpo_traz_o_html_quando_existe() {
+        // <p>Oi <b>Ana</b></p> em base64url
+        let json = r#"{"payload":{"mimeType":"multipart/alternative","parts":[
+            {"mimeType":"text/plain","filename":"","body":{"data":"T2kgQW5h"}},
+            {"mimeType":"text/html","filename":"","body":{"data":"PHA-T2kgPGI-QW5hPC9iPjwvcD4"}}]}}"#;
+        let body = parse_message_body(json).unwrap();
+        assert_eq!(body.text, "Oi Ana");
+        assert_eq!(body.html.as_deref(), Some("<p>Oi <b>Ana</b></p>"));
     }
 }

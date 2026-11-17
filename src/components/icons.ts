@@ -79,3 +79,4 @@ export { default as CornerDownLeft } from "lucide-react/icons/corner-down-left";
 export { default as Palette } from "lucide-react/icons/palette";
 export { default as TriangleAlert } from "lucide-react/icons/triangle-alert";
 export { default as Maximize2 } from "lucide-react/icons/maximize-2";
+export { default as Minus } from "lucide-react/icons/minus";

@@ -334,6 +334,11 @@ impl GoogleClient {
         self.post_ok(token, &format!("/messages/{id}/trash"), String::new()).await
     }
 
+    /// Tira da Lixeira (volta para onde estava).
+    pub async fn untrash(&self, token: &str, id: &str) -> Result<(), LoginError> {
+        self.post_ok(token, &format!("/messages/{id}/untrash"), String::new()).await
+    }
+
     pub async fn mark_read(&self, token: &str, id: &str) -> Result<(), LoginError> {
         let resp = self
             .http
@@ -652,6 +657,13 @@ mod tests {
         assert_eq!(created.id, "novo");
         assert_eq!(created.calendar_id, "primary");
         assert!(srv.await.unwrap()[0].starts_with("POST /gmail/calendar/calendars/primary/events"));
+    }
+
+    #[tokio::test]
+    async fn untrash_brings_back_from_trash() {
+        let (base, srv) = fake_google(vec![r#"{"id":"a"}"#]).await;
+        client(&base).untrash("ya29", "a").await.unwrap();
+        assert!(srv.await.unwrap()[0].starts_with("POST /gmail/messages/a/untrash"));
     }
 
     #[tokio::test]
