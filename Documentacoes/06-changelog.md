@@ -249,3 +249,5 @@ Pedido do Gabriel depois de usar o Chat com a conta real, comparando com o Googl
 - Assinatura fixa no Mac: `bundle.macOS.signingIdentity` do `tauri.conf.json` passou a usar o certificado
   "Apple Development" do Mac, para o macOS não pedir a senha das Chaves a cada versão nova (guia rápido e ADR-024
   atualizados). Vale a partir da próxima montagem.
+- Repositório público sem dados pessoais à vista: a assinatura do app usa a impressão digital do certificado (não o
+  nome com e-mail) e os dados de exemplo da prévia usam e-mails fictícios (voce@gmail.com, voce@empresa.com.br…).

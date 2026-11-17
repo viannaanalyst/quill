@@ -62,6 +62,16 @@
 [data-tip-pos="right"]:focus-visible::after {
   transform: translate(0, -50%);
 }
+/* em cima: para botões perto da borda de baixo da janela (caixa de escrever, barras no rodapé) */
+[data-tip-pos="top"]::after {
+  top: auto;
+  bottom: calc(100% + 8px);
+  transform: translate(-50%, -3px);
+}
+[data-tip-pos="top"]:hover::after,
+[data-tip-pos="top"]:focus-visible::after {
+  transform: translate(-50%, 0);
+}
 /* à esquerda: para botões na borda direita de uma coluna com rolagem (a dica não fica cortada) */
 [data-tip-pos="left"]::after {
   left: auto;
