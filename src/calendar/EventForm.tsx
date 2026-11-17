@@ -1,3 +1,4 @@
+import { useMailbox } from "../state/mailbox";
 import * as Popover from "@radix-ui/react-popover";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type RefObject } from "react";
 import "./eventForm.css";
@@ -353,6 +354,13 @@ export function EventForm(props: FormProps) {
   }, [editing, onClose]);
 
   const key = editable.some((c) => c.key === calendarKey) ? calendarKey : (editable[0]?.key ?? "");
+  // Google Meet só existe nas agendas do Google (no iCloud o pedido seria ignorado)
+  const connected = useMailbox((s) => s.connected);
+  const isGoogleKey = (k: string) => {
+    const account = editable.find((c) => c.key === k)?.account;
+    const p = connected.find((a) => a.email === account)?.provider;
+    return !p || p === "google";
+  };
   const start = toDate(date, allDay ? "00:00" : startT);
   const end = toDate(endDate, allDay ? "00:00" : endT);
   const badTime = allDay ? end < start : end <= start;
@@ -390,7 +398,7 @@ export function EventForm(props: FormProps) {
         description: description.trim() || undefined,
         attendees: guests.length ? guests.map((g) => g.email) : undefined,
         reminders,
-        meet: meet || undefined,
+        meet: (meet && isGoogleKey(key)) || undefined,
       });
       setSaving(false);
       if (created) onClose();
@@ -498,7 +506,7 @@ export function EventForm(props: FormProps) {
               options={editable.map((c) => ({ value: c.key, label: c.name, leading: <Dot color={c.color} /> }))}
             />
           ) : (
-            <span className="muted">Conecte uma conta Google em Ajustes</span>
+            <span className="muted">Conecte uma conta em Ajustes</span>
           )}
         </div>
       )}
@@ -516,7 +524,7 @@ export function EventForm(props: FormProps) {
           </div>
         )
       ) : (
-        <div className="cal-pop-row">
+        isGoogleKey(key) && <div className="cal-pop-row">
           <Video size={15} aria-hidden />
           <label className="cal-form-switch">
             <span>Adicionar Google Meet</span>
