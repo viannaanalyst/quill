@@ -139,3 +139,21 @@
     0 0 0 2px var(--panel),
     0 0 0 3px var(--line);
 }
+
+/* a barra fica acima do painel para as dicas dos ícones aparecerem por cima */
+.rail {
+  z-index: 10;
+}
+
+/* Na janela nativa a própria janela já é a moldura: o painel encosta nas bordas
+   (sem margem nem cantos próprios) e só uma linha separa a barra de ícones.
+   A barra fica com 72px para os botões reais do macOS caberem sem encostar no painel. */
+.is-native .rail {
+  width: 72px;
+}
+.is-native .panel {
+  margin: 0;
+  border: 0;
+  border-left: 1px solid var(--line);
+  border-radius: 0;
+}

@@ -1,0 +1,513 @@
+/* Ajustes · Contas (frame "Configurações de contas"). Prefixo st-. */
+
+:root {
+  --warn: #a0621a;
+  --warnsoft: #fbf1e2;
+  --danger: #c2453d;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --warn: #e2b866;
+    --warnsoft: #2b2318;
+    --danger: #ee8a82;
+  }
+}
+:root[data-theme="dark"] {
+  --warn: #e2b866;
+  --warnsoft: #2b2318;
+  --danger: #ee8a82;
+}
+
+.st {
+  flex: 1;
+  display: flex;
+  gap: 20px;
+  padding: 20px 26px;
+  min-height: 0;
+  overflow: hidden;
+}
+.st-nav {
+  width: 210px;
+  flex: none;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-self: flex-start;
+}
+.st-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 999px;
+  color: var(--ink2);
+  font-size: 13.5px;
+  width: 100%;
+  text-align: left;
+}
+.st-nav-item:hover {
+  background: color-mix(in srgb, var(--surface2), transparent 40%);
+}
+.st-nav-item[aria-current="page"] {
+  background: var(--surface2);
+  color: var(--ink);
+  font-weight: 600;
+}
+.st-nav-foot {
+  font-size: 11.5px;
+  color: var(--ink3);
+  padding: 12px 12px 4px;
+  border-top: 1px solid var(--line2);
+  margin-top: 8px;
+  line-height: 1.45;
+}
+.st-nav-foot button {
+  margin-top: 10px;
+  color: var(--ink2);
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.st-nav-foot button:hover {
+  color: var(--ink);
+}
+.st-main {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+.st-list {
+  overflow: hidden;
+}
+.st-list-head {
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid var(--line2);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.st-title {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.st-sub {
+  font-size: 13px;
+  color: var(--ink3);
+  margin-top: 3px;
+}
+.st-list-head .btn {
+  margin-left: auto;
+}
+.st-accounts {
+  list-style: none;
+}
+.st-account {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px 14px 22px;
+  border-bottom: 1px solid var(--line2);
+  position: relative;
+}
+.st-account:hover {
+  background: color-mix(in srgb, var(--sel), transparent 40%);
+}
+.st-account[data-selected="true"] {
+  background: var(--sel);
+}
+.st-account[data-selected="true"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--ink);
+}
+.st-hit {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+.st-hit:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: -2px;
+}
+.st-logo {
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
+  display: grid;
+  place-items: center;
+  background: var(--logobg);
+  box-shadow: 0 0 0 1px var(--line);
+  flex: none;
+  position: relative;
+  color: var(--ink2);
+}
+.st-logo i {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2px solid var(--surface);
+}
+.st-account-body {
+  flex: 1;
+  min-width: 0;
+}
+.st-account-name {
+  font-size: 15px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  letter-spacing: -0.01em;
+}
+.st-account-mail {
+  font-size: 13px;
+  color: var(--ink2);
+  margin-top: 2px;
+}
+.st-status {
+  font-size: 12px;
+  color: var(--ink3);
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.st-status svg {
+  color: var(--sage);
+}
+.st-warn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 6px 6px 6px 10px;
+  border-radius: 999px;
+  background: var(--warnsoft);
+  color: var(--warn);
+  font-size: 12.5px;
+  font-weight: 500;
+  position: relative;
+  z-index: 2;
+}
+.st-warn .btn {
+  margin-left: auto;
+}
+.st-switches {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex: none;
+  position: relative;
+  z-index: 2;
+}
+.st-switch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--ink3);
+}
+.st-chev {
+  color: var(--ink3);
+  flex: none;
+}
+.st-add {
+  padding: 16px 22px 20px;
+}
+.st-add-title {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.st-add-sub {
+  font-size: 12.5px;
+  color: var(--ink3);
+  margin-top: 2px;
+}
+.st-providers {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-top: 12px;
+}
+.st-provider {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--surface);
+  text-align: left;
+  transition:
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+.st-provider:hover {
+  box-shadow: 0 8px 20px -12px rgba(0, 0, 0, 0.3);
+}
+.st-provider:active {
+  transform: scale(0.98);
+}
+.st-provider .st-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+}
+.st-provider-name {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.st-provider-sub {
+  font-size: 11.5px;
+  color: var(--ink3);
+  line-height: 1.35;
+}
+
+/* detalhes da conta */
+.st-side {
+  width: 320px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+}
+.st-card {
+  padding: 18px;
+}
+.st-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.st-detail-head .st-logo {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+}
+.st-detail-name {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.st-detail-mail {
+  font-size: 12.5px;
+  color: var(--ink3);
+  margin-top: 2px;
+}
+.st-fields2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.st-field {
+  margin-top: 14px;
+}
+.st-field-label {
+  display: block;
+  font-size: 12px;
+  color: var(--ink3);
+  font-weight: 500;
+  margin-bottom: 6px;
+}
+.st-input {
+  height: 36px;
+  width: 100%;
+  border-radius: 999px;
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--line);
+  background: var(--panel);
+  padding: 0 14px;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--ink);
+  outline: 0;
+  user-select: text;
+}
+.st-input:focus {
+  box-shadow: inset 0 0 0 1.5px var(--blue);
+}
+select.st-input {
+  appearance: none;
+  padding-right: 34px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--ink3) 50%),
+    linear-gradient(135deg, var(--ink3) 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) 15px,
+    calc(100% - 13px) 15px;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+.st-swatches {
+  display: flex;
+  gap: 9px;
+  padding-left: 2px;
+}
+.st-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--c);
+  transition: box-shadow 0.15s ease;
+}
+.st-swatch[aria-checked="true"] {
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--c);
+}
+.st-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 0;
+  font-size: 13.5px;
+  border-bottom: 1px solid var(--line2);
+}
+.st-row:last-of-type {
+  border-bottom: none;
+}
+.st-row-sub {
+  font-size: 12px;
+  color: var(--ink3);
+  margin-top: 1px;
+}
+.st-row select.st-input {
+  height: 30px;
+  width: auto;
+  font-size: 12.5px;
+  padding: 0 30px 0 12px;
+  background-position:
+    calc(100% - 16px) 12px,
+    calc(100% - 11px) 12px;
+}
+.st-storage {
+  margin-top: 10px;
+  font-size: 12.5px;
+  color: var(--ink3);
+  display: flex;
+  justify-content: space-between;
+}
+.st-bar {
+  height: 6px;
+  border-radius: 6px;
+  background: var(--surface2);
+  margin-top: 6px;
+  overflow: hidden;
+}
+.st-bar i {
+  display: block;
+  height: 100%;
+  background: var(--ink);
+  border-radius: 6px;
+  transform-origin: left center;
+}
+.st-cal {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--ink2);
+  line-height: 1.4;
+}
+.st-cal .btn {
+  margin-left: auto;
+  flex: none;
+}
+.st-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.st-actions .btn {
+  flex: 1;
+}
+.btn.danger {
+  color: var(--danger);
+}
+.st-soon {
+  padding: 40px 24px;
+  text-align: center;
+  color: var(--ink2);
+}
+.st-soon h2 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -0.02em;
+}
+.st-soon p {
+  margin-top: 6px;
+  font-size: 14px;
+}
+
+/* confirmação antes de desconectar */
+.st-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: grid;
+  place-items: center;
+  z-index: 100;
+  animation: st-fade 0.15s ease-out both;
+}
+@keyframes st-fade {
+  from {
+    opacity: 0;
+  }
+}
+.st-dialog {
+  width: 380px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 22px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.3);
+  animation: st-pop 0.18s ease-out both;
+}
+@keyframes st-pop {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+}
+.st-dialog h2 {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.st-dialog p {
+  font-size: 13.5px;
+  color: var(--ink2);
+  line-height: 1.5;
+  margin-top: 8px;
+}
+.st-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+.btn.solid.danger-solid {
+  background: linear-gradient(to bottom, #d55a52, #b23c34);
+  color: #fff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 0 0 1px #9c332c,
+    0 8px 20px -8px rgba(178, 60, 52, 0.5);
+}

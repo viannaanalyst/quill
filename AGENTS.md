@@ -18,7 +18,7 @@ App de e-mail e calendário, **macOS primeiro**, depois Windows. Começou como u
 ## Comandos
 
 - `npm install`: instala as dependências.
-- `npm run dev`: só as telas, no navegador (porta 1420). Use `?theme=dark`, `?step=3` e `?screen=inbox` para ver estados.
+- `npm run dev`: só as telas, no navegador (porta 1420). Parâmetros da prévia: `?theme=dark`, `?step=3` (onboarding), `?screen=inbox|read|compose|day|week|month|settings`, `?native=1` (simula a janela do Mac), `?preload=onboarding` (pega estilos vazando entre telas).
 - `npm run build`: confere os tipos e gera `dist/`.
 - `npm run tauri dev`: abre o app de verdade. Precisa de Rust; no Mac, também do Xcode.
 - `npm run tauri build`: gera o instalador.
@@ -33,6 +33,18 @@ App de e-mail e calendário, **macOS primeiro**, depois Windows. Começou como u
   - nada de dependência grande sem necessidade;
   - telas pesadas com carregamento sob demanda (`React.lazy`);
   - animações só com `transform`/`opacity`.
+
+## Fluxo de trabalho
+
+- Conferir as telas na **prévia** (navegador) com prints, em claro e escuro. **Não remontar o app no Mac a cada mudança** (pedido do Gabriel, para economizar): montar só quando terminar uma etapa grande ou quando for preciso ver algo que só existe na janela nativa.
+- No Mac, os prints são só da janela do Quill (`screencapture -l <id>`), nunca da tela inteira, porque ela mostra os e-mails pessoais.
+
+## Padrões de interface
+
+- Botões só com ícone: `aria-label` + dica `data-tip="…"` (pílula escura; `data-tip-pos="right"` na barra lateral).
+- Barra de rolagem fina e arredondada, definida em `src/styles/components.css`.
+- Resposta a convite: confirmação com barrinha de tempo (4 s, dá para desfazer), depois o convite some (`RsvpButtons` / `InviteGate`).
+- Estado compartilhado entre telas (tela atual, lidos, resposta do convite, agendas visíveis) em `src/state/store.ts`.
 
 ## Skills obrigatórias
 

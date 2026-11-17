@@ -1,0 +1,360 @@
+/* Leitura de e-mail (frame "Leitura de e-mail"). Prefixo rd-. */
+
+.rd {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.rd-nav {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink3);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.rd-content {
+  flex: 1;
+  display: flex;
+  gap: 20px;
+  padding: 0 26px 20px;
+  min-height: 0;
+}
+.rd-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+.rd-conv {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+.rd-head {
+  padding: 18px 26px 14px;
+  border-bottom: 1px solid var(--line2);
+  flex: none;
+}
+.rd-subject {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+.rd-chips {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.rd-thread {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+.rd-earlier {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 26px;
+  border-bottom: 1px solid var(--line2);
+  font-size: 13.5px;
+  color: var(--ink3);
+  width: 100%;
+  text-align: left;
+}
+.rd-earlier:hover {
+  background: color-mix(in srgb, var(--sel), transparent 30%);
+}
+.rd-earlier .av {
+  width: 30px;
+  height: 30px;
+  font-size: 11px;
+}
+.rd-earlier-who {
+  color: var(--ink);
+  font-weight: 600;
+  flex: none;
+}
+.rd-earlier-text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rd-earlier-date {
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+.rd-earlier-full {
+  padding: 4px 26px 16px 68px;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--ink2);
+  border-bottom: 1px solid var(--line2);
+}
+.rd-msg {
+  padding: 16px 26px 24px;
+}
+.rd-msg-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.rd-from {
+  font-size: 15px;
+  font-weight: 600;
+}
+.rd-from span {
+  font-weight: 400;
+  color: var(--ink3);
+  font-size: 13px;
+  margin-left: 6px;
+}
+.rd-to {
+  font-size: 12.5px;
+  color: var(--ink3);
+  margin-top: 2px;
+}
+.rd-msg-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink3);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.rd-msg-actions .btn.ic {
+  width: 32px;
+  height: 32px;
+  color: var(--ink2);
+}
+.rd-msg-actions .btn.ic[aria-pressed="true"] {
+  color: #e0a43a;
+}
+.rd-body {
+  margin: 12px 0 0 52px;
+  font-size: 15px;
+  line-height: 1.6;
+  max-width: 640px;
+  user-select: text;
+  cursor: text;
+  white-space: pre-line;
+  text-wrap: pretty;
+}
+.rd-body p + p {
+  margin-top: 12px;
+}
+.rd-atts {
+  display: flex;
+  gap: 10px;
+  margin: 16px 0 0 52px;
+  flex-wrap: wrap;
+}
+.rd-att {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 10px 9px 9px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+}
+.rd-att-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+.rd-att-size {
+  font-size: 11.5px;
+  color: var(--ink3);
+  margin-top: 2px;
+}
+.rd-att .btn.ic {
+  width: 30px;
+  height: 30px;
+  margin-left: 10px;
+}
+
+/* resposta rápida */
+.rd-reply {
+  margin: 0 16px 14px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--panel);
+  flex: none;
+}
+.rd-reply:focus-within {
+  border-color: color-mix(in srgb, var(--blue) 60%, var(--line));
+}
+.rd-reply-to {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line2);
+  font-size: 13px;
+  color: var(--ink3);
+}
+
+
+
+.rd-reply-mode {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.rd-reply textarea {
+  display: block;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: transparent;
+  font: inherit;
+  font-size: 14.5px;
+  color: var(--ink);
+  padding: 12px 16px 6px;
+  min-height: 48px;
+  user-select: text;
+}
+.rd-reply textarea::placeholder {
+  color: var(--ink3);
+}
+
+
+
+.rd-reply .format-bar {
+  padding: 4px 10px 10px;
+}
+
+
+
+/* coluna da direita */
+.rd-side {
+  width: 320px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+}
+.rd-card {
+  padding: 18px;
+}
+.rd-who {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+.rd-who .av {
+  width: 46px;
+  height: 46px;
+  font-size: 15px;
+}
+.rd-who-name {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.rd-who-role {
+  font-size: 12.5px;
+  color: var(--ink3);
+  margin-top: 2px;
+}
+.rd-mail {
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--ink2);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  user-select: text;
+}
+.rd-row2 {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+.rd-history {
+  margin-top: 14px;
+  border-top: 1px solid var(--line2);
+  padding-top: 8px;
+  list-style: none;
+}
+.rd-history li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+  padding: 6px 0;
+  color: var(--ink2);
+}
+.rd-history li span:last-child {
+  color: var(--ink3);
+  font-size: 12px;
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.rd-files {
+  list-style: none;
+}
+.rd-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line2);
+}
+.rd-file:last-child {
+  border-bottom: 0;
+}
+.rd-file .icon-tile {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+}
+.rd-file .btn.ic {
+  margin-left: auto;
+  width: 30px;
+  height: 30px;
+}
+.rd-card > .btn {
+  width: 100%;
+  margin-top: 10px;
+}
+.rd-meeting {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+}
+.rd-meeting-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 6px;
+  flex: none;
+}
+.rd-meeting-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+.rd-meeting-meta {
+  font-size: 13px;
+  color: var(--ink2);
+  margin-top: 3px;
+}
+.rd-meeting-note {
+  font-size: 12px;
+  color: var(--ink3);
+  margin-top: 10px;
+}

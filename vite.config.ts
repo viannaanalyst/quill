@@ -15,5 +15,15 @@ export default defineConfig({
     target: "es2022",
     cssMinify: true,
     sourcemap: false,
+    rollupOptions: {
+      output: {
+        // Ícones num pacote só (em vez de um arquivinho por ícone) e React separado do código do app.
+        manualChunks(id: string) {
+          if (id.includes("node_modules/lucide-react")) return "icons";
+          if (id.includes("node_modules/react")) return "react";
+          return undefined;
+        },
+      },
+    },
   },
 });

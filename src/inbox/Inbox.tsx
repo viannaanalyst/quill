@@ -1,12 +1,13 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState } from "react";
 import "./inbox.css";
 import { Logo } from "../components/Logo";
 import { VerifiedBadge } from "../components/VerifiedBadge";
+import { TopBar } from "../components/TopBar";
+import { MessageAvatar } from "../components/MessageAvatar";
+import { InviteGate, RsvpButtons } from "../components/Rsvp";
 import {
   Archive,
-  Bell,
   CalendarDays,
-  Check,
   CircleCheck,
   Clock,
   FileText,
@@ -18,20 +19,20 @@ import {
   Paperclip,
   Plus,
   RefreshCw,
-  Search,
   Send,
   SquarePen,
   Star,
   Video,
 } from "../components/icons";
 import { ACCOUNTS, ACCOUNT_BY_ID, AGENDA, MESSAGES, PENDING_INVITE, TODAY_LABEL, WEEK } from "./sampleData";
-import type { AccountId, AgendaItem, Message, Rsvp } from "./types";
+import type { AccountId, AgendaItem, Message } from "./types";
+import { markRead, navigate, useStore } from "../state/store";
 
 type Filter = "all" | AccountId;
 
 const TOTAL_UNREAD = ACCOUNTS.reduce((sum, a) => sum + a.unread, 0);
 
-const FOLDERS = [
+export const FOLDERS = [
   { id: "inbox", label: "Entrada", icon: InboxIcon, count: TOTAL_UNREAD },
   { id: "starred", label: "Importantes", icon: Star, count: 6 },
   { id: "sent", label: "Enviados", icon: Send },
@@ -40,18 +41,18 @@ const FOLDERS = [
   { id: "spam", label: "Spam", icon: OctagonAlert, count: 3 },
 ] as const;
 
-export default function Inbox() {
+export default function Inbox({ folder }: { folder: string }) {
   const [filter, setFilter] = useState<Filter>("all");
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [query, setQuery] = useState("");
-  const [selectedId, setSelectedId] = useState<string>(MESSAGES[0].id);
-  const [readIds, setReadIds] = useState<Set<string>>(() => new Set());
-  const [rsvp, setRsvp] = useState<Rsvp | null>(null);
+  const readIds = useStore((s) => s.readIds);
+  const folderInfo = FOLDERS.find((f) => f.id === folder) ?? FOLDERS[0];
 
   const isUnread = (m: Message) => m.unread && !readIds.has(m.id);
 
-  // Filtros calculados na renderização (sem efeitos).
+  // Filtros calculados na renderização (sem efeitos). Só a Entrada tem dados de exemplo.
   const visible = useMemo(() => {
+    if (folder !== "inbox") return [];
     const q = query.trim().toLocaleLowerCase("pt-BR");
     return MESSAGES.filter((m) => {
       if (filter !== "all" && m.account !== filter) return false;
@@ -59,49 +60,42 @@ export default function Inbox() {
       if (q && !`${m.from} ${m.subject} ${m.preview}`.toLocaleLowerCase("pt-BR").includes(q)) return false;
       return true;
     });
-  }, [filter, unreadOnly, query, readIds]);
+  }, [folder, filter, unreadOnly, query, readIds]);
 
   const open = (id: string) => {
-    setSelectedId(id);
-    setReadIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+    markRead(id);
+    navigate({ name: "read", id });
   };
 
   return (
     <>
-      <header className="top" data-tauri-drag-region>
-        <span className="top-title">Caixa de entrada</span>
-        <span className="top-dot" aria-hidden />
-        <span className="top-count">1.284 e-mails</span>
-        <label className="search">
-          <Search size={16} aria-hidden />
-          <input
-            type="search"
-            placeholder="Buscar em todas as contas"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            aria-label="Buscar em todas as contas"
-          />
-          <span className="kbd" aria-hidden>⌘ K</span>
-        </label>
-        <button className="btn glass ic" aria-label="Atualizar">
-          <RefreshCw size={17} aria-hidden />
-        </button>
-        <button className="btn glass ic" aria-label="Notificações">
-          <Bell size={17} aria-hidden />
-        </button>
-        <div className="me" role="img" aria-label="Gabriel Vianna">GV</div>
-      </header>
+      <TopBar
+        title="Caixa de entrada"
+        sub="1.284 e-mails"
+        search={query}
+        onSearch={setQuery}
+        actions={
+          <button className="btn glass ic" aria-label="Atualizar" data-tip="Atualizar">
+            <RefreshCw size={17} aria-hidden />
+          </button>
+        }
+      />
 
       <div className="inbox">
-        <div className="tools">
-          <button className="btn solid lg">
+        <div className="toolbar">
+          <button className="btn solid lg" onClick={() => navigate({ name: "compose" })}>
             <SquarePen size={17} aria-hidden />
             Escrever
           </button>
           <span className="vsep" aria-hidden />
           <nav aria-label="Caixas" style={{ display: "flex", gap: 6 }}>
             {FOLDERS.map((f) => (
-              <button key={f.id} className="pill" aria-current={f.id === "inbox" ? "page" : undefined}>
+              <button
+                key={f.id}
+                className="pill"
+                aria-current={f.id === folder ? "page" : undefined}
+                onClick={() => navigate({ name: "inbox", folder: f.id })}
+              >
                 <f.icon size={17} aria-hidden />
                 {f.label}
                 {"count" in f && <span className="count">{f.count}</span>}
@@ -118,32 +112,27 @@ export default function Inbox() {
               <div className="list-head">
                 <span className="checkbox" aria-hidden />
                 <span>
-                  Entrada · {filter === "all" ? "todas as contas" : ACCOUNT_BY_ID.get(filter)?.name}
+                  {folderInfo.label} · {filter === "all" ? "todas as contas" : ACCOUNT_BY_ID.get(filter)?.name}
                 </span>
-                <div className="segmented" role="group" aria-label="Mostrar">
+                <div className="segmented" role="group" aria-label="Mostrar" style={{ marginLeft: "auto" }}>
                   <button aria-pressed={!unreadOnly} onClick={() => setUnreadOnly(false)}>Todas</button>
                   <button aria-pressed={unreadOnly} onClick={() => setUnreadOnly(true)}>Não lidas</button>
                 </div>
-                <button className="btn ic" aria-label="Filtros" style={{ color: "var(--ink2)" }}>
+                <button className="btn ic" aria-label="Filtros" data-tip="Filtros" style={{ color: "var(--ink2)" }}>
                   <ListFilter size={18} aria-hidden />
                 </button>
               </div>
 
               <div className="list-scroll">
-                <Banner />
+                {folder === "inbox" && <Banner />}
                 {visible.length === 0 ? (
-                  <p className="list-empty">Nenhum e-mail com esse filtro.</p>
+                  <p className="list-empty">
+                    {folder === "inbox" ? "Nenhum e-mail com esse filtro." : `Nada em ${folderInfo.label} por enquanto.`}
+                  </p>
                 ) : (
                   <ul className="rows">
                     {visible.map((m) => (
-                      <MessageRow
-                        key={m.id}
-                        message={m}
-                        unread={isUnread(m)}
-                        selected={m.id === selectedId}
-                        onOpen={() => open(m.id)}
-                        rsvp={m.invite ? <RsvpButtons value={rsvp} onChange={setRsvp} size="sm" /> : null}
-                      />
+                      <MessageRow key={m.id} message={m} unread={isUnread(m)} onOpen={() => open(m.id)} />
                     ))}
                   </ul>
                 )}
@@ -153,16 +142,18 @@ export default function Inbox() {
 
           <aside className="col-side" aria-label="Hoje">
             <TodayCard />
-            <section className="card invite" aria-label="Convite pendente">
-              <div className="invite-label">
-                <CalendarDays size={14} aria-hidden />
-                Convite pendente
-              </div>
-              <div className="invite-title">{PENDING_INVITE.title}</div>
-              <div className="invite-when">{PENDING_INVITE.when}</div>
-              <div className="invite-from">{PENDING_INVITE.from}</div>
-              <RsvpButtons value={rsvp} onChange={setRsvp} />
-            </section>
+            <InviteGate>
+              <section className="card invite" aria-label="Convite pendente">
+                <div className="section-label">
+                  <CalendarDays size={14} aria-hidden />
+                  Convite pendente
+                </div>
+                <div className="invite-title">{PENDING_INVITE.title}</div>
+                <div className="invite-when">{PENDING_INVITE.when}</div>
+                <div className="invite-from">{PENDING_INVITE.from}</div>
+                <RsvpButtons />
+              </section>
+            </InviteGate>
             <p className="sync">
               <CircleCheck size={15} aria-hidden />
               Tudo sincronizado · há 1 min
@@ -204,33 +195,12 @@ function AccountsBar({ filter, onChange }: { filter: Filter; onChange: (f: Filte
   );
 }
 
-function MessageRow({
-  message: m,
-  unread,
-  selected,
-  onOpen,
-  rsvp,
-}: {
-  message: Message;
-  unread: boolean;
-  selected: boolean;
-  onOpen: () => void;
-  rsvp: ReactNode;
-}) {
+function MessageRow({ message: m, unread, onOpen }: { message: Message; unread: boolean; onOpen: () => void }) {
   const account = ACCOUNT_BY_ID.get(m.account)!;
   return (
-    <li className={`row${unread ? " unread" : ""}`} data-selected={selected}>
-      <button
-        className="row-hit"
-        onClick={onOpen}
-        aria-current={selected ? "true" : undefined}
-        aria-label={`${unread ? "Não lido. " : ""}${m.from}: ${m.subject}`}
-      />
-      {m.avatar.kind === "logo" ? (
-        <span className="av logo"><Logo name={m.avatar.logo} size={20} /></span>
-      ) : (
-        <span className={`av ${m.avatar.tone}`} aria-hidden>{m.avatar.initials}</span>
-      )}
+    <li className={`row${unread ? " unread" : ""}`}>
+      <button className="row-hit" onClick={onOpen} aria-label={`${unread ? "Não lido. " : ""}${m.from}: ${m.subject}`} />
+      <MessageAvatar message={m} />
       <div className="row-body">
         <div className="row-top">
           <span className="row-from">{m.from}</span>
@@ -249,40 +219,13 @@ function MessageRow({
             {m.attachment}
           </span>
         )}
-        {rsvp}
+        {m.invite && (
+          <InviteGate>
+            <RsvpButtons size="sm" />
+          </InviteGate>
+        )}
       </div>
     </li>
-  );
-}
-
-const RSVP_LABEL: Record<Rsvp, string> = {
-  accepted: "Você aceitou",
-  maybe: "Você respondeu talvez",
-  declined: "Você recusou",
-};
-
-function RsvpButtons({ value, onChange, size }: { value: Rsvp | null; onChange: (v: Rsvp | null) => void; size?: "sm" }) {
-  const cls = size === "sm" ? " sm" : "";
-  if (value) {
-    return (
-      <div className="rsvp" role="status">
-        <span className="rsvp-done">
-          <CircleCheck size={15} aria-hidden />
-          {RSVP_LABEL[value]}
-          <button onClick={() => onChange(null)}>Desfazer</button>
-        </span>
-      </div>
-    );
-  }
-  return (
-    <div className="rsvp">
-      <button className={`btn solid${cls}`} onClick={() => onChange("accepted")}>
-        <Check size={size === "sm" ? 14 : 15} aria-hidden />
-        Aceitar
-      </button>
-      <button className={`btn glass${cls}`} onClick={() => onChange("maybe")}>Talvez</button>
-      <button className={`btn glass${cls}`} onClick={() => onChange("declined")}>Recusar</button>
-    </div>
   );
 }
 
@@ -296,7 +239,7 @@ function TodayCard() {
           <h2 className="today-title">Hoje</h2>
           <div className="today-date">{TODAY_LABEL}</div>
         </div>
-        <button className="btn glass ic" aria-label="Novo evento">
+        <button className="btn glass ic" aria-label="Novo evento" data-tip="Novo evento" onClick={() => navigate({ name: "calendar", mode: "month" })}>
           <Plus size={16} aria-hidden />
         </button>
       </div>
@@ -313,7 +256,7 @@ function TodayCard() {
           <AgendaRow key={e.id} item={e} />
         ))}
       </ul>
-      <button className="btn glass">
+      <button className="btn glass" onClick={() => navigate({ name: "calendar", mode: "day" })}>
         <CalendarDays size={15} aria-hidden />
         Abrir calendário
       </button>
@@ -395,14 +338,7 @@ function Banner() {
           <circle cx="940" cy="124" r="30" />
           <circle cx="1000" cy="130" r="34" />
         </g>
-        <path
-          d="M470 82 C540 56 590 88 650 62 S770 28 860 46"
-          fill="none"
-          stroke="#8FAA87"
-          strokeWidth="2"
-          strokeDasharray="1 7"
-          strokeLinecap="round"
-        />
+        <path d="M470 82 C540 56 590 88 650 62 S770 28 860 46" fill="none" stroke="#8FAA87" strokeWidth="2" strokeDasharray="1 7" strokeLinecap="round" />
         <Envelope x={470} y={82} w={24} rotate={-10} />
         <Envelope x={600} y={58} w={30} rotate={8} />
         <Envelope x={745} y={36} w={38} rotate={-6} />
