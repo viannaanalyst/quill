@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import "./onboarding.css";
 import { Scene } from "./Scenes";
 import { Logo, type LogoName } from "../components/Logo";
@@ -28,6 +28,9 @@ import { friendlyError } from "../lib/api";
 import { signInWithGoogle, useMailbox } from "../state/mailbox";
 import { LoginWaiting } from "../components/LoginWaiting";
 import { ConnectGoogleButton } from "../components/ConnectGoogle";
+import type { ImapProvider } from "../components/ImapConnect";
+
+const ImapConnect = lazy(() => import("../components/ImapConnect"));
 import { getPref, setPref } from "../lib/storage";
 
 const STAGE_W = 717;
@@ -89,7 +92,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
   useEffect(() => {
     if (step >= 5 && isTauri) setPref("onboarded", true);
   }, [step]);
-  const [touchId, setTouchId] = useState(() => getPref("touchId", true));
+  const [touchId, setTouchId] = useState(() => getPref("touchId", false));
   // Demonstração: a conta da inchurch "termina de conectar" alguns segundos depois de chegar ao passo 6.
   const [waiting, setWaiting] = useState(true);
   // login real (app no Mac): qual serviço está esperando o navegador e o erro, se houver
@@ -103,12 +106,21 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
   const back = () => setStep((s) => Math.max(s - 1, 1));
   const goTo = (s: number) => setStep(s);
 
-  /** Escolha do serviço no passo "Entrar". Na prévia do navegador só avança; no app abre o login de verdade. */
+  /** iCloud ou "Outro e-mail": formulário com senha de app / servidores. */
+  const [imapFor, setImapFor] = useState<ImapProvider | null>(null);
+
+  /** Escolha do serviço no passo "Entrar". Na prévia do navegador só avança (iCloud e IMAP abrem o formulário);
+   *  no app abre o login de verdade. */
   const choose = async (provider: string) => {
+    if (provider === "icloud" || provider === "imap") {
+      setLoginError(null);
+      setImapFor(provider);
+      return;
+    }
     if (!isTauri) return goTo(6);
     setLoginError(null);
     if (provider !== "google") {
-      setLoginError("Por enquanto só o Google está disponível. Microsoft, iCloud e IMAP vêm em seguida.");
+      setLoginError("A Microsoft vem em seguida. Por enquanto dá para entrar com Google, iCloud ou outro e-mail.");
       return;
     }
     setSigningIn("google");
@@ -136,12 +148,14 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === "BUTTON" && e.key === "Enter") return; // o próprio botão já trata o Enter
+      // digitando no formulário do iCloud/IMAP: as setas mexem no texto, não nos passos
+      if (imapFor || tag === "INPUT" || tag === "TEXTAREA") return;
       if ((e.key === "ArrowRight" || e.key === "Enter") && step <= 4) next();
       if (e.key === "ArrowLeft" && step > 1) back();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [step]);
+  }, [step, imapFor]);
 
   const toggleTouchId = () => {
     setTouchId((v) => {
@@ -377,6 +391,20 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
           </div>
         </section>
       </div>
+      {imapFor && (
+        <Suspense fallback={null}>
+          <ImapConnect
+            key={imapFor}
+            provider={imapFor}
+            onClose={() => setImapFor(null)}
+            onConnected={() => {
+              // entrou: daqui para frente o app abre direto na caixa de entrada
+              setPref("onboarded", true);
+              goTo(6);
+            }}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

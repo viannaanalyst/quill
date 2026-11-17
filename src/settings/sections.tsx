@@ -1,11 +1,17 @@
+import { isTauri } from "../lib/platform";
+import { confirmTouchId, touchIdAvailable } from "../components/LockScreen";
+import { toast } from "../components/Toasts";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   Archive,
   FileText,
   Inbox,
+  Monitor,
+  Moon,
   OctagonAlert,
   Send,
   Star,
+  Sun,
   Trash2,
 } from "../components/icons";
 import { Logo, type LogoName } from "../components/Logo";
@@ -14,6 +20,8 @@ import { applyTheme, type ThemePref } from "../lib/platform";
 import { setPref } from "../lib/storage";
 import type { FolderId } from "../state/mailbox";
 import { ConfirmDialog, Panel, Row, Rows, Seg, Toggle } from "./parts";
+import { BannerPicker } from "../inbox/BannerScenes";
+import { useClock } from "../calendar/shared";
 import { usePref } from "./usePref";
 
 export interface SigAccount {
@@ -86,6 +94,7 @@ export function AppearanceSection() {
   const [density, setDensity] = usePref<"comfortable" | "compact">("density", "comfortable");
   const [banner, setBanner] = usePref("showBanner", true);
   const [preview, setPreview] = usePref("showPreview", true);
+  const clock = useClock();
 
   useEffect(() => {
     const mo = new MutationObserver(() => setTheme(currentTheme()));
@@ -108,9 +117,9 @@ export function AppearanceSection() {
             value={theme}
             onChange={choose}
             options={[
-              { value: "system", label: "Sistema" },
-              { value: "light", label: "Claro" },
-              { value: "dark", label: "Escuro" },
+              { value: "system", label: "Sistema", icon: <Monitor size={14} aria-hidden /> },
+              { value: "light", label: "Claro", icon: <Sun size={14} aria-hidden /> },
+              { value: "dark", label: "Escuro", icon: <Moon size={14} aria-hidden /> },
             ]}
           />
         </Row>
@@ -128,6 +137,17 @@ export function AppearanceSection() {
         <Row title="Mostrar a saudação" sub="O “Bom dia” com o resumo no alto da caixa de entrada.">
           <Toggle on={banner} onChange={setBanner} label="Mostrar a saudação" />
         </Row>
+        {banner && (
+          <div className="st-prow st-banner-block">
+            <div className="st-prow-text">
+              <div className="st-prow-title" id="st-banner-title">
+                Imagem da saudação
+              </div>
+              <div className="st-prow-sub">No automático, céu de manhã, campo à tarde e cidade à noite. Também dá para usar uma foto sua.</div>
+            </div>
+            <BannerPicker now={clock} />
+          </div>
+        )}
         <Row title="Mostrar prévia do texto" sub="A primeira linha da mensagem embaixo do assunto.">
           <Toggle on={preview} onChange={setPreview} label="Mostrar prévia do texto" />
         </Row>
@@ -294,6 +314,15 @@ export function ShortcutsSection() {
 
 export function PrivacySection() {
   const [touchId, setTouchId] = usePref("touchId", false);
+  /** Ao ligar: confere se o Mac tem Touch ID e pede uma vez para confirmar. */
+  const changeTouchId = async (on: boolean) => {
+    if (!on || !isTauri) return setTouchId(on);
+    if (!(await touchIdAvailable())) return toast("Este computador não tem Touch ID nem senha configurados.", "error");
+    if (await confirmTouchId()) {
+      setTouchId(true);
+      toast("Touch ID ligado: o Quill vai pedir sua digital ao abrir");
+    }
+  };
   const [blockImages, setBlockImages] = usePref("blockRemoteImages", true);
   const [senderLogos, setSenderLogos] = usePref("senderLogos", true);
   const [confirming, setConfirming] = useState(false);
@@ -315,12 +344,12 @@ export function PrivacySection() {
       <Panel id="st-privacy" title="Privacidade" sub="O Quill guarda tudo só neste Mac.">
         <Rows>
           <Row title="Abrir o app com Touch ID" sub="Pede sua digital sempre que o Quill abrir. Só no Mac.">
-            <Toggle on={touchId} onChange={setTouchId} label="Abrir o app com Touch ID" />
+            <Toggle on={touchId} onChange={(v) => void changeTouchId(v)} label="Abrir o app com Touch ID" />
           </Row>
           <Row title="Bloquear imagens externas" sub="Impede que remetentes saibam que você abriu o e-mail.">
             <Toggle on={blockImages} onChange={setBlockImages} label="Bloquear imagens externas nos e-mails" />
           </Row>
-          <Row title="Logo das empresas nos remetentes" sub="Mostra o ícone do site de quem enviou (ex.: Nubank, Indeed). O ícone vem do Google, que fica sabendo só o domínio.">
+          <Row title="Fotos e logos dos remetentes" sub="Mostra a foto (Gravatar) ou o logo do site de quem enviou. Para isso o Quill consulta o Gravatar e os ícones de sites do Google e da DuckDuckGo.">
             <Toggle on={senderLogos} onChange={setSenderLogos} label="Mostrar logo das empresas nos remetentes" />
           </Row>
           <Row title="Apagar dados deste Mac" sub="Limpa as preferências do Quill e recomeça do zero. Seus e-mails continuam no servidor.">

@@ -164,6 +164,21 @@ impl GoogleSession {
         self.client.send(&token, &mime, thread_id).await
     }
 
+    pub async fn draft_save(&self, message: &crate::gmail::OutgoingMessage, draft_id: Option<&str>, thread_id: Option<&str>) -> Result<String, LoginError> {
+        let token = self.access_token(&message.from).await?;
+        self.client.draft_save(&token, &crate::gmail::build_mime(message), draft_id, thread_id).await
+    }
+
+    pub async fn draft_delete(&self, email: &str, draft_id: &str) -> Result<(), LoginError> {
+        let token = self.access_token(email).await?;
+        self.client.draft_delete(&token, draft_id).await
+    }
+
+    pub async fn draft_get(&self, email: &str, message_id: &str) -> Result<crate::gmail::DraftContent, LoginError> {
+        let token = self.access_token(email).await?;
+        self.client.draft_get(&token, message_id).await
+    }
+
     pub async fn attachment(&self, email: &str, message_id: &str, attachment_id: &str) -> Result<Vec<u8>, LoginError> {
         let token = self.access_token(email).await?;
         self.client.attachment(&token, message_id, attachment_id).await
@@ -189,9 +204,28 @@ impl GoogleSession {
         Ok(Agenda { calendars, events })
     }
 
+    /// Sugestões de destinatário da conta: contatos do Google + quem aparece nos enviados.
+    /// Se a conta ainda não deu permissão de contatos (login antigo), usa só os enviados.
+    pub async fn contacts(&self, email: &str) -> Result<Vec<crate::contacts::Contact>, LoginError> {
+        let token = self.access_token(email).await?;
+        let (google, sent) = tokio::join!(self.client.google_contacts(&token), self.client.sent_contacts(&token, 150));
+        let own: Vec<String> = self.store.list().into_iter().map(|a| a.email).collect();
+        Ok(crate::contacts::merge_contacts(vec![google.unwrap_or_default(), sent.unwrap_or_default()], &own))
+    }
+
     pub async fn rsvp(&self, email: &str, calendar_id: &str, event_id: &str, status: &str) -> Result<(), LoginError> {
         let token = self.access_token(email).await?;
         self.client.rsvp(&token, calendar_id, event_id, status).await
+    }
+
+    pub async fn update_event(&self, email: &str, calendar_id: &str, event_id: &str, p: &crate::calendar::EventPatch) -> Result<crate::calendar::CalEvent, LoginError> {
+        let token = self.access_token(email).await?;
+        self.client.update_event(&token, calendar_id, event_id, p).await
+    }
+
+    pub async fn delete_event(&self, email: &str, calendar_id: &str, event_id: &str) -> Result<(), LoginError> {
+        let token = self.access_token(email).await?;
+        self.client.delete_event(&token, calendar_id, event_id).await
     }
 
     pub async fn create_event(&self, email: &str, calendar_id: &str, e: &crate::calendar::NewEvent) -> Result<crate::calendar::CalEvent, LoginError> {

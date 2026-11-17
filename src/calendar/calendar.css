@@ -1108,7 +1108,7 @@
   flex: 1;
   justify-content: center;
 }
-.cal-list-group + .cal-list-group {
+.cal-list-group:has(.cal-list-account) + .cal-list-group {
   margin-top: 12px;
 }
 .cal-list-account {
@@ -1119,4 +1119,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* a grade rola e tem barra de rolagem (10px); o cabeçalho e o "dia todo" reservam o mesmo espaço
+   para as linhas das colunas baterem certinho */
+.cal-scroll {
+  scrollbar-gutter: stable;
+}
+.cal-weekhead,
+.cal-allday {
+  padding-right: 10px;
 }

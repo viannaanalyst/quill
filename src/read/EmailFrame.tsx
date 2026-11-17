@@ -28,12 +28,33 @@ function sanitize(html: string): { html: string; hasRemote: boolean } {
  * só quando a pessoa permite (Ajustes → Privacidade), e links abrindo no navegador.
  * O papel é branco mesmo no modo escuro, porque os e-mails são desenhados para fundo claro.
  */
-export function EmailFrame({ html }: { html: string }) {
+export function EmailFrame({ html, inline }: { html: string; inline?: Record<string, () => Promise<string>> }) {
   const [blockImages] = usePref("blockRemoteImages", true);
   const [showOnce, setShowOnce] = useState(false);
   const ref = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(120);
-  const clean = useMemo(() => sanitize(html), [html]);
+  // imagens embutidas (cid:): baixa cada uma e troca pelo conteúdo real
+  const [cids, setCids] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!inline) return;
+    const wanted = [...html.matchAll(/cid:([^"'\s)>]+)/gi)].map((m) => decodeURIComponent(m[1]));
+    let alive = true;
+    for (const cid of new Set(wanted)) {
+      const load = inline[cid];
+      if (!load) continue;
+      load()
+        .then((dataUrl) => alive && setCids((c) => ({ ...c, [cid]: dataUrl })))
+        .catch(() => undefined);
+    }
+    return () => {
+      alive = false;
+    };
+  }, [html, inline]);
+  const withCids = useMemo(
+    () => html.replace(/cid:([^"'\s)>]+)/gi, (all, id: string) => cids[decodeURIComponent(id)] ?? all),
+    [html, cids],
+  );
+  const clean = useMemo(() => sanitize(withCids), [withCids]);
   const allowRemote = !blockImages || showOnce;
 
   const srcDoc = useMemo(() => {
@@ -64,6 +85,8 @@ export function EmailFrame({ html }: { html: string }) {
       ro = new ResizeObserver(measure);
       ro.observe(doc.body);
       // links: abrem no navegador (no app) ou numa aba nova (prévia)
+      if ((doc as Document & { __quill?: boolean }).__quill) return;
+      (doc as Document & { __quill?: boolean }).__quill = true;
       doc.addEventListener("click", (e) => {
         const a = (e.target as Element | null)?.closest?.("a");
         const href = a?.getAttribute("href");
@@ -75,6 +98,8 @@ export function EmailFrame({ html }: { html: string }) {
       });
     };
     frame.addEventListener("load", onLoad);
+    // o quadro pode ter carregado antes deste efeito rodar: aí liga os cliques e a altura agora
+    if (frame.contentDocument?.readyState === "complete" && frame.contentDocument.body?.childElementCount) onLoad();
     return () => {
       frame.removeEventListener("load", onLoad);
       ro?.disconnect();

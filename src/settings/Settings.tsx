@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from "react";
+import { lazy, Suspense, useState, type CSSProperties } from "react";
 import "./settings.css";
 import { TopBar } from "../components/TopBar";
 import { Logo } from "../components/Logo";
@@ -27,7 +27,10 @@ import type { AccountId } from "../inbox/types";
 import { SENDER_EMAILS } from "../compose/contacts";
 import { isTauri } from "../lib/platform";
 import { friendlyError } from "../lib/api";
-import { accountName, disconnect, signInWithGoogle, useMailbox } from "../state/mailbox";
+import { accountName, disconnect, getMailbox, providerOf, signInWithGoogle, useMailbox } from "../state/mailbox";
+import type { ImapProvider } from "../components/ImapConnect";
+
+const ImapConnect = lazy(() => import("../components/ImapConnect"));
 import { LoginWaiting } from "../components/LoginWaiting";
 import { ConnectGoogleButton } from "../components/ConnectGoogle";
 import { Select } from "../components/Select";
@@ -101,7 +104,13 @@ const REAL_COLORS = ["#5A8CB7", "#7C9A74", "#C8925A", "#7A8CA8", "#A592B8"];
 const FETCH_OPTIONS = ["Na hora", "A cada 15 min", "A cada hora", "Só quando eu pedir"].map((v) => ({ value: v, label: v }));
 const SIGNATURE_OPTIONS = ["inchurch", "Pessoal", "Nenhuma"].map((v) => ({ value: v, label: v }));
 
-const logoOf = (email: string) => (email.includes("inchurch") ? ("inchurch" as const) : ("gmail" as const));
+/** Serviço da conta (Google, iCloud ou IMAP) para o logo e a etiqueta. */
+const providerFor = (email: string) => providerOf(getMailbox().connected.find((c) => c.email === email) ?? { email, provider: "google" });
+const logoOf = (email: string) => providerFor(email).logo;
+const chipOf = (email: string) => {
+  const label = providerFor(email).label;
+  return label === "Workspace" ? "Google Workspace" : label;
+};
 
 /** Linha de uma conta de verdade: apelido e cor salvos por e-mail. */
 function RealAccountRow({ email, index, selected, onSelect, onDisconnect }: { email: string; index: number; selected: boolean; onSelect: () => void; onDisconnect: () => void }) {
@@ -117,7 +126,7 @@ function RealAccountRow({ email, index, selected, onSelect, onDisconnect }: { em
       <div className="st-account-body">
         <div className="st-account-name">
           {nickname}
-          <span className="chip">{email.endsWith("@gmail.com") ? "Gmail" : "Google Workspace"}</span>
+          <span className="chip">{chipOf(email)}</span>
         </div>
         <div className="st-account-mail">{email}</div>
         <div className="st-status">
@@ -218,11 +227,17 @@ export default function Settings({ onRestartOnboarding }: { onRestartOnboarding:
     : ACCOUNTS.map((a) => ({ id: a.id, name: a.name, email: SENDER_EMAILS[a.id], logo: a.logo }));
   const sectionLabel = SECTIONS.find((x) => x.id === section)!.label;
 
-  /** Adicionar conta: Google abre o login de verdade (no app); os outros serviços ainda não. */
+  /** Adicionar conta: Google abre o login de verdade (no app); iCloud e Outro abrem o formulário; a Microsoft ainda não. */
+  const [imapFor, setImapFor] = useState<ImapProvider | null>(null);
   const addAccount = async (provider: string) => {
+    if (provider === "iCloud" || provider === "Outro") {
+      setAddStatus(null);
+      setImapFor(provider === "iCloud" ? "icloud" : "imap");
+      return;
+    }
     if (!isTauri) return;
     if (provider !== "Google") {
-      setAddStatus("Por enquanto só o Google está disponível. Microsoft, iCloud e IMAP vêm em seguida.");
+      setAddStatus("A Microsoft vem em seguida. Por enquanto dá para conectar Google, iCloud ou outro e-mail (IMAP).");
       return;
     }
     setAddStatus(null);
@@ -244,6 +259,11 @@ export default function Settings({ onRestartOnboarding }: { onRestartOnboarding:
   return (
     <>
       <TopBar title="Ajustes" sub={sectionLabel} searchPlaceholder="Buscar nos ajustes" />
+      {imapFor && (
+        <Suspense fallback={null}>
+          <ImapConnect key={imapFor} provider={imapFor} onClose={() => setImapFor(null)} onConnected={(a) => setAddStatus(`${a.email} conectada.`)} />
+        </Suspense>
+      )}
       <div className="st">
         <nav className="card st-nav" aria-label="Seções dos ajustes">
           <SliderGroup className="st-nav-group" activeKey={section}>

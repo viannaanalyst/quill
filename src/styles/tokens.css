@@ -220,6 +220,10 @@ button:focus-visible {
   padding: 0 20px 0 16px;
   font-size: 14px;
 }
+/* sem ícone, o texto fica no centro da pílula (o espaço a menos à esquerda é só para o ícone) */
+.btn.lg:not(:has(svg)) {
+  padding: 0 18px;
+}
 .btn.sm {
   height: 30px;
   padding: 0 13px;

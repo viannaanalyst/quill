@@ -8,13 +8,16 @@ use tokio::net::TcpListener;
 use crate::oauth::{self, AuthError};
 
 /// Escopos pedidos: ler/organizar e enviar e-mail, e a agenda.
-pub const SCOPES: [&str; 6] = [
+pub const SCOPES: [&str; 8] = [
     "openid",
     "email",
     "profile",
     "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/calendar",
+    // sugestões de destinatário como no Gmail (contatos e "Outros contatos"), só leitura
+    "https://www.googleapis.com/auth/contacts.readonly",
+    "https://www.googleapis.com/auth/contacts.other.readonly",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,6 +81,8 @@ pub struct GoogleClient {
     cal_api: String,
     /// envio com anexos (upload do Gmail)
     upload_api: String,
+    /// contatos (People API)
+    people_api: String,
 }
 
 fn net(e: reqwest::Error) -> LoginError {
@@ -90,6 +95,7 @@ impl GoogleClient {
         c.userinfo_url = "https://www.googleapis.com/oauth2/v2/userinfo".into();
         c.cal_api = crate::calendar::CALENDAR_API.into();
         c.upload_api = crate::gmail::GMAIL_UPLOAD_API.into();
+        c.people_api = crate::contacts::PEOPLE_API.into();
         c
     }
 
@@ -108,6 +114,7 @@ impl GoogleClient {
             userinfo_url: format!("{}/userinfo", api.trim_end_matches('/')),
             cal_api: format!("{}/calendar", api.trim_end_matches('/')),
             upload_api: format!("{}/upload", api.trim_end_matches('/')),
+            people_api: format!("{}/people", api.trim_end_matches('/')),
         }
     }
 
@@ -240,6 +247,75 @@ impl GoogleClient {
         serde_json::from_str::<Sent>(&text).map(|s| s.id).map_err(|e| LoginError::Google(e.to_string()))
     }
 
+    /// Cria (sem `draft_id`) ou atualiza um rascunho no Gmail, pelo upload (aceita anexos). Devolve o id do rascunho.
+    pub async fn draft_save(&self, token: &str, mime: &str, draft_id: Option<&str>, thread_id: Option<&str>) -> Result<String, LoginError> {
+        let boundary = format!("quill-up-{}", oauth::random_token(12));
+        let meta = match thread_id {
+            Some(t) => serde_json::json!({ "message": { "threadId": t } }),
+            None => serde_json::json!({ "message": {} }),
+        };
+        let (method, url) = match draft_id {
+            Some(id) => (reqwest::Method::PUT, format!("{}/drafts/{id}?uploadType=multipart", self.upload_api)),
+            None => (reqwest::Method::POST, format!("{}/drafts?uploadType=multipart", self.upload_api)),
+        };
+        let resp = self
+            .http
+            .request(method, url)
+            .bearer_auth(token)
+            .header("Content-Type", format!("multipart/related; boundary={boundary}"))
+            .timeout(Duration::from_secs(180))
+            .body(crate::gmail::upload_body_with_meta(mime, &meta.to_string(), &boundary))
+            .send()
+            .await
+            .map_err(net)?;
+        let status = resp.status();
+        let text = resp.text().await.map_err(net)?;
+        if !status.is_success() {
+            return Err(LoginError::Google(format!("{status}: {text}")));
+        }
+        #[derive(serde::Deserialize)]
+        struct Draft {
+            id: String,
+        }
+        serde_json::from_str::<Draft>(&text).map(|d| d.id).map_err(|e| LoginError::Google(e.to_string()))
+    }
+
+    pub async fn draft_delete(&self, token: &str, draft_id: &str) -> Result<(), LoginError> {
+        self.request(reqwest::Method::DELETE, format!("{}/drafts/{draft_id}", self.api), token, None).await.map(|_| ())
+    }
+
+    /// Id do rascunho que contém a mensagem (a lista Rascunhos mostra mensagens, não rascunhos).
+    pub async fn find_draft_id(&self, token: &str, message_id: &str) -> Result<String, LoginError> {
+        #[derive(serde::Deserialize)]
+        struct List {
+            #[serde(default)]
+            drafts: Vec<D>,
+        }
+        #[derive(serde::Deserialize)]
+        struct D {
+            id: String,
+            message: M,
+        }
+        #[derive(serde::Deserialize)]
+        struct M {
+            id: String,
+        }
+        let body = self.get(token, "/drafts?maxResults=500").await?;
+        let list: List = serde_json::from_str(&body).map_err(|e| LoginError::Google(e.to_string()))?;
+        list.drafts
+            .into_iter()
+            .find(|d| d.message.id == message_id)
+            .map(|d| d.id)
+            .ok_or_else(|| LoginError::Google("esse rascunho não existe mais".into()))
+    }
+
+    /// Conteúdo do rascunho para editar.
+    pub async fn draft_get(&self, token: &str, message_id: &str) -> Result<crate::gmail::DraftContent, LoginError> {
+        let draft_id = self.find_draft_id(token, message_id).await?;
+        let json = self.get(token, &format!("/messages/{message_id}?format=full")).await?;
+        crate::gmail::parse_draft_content(&json, &draft_id).map_err(LoginError::Google)
+    }
+
     /// Conteúdo de um anexo recebido.
     pub async fn attachment(&self, token: &str, message_id: &str, attachment_id: &str) -> Result<Vec<u8>, LoginError> {
         let json = self.get(token, &format!("/messages/{message_id}/attachments/{attachment_id}")).await?;
@@ -262,6 +338,56 @@ impl GoogleClient {
             return Err(LoginError::Google(format!("{status}: {text}")));
         }
         Ok(text)
+    }
+
+    /// Contatos do Google: os salvos (peso 5) e os "Outros contatos" que o Gmail cria (peso 2). Até 3 páginas de cada.
+    pub async fn google_contacts(&self, token: &str) -> Result<Vec<crate::contacts::Contact>, LoginError> {
+        let mut out = Vec::new();
+        for (path, weight) in [
+            ("/people/me/connections?personFields=names,emailAddresses,photos&pageSize=1000", 5),
+            ("/otherContacts?readMask=names,emailAddresses,photos&pageSize=1000", 2),
+        ] {
+            let mut page: Option<String> = None;
+            for _ in 0..3 {
+                let url = match &page {
+                    Some(p) => format!("{}{path}&pageToken={}", self.people_api, url::form_urlencoded::byte_serialize(p.as_bytes()).collect::<String>()),
+                    None => format!("{}{path}", self.people_api),
+                };
+                let body = self.request(reqwest::Method::GET, url, token, None).await?;
+                let (list, next) = crate::contacts::parse_people(&body, weight).map_err(LoginError::Google)?;
+                out.extend(list);
+                match next {
+                    Some(n) => page = Some(n),
+                    None => break,
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// Pessoas para quem você escreveu (cabeçalhos To/Cc dos últimos enviados), 3 pontos por vez.
+    pub async fn sent_contacts(&self, token: &str, max: u32) -> Result<Vec<crate::contacts::Contact>, LoginError> {
+        let list = self.get(token, &format!("/messages?labelIds=SENT&maxResults={max}")).await?;
+        let ids = crate::gmail::parse_message_list(&list).map_err(LoginError::Google)?;
+        let mut out = Vec::new();
+        for chunk in ids.chunks(10) {
+            let mut set = tokio::task::JoinSet::new();
+            for id in chunk {
+                let this = self.clone();
+                let token = token.to_string();
+                let path = format!("/messages/{id}?format=metadata&metadataHeaders=To&metadataHeaders=Cc");
+                set.spawn(async move { this.get(&token, &path).await });
+            }
+            while let Some(res) = set.join_next().await {
+                let Ok(Ok(body)) = res else { continue };
+                for value in crate::gmail::header_values(&body, &["To", "Cc"]) {
+                    for (name, email) in crate::contacts::parse_address_list(&value) {
+                        out.push(crate::contacts::Contact { name, email, photo: None, score: 3 });
+                    }
+                }
+            }
+        }
+        Ok(out)
     }
 
     /// Agendas da conta.
@@ -300,10 +426,26 @@ impl GoogleClient {
 
     /// Cria um evento e devolve como ficou no Google.
     pub async fn create_event(&self, token: &str, calendar_id: &str, e: &crate::calendar::NewEvent) -> Result<crate::calendar::CalEvent, LoginError> {
-        let url = format!("{}{}/events", self.cal_api, crate::calendar::calendar_path(calendar_id));
+        let url = format!("{}{}/events{}", self.cal_api, crate::calendar::calendar_path(calendar_id), crate::calendar::new_event_query(e));
         let body = self.request(reqwest::Method::POST, url, token, Some(crate::calendar::new_event_body(e))).await?;
         let (mut list, _) = crate::calendar::parse_events(&format!(r#"{{"items":[{body}]}}"#), calendar_id).map_err(LoginError::Google)?;
         list.pop().ok_or_else(|| LoginError::Google("o Google não devolveu o evento".into()))
+    }
+
+    /// Muda um evento (título, horário, local, convidados, lembretes) e avisa os convidados.
+    pub async fn update_event(&self, token: &str, calendar_id: &str, event_id: &str, p: &crate::calendar::EventPatch) -> Result<crate::calendar::CalEvent, LoginError> {
+        let enc: String = url::form_urlencoded::byte_serialize(event_id.as_bytes()).collect();
+        let url = format!("{}{}/events/{enc}?sendUpdates=all", self.cal_api, crate::calendar::calendar_path(calendar_id));
+        let body = self.request(reqwest::Method::PATCH, url, token, Some(crate::calendar::event_patch_body(p))).await?;
+        let (mut list, _) = crate::calendar::parse_events(&format!(r#"{{"items":[{body}]}}"#), calendar_id).map_err(LoginError::Google)?;
+        list.pop().ok_or_else(|| LoginError::Google("o Google não devolveu o evento".into()))
+    }
+
+    /// Apaga um evento (e avisa os convidados).
+    pub async fn delete_event(&self, token: &str, calendar_id: &str, event_id: &str) -> Result<(), LoginError> {
+        let enc: String = url::form_urlencoded::byte_serialize(event_id.as_bytes()).collect();
+        let url = format!("{}{}/events/{enc}?sendUpdates=all", self.cal_api, crate::calendar::calendar_path(calendar_id));
+        self.request(reqwest::Method::DELETE, url, token, None).await.map(|_| ())
     }
 
     /// POST sem resposta útil (só confere se deu certo).
@@ -652,6 +794,9 @@ mod tests {
             end: crate::calendar::EventTime { date_time: None, date: Some("2026-11-21".into()) },
             location: None,
             description: None,
+            attendees: vec![],
+            reminders: None,
+            meet: false,
         };
         let created = client(&base).create_event("ya29", "primary", &e).await.unwrap();
         assert_eq!(created.id, "novo");
@@ -664,6 +809,74 @@ mod tests {
         let (base, srv) = fake_google(vec![r#"{"id":"a"}"#]).await;
         client(&base).untrash("ya29", "a").await.unwrap();
         assert!(srv.await.unwrap()[0].starts_with("POST /gmail/messages/a/untrash"));
+    }
+
+    #[tokio::test]
+    async fn sent_contacts_read_to_and_cc() {
+        let (base, srv) = fake_google(vec![
+            r#"{"messages":[{"id":"s1","threadId":"t"}]}"#,
+            r#"{"id":"s1","payload":{"headers":[{"name":"To","value":"Ana <ana@x.com>, bia@y.com"},{"name":"Cc","value":"Caio <caio@z.com>"}]}}"#,
+        ])
+        .await;
+        let list = client(&base).sent_contacts("ya29", 50).await.unwrap();
+        let emails: Vec<_> = list.iter().map(|c| c.email.as_str()).collect();
+        assert_eq!(emails, ["ana@x.com", "bia@y.com", "caio@z.com"]);
+        let reqs = srv.await.unwrap();
+        assert!(reqs[0].starts_with("GET /gmail/messages?labelIds=SENT&maxResults=50"));
+    }
+
+    #[tokio::test]
+    async fn google_contacts_reads_both_lists() {
+        let (base, srv) = fake_google(vec![
+            r#"{"connections":[{"names":[{"displayName":"Davi"}],"emailAddresses":[{"value":"davi@x.com"}]}]}"#,
+            r#"{"otherContacts":[{"emailAddresses":[{"value":"maq@hotmail.com"}]}]}"#,
+        ])
+        .await;
+        let list = client(&base).google_contacts("ya29").await.unwrap();
+        assert_eq!(list.len(), 2);
+        let reqs = srv.await.unwrap();
+        assert!(reqs[0].starts_with("GET /gmail/people/people/me/connections?personFields="));
+        assert!(reqs[1].starts_with("GET /gmail/people/otherContacts?readMask="));
+    }
+
+    #[tokio::test]
+    async fn draft_create_then_update_via_upload() {
+        let (base, srv) = fake_google(vec![r#"{"id":"r1","message":{"id":"m1"}}"#, r#"{"id":"r1","message":{"id":"m2"}}"#]).await;
+        let c = client(&base);
+        assert_eq!(c.draft_save("ya29", "From: eu\r\n\r\noi", None, Some("t1")).await.unwrap(), "r1");
+        assert_eq!(c.draft_save("ya29", "From: eu\r\n\r\noi 2", Some("r1"), None).await.unwrap(), "r1");
+        let reqs = srv.await.unwrap();
+        assert!(reqs[0].starts_with("POST /gmail/upload/drafts?uploadType=multipart"));
+        assert!(reqs[0].contains(r#"{"message":{"threadId":"t1"}}"#));
+        assert!(reqs[1].starts_with("PUT /gmail/upload/drafts/r1?uploadType=multipart"));
+        assert!(reqs[1].contains(r#"{"message":{}}"#));
+    }
+
+    #[tokio::test]
+    async fn draft_delete_and_find_by_message() {
+        let (base, srv) = fake_google(vec![
+            "",
+            r#"{"drafts":[{"id":"r9","message":{"id":"m9"}},{"id":"r1","message":{"id":"m1"}}]}"#,
+        ])
+        .await;
+        let c = client(&base);
+        c.draft_delete("ya29", "r1").await.unwrap();
+        assert_eq!(c.find_draft_id("ya29", "m1").await.unwrap(), "r1");
+        let reqs = srv.await.unwrap();
+        assert!(reqs[0].starts_with("DELETE /gmail/drafts/r1"));
+        assert!(reqs[1].starts_with("GET /gmail/drafts?maxResults=500"));
+    }
+
+    #[tokio::test]
+    async fn update_and_delete_event_notify_guests() {
+        let (base, srv) = fake_google(vec![r#"{"id":"e1","summary":"Novo","start":{"date":"2026-11-20"},"end":{"date":"2026-11-21"}}"#, ""]).await;
+        let c = client(&base);
+        let p = crate::calendar::EventPatch { title: Some("Novo".into()), ..Default::default() };
+        assert_eq!(c.update_event("ya29", "eu@x.com", "e1", &p).await.unwrap().title, "Novo");
+        c.delete_event("ya29", "eu@x.com", "e1").await.unwrap();
+        let reqs = srv.await.unwrap();
+        assert!(reqs[0].starts_with("PATCH /gmail/calendar/calendars/eu%40x.com/events/e1?sendUpdates=all"));
+        assert!(reqs[1].starts_with("DELETE /gmail/calendar/calendars/eu%40x.com/events/e1?sendUpdates=all"));
     }
 
     #[tokio::test]

@@ -115,6 +115,25 @@ export interface NewEventInput {
   end: Date;
   allDay: boolean;
   location?: string;
+  description?: string;
+  /** e-mails dos convidados (recebem o convite) */
+  attendees?: string[];
+  /** lembretes em minutos antes; undefined = padrão da agenda; [] = nenhum */
+  reminders?: number[];
+  /** cria uma sala do Google Meet */
+  meet?: boolean;
+}
+
+/** Mudanças num evento (só o que vier preenchido muda). */
+export interface EventChanges {
+  title?: string;
+  start?: Date;
+  end?: Date;
+  allDay?: boolean;
+  location?: string;
+  description?: string;
+  attendees?: string[];
+  reminders?: number[];
 }
 
 type Status = "idle" | "loading" | "ready" | "error";
@@ -483,15 +502,115 @@ export async function createEvent(input: NewEventInput): Promise<AgendaEvent | u
     const dto = await call<CalEventDto>("calendar_create", {
       email: cal.account,
       calendarId: cal.id,
-      event: { title: input.title, start, end, location: input.location ?? null },
+      event: {
+        title: input.title,
+        start,
+        end,
+        location: input.location ?? null,
+        description: input.description ?? null,
+        attendees: input.attendees ?? [],
+        reminders: input.reminders ?? null,
+        meet: !!input.meet,
+      },
     });
-    const e = { ...localEvent(dto.id), key: `${dto.icalUid}|${toMs(dto.start)}`, htmlLink: dto.htmlLink ?? undefined };
+    const e = {
+      ...localEvent(dto.id),
+      key: `${dto.icalUid}|${toMs(dto.start)}`,
+      htmlLink: dto.htmlLink ?? undefined,
+      meetUrl: dto.meetUrl ?? undefined,
+      attendees: dto.attendees.map((a) => ({ name: a.name || a.email, email: a.email, status: asStatus(a.status) ?? "needsAction", isSelf: a.isSelf, organizer: a.organizer })),
+    };
     set({ events: [...state.events, e].toSorted((a, b) => a.start - b.start) });
     toast("Evento criado");
     return e;
   } catch (err) {
     toast(`Não criou o evento: ${friendlyError(err)}`, "error");
     return undefined;
+  }
+}
+
+function timesFor(start: Date, end: Date, allDay: boolean) {
+  if (allDay) {
+    const endDate = addDays(startOfDay(end), sameDay(start, end) ? 1 : 0);
+    return { start: { date: ymd(startOfDay(start)) }, end: { date: ymd(endDate) }, endMs: endDate.getTime(), startMs: startOfDay(start).getTime() };
+  }
+  return { start: { dateTime: rfc3339Local(start) }, end: { dateTime: rfc3339Local(end) }, endMs: end.getTime(), startMs: start.getTime() };
+}
+
+/** Quem pode mudar: só eventos que eu organizo, numa agenda onde posso escrever. */
+export function canEdit(e: AgendaEvent): boolean {
+  const cal = state.calendars.find((c) => c.key === e.copies[0]?.calendarKey);
+  return !!cal?.canEdit && (e.organizer?.self ?? true);
+}
+
+/** Muda o evento no Google Agenda (avisa os convidados) e na tela na hora; desfaz se der erro. */
+export async function updateEvent(key: string, ch: EventChanges): Promise<boolean> {
+  const ev = state.events.find((e) => e.key === key);
+  if (!ev) return false;
+  const before = ev;
+  const allDay = ch.allDay ?? ev.allDay;
+  const t = ch.start || ch.end || ch.allDay !== undefined ? timesFor(ch.start ?? new Date(ev.start), ch.end ?? new Date(ev.end), allDay) : null;
+  patchEvent(key, (e) => ({
+    ...e,
+    title: ch.title?.trim() || (ch.title !== undefined ? "(sem título)" : e.title),
+    location: ch.location !== undefined ? ch.location.trim() || undefined : e.location,
+    description: ch.description !== undefined ? ch.description.trim() || undefined : e.description,
+    allDay,
+    start: t ? t.startMs : e.start,
+    end: t ? t.endMs : e.end,
+    attendees: ch.attendees
+      ? ch.attendees.map((email) => e.attendees.find((a) => a.email.toLowerCase() === email.toLowerCase()) ?? { name: email, email, status: "needsAction" as const, isSelf: false, organizer: false })
+      : e.attendees,
+  }));
+  set({ events: [...state.events].toSorted((a, b) => a.start - b.start) });
+  if (!isTauri) {
+    toast("Evento atualizado (prévia)");
+    return true;
+  }
+  const c = ev.copies[0];
+  try {
+    await call<CalEventDto>("calendar_update", {
+      email: c.account,
+      calendarId: c.calendarId,
+      eventId: c.eventId,
+      patch: {
+        title: ch.title ?? null,
+        start: t?.start ?? null,
+        end: t?.end ?? null,
+        location: ch.location ?? null,
+        description: ch.description ?? null,
+        attendees: ch.attendees ?? null,
+        reminders: ch.reminders ?? null,
+      },
+    });
+    toast(ch.attendees?.length ? "Evento atualizado e convidados avisados" : "Evento atualizado");
+    return true;
+  } catch (err) {
+    patchEvent(key, () => before);
+    toast(`Não atualizou: ${friendlyError(err)}`, "error");
+    return false;
+  }
+}
+
+/** Apaga o evento (avisa os convidados). Some da tela na hora e volta se der erro. */
+export async function deleteEvent(key: string): Promise<boolean> {
+  const ev = state.events.find((e) => e.key === key);
+  if (!ev) return false;
+  const before = state.events;
+  set({ events: state.events.filter((e) => e.key !== key) });
+  if (!isTauri) {
+    toast("Evento apagado (prévia)");
+    return true;
+  }
+  const c = ev.copies[0];
+  try {
+    await call<void>("calendar_delete", { email: c.account, calendarId: c.calendarId, eventId: c.eventId });
+    toast("Evento apagado");
+    return true;
+  } catch (err) {
+    set({ events: before });
+    toast(`Não apagou: ${friendlyError(err)}`, "error");
+    return false;
   }
 }
 

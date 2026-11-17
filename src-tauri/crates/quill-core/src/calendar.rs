@@ -259,6 +259,88 @@ pub struct NewEvent {
     pub location: Option<String>,
     #[serde(default)]
     pub description: Option<String>,
+    /// e-mails dos convidados
+    #[serde(default)]
+    pub attendees: Vec<String>,
+    /// lembretes em minutos antes; None = o padrão da agenda
+    #[serde(default)]
+    pub reminders: Option<Vec<u32>>,
+    /// criar sala do Google Meet
+    #[serde(default)]
+    pub meet: bool,
+}
+
+fn attendees_json(list: &[String]) -> serde_json::Value {
+    serde_json::Value::Array(
+        list.iter()
+            .map(|e| e.trim())
+            .filter(|e| e.contains('@'))
+            .map(|e| serde_json::json!({ "email": e }))
+            .collect(),
+    )
+}
+
+fn reminders_json(mins: &[u32]) -> serde_json::Value {
+    serde_json::json!({
+        "useDefault": false,
+        "overrides": mins.iter().map(|m| serde_json::json!({ "method": "popup", "minutes": m })).collect::<Vec<_>>(),
+    })
+}
+
+/// O pedido precisa avisar convidados ou criar Meet? (muda os parâmetros da URL)
+pub fn new_event_query(e: &NewEvent) -> &'static str {
+    match (e.meet, e.attendees.iter().any(|a| a.contains('@'))) {
+        (true, _) => "?conferenceDataVersion=1&sendUpdates=all",
+        (false, true) => "?sendUpdates=all",
+        _ => "",
+    }
+}
+
+/// Mudanças num evento existente (só os campos com valor vão no PATCH).
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EventPatch {
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub start: Option<EventTime>,
+    #[serde(default)]
+    pub end: Option<EventTime>,
+    #[serde(default)]
+    pub location: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub attendees: Option<Vec<String>>,
+    #[serde(default)]
+    pub reminders: Option<Vec<u32>>,
+}
+
+/// Corpo do PATCH de `events.patch`.
+pub fn event_patch_body(p: &EventPatch) -> String {
+    let mut body = serde_json::Map::new();
+    if let Some(t) = &p.title {
+        body.insert("summary".into(), (if t.trim().is_empty() { "(sem título)" } else { t.trim() }).into());
+    }
+    if let Some(v) = &p.start {
+        body.insert("start".into(), serde_json::to_value(v).unwrap_or_default());
+    }
+    if let Some(v) = &p.end {
+        body.insert("end".into(), serde_json::to_value(v).unwrap_or_default());
+    }
+    if let Some(v) = &p.location {
+        body.insert("location".into(), v.trim().into());
+    }
+    if let Some(v) = &p.description {
+        body.insert("description".into(), v.trim().into());
+    }
+    if let Some(v) = &p.attendees {
+        body.insert("attendees".into(), attendees_json(v));
+    }
+    if let Some(v) = &p.reminders {
+        body.insert("reminders".into(), reminders_json(v));
+    }
+    serde_json::Value::Object(body).to_string()
 }
 
 /// Corpo do POST de `events.insert`.
@@ -273,6 +355,18 @@ pub fn new_event_body(e: &NewEvent) -> String {
     }
     if let Some(d) = e.description.as_deref().map(str::trim).filter(|d| !d.is_empty()) {
         body["description"] = d.into();
+    }
+    let att = attendees_json(&e.attendees);
+    if att.as_array().is_some_and(|a| !a.is_empty()) {
+        body["attendees"] = att;
+    }
+    if let Some(r) = &e.reminders {
+        body["reminders"] = reminders_json(r);
+    }
+    if e.meet {
+        body["conferenceData"] = serde_json::json!({
+            "createRequest": { "requestId": crate::oauth::random_token(12), "conferenceSolutionKey": { "type": "hangoutsMeet" } }
+        });
     }
     body.to_string()
 }
@@ -363,6 +457,9 @@ mod tests {
             end: EventTime { date_time: Some("2026-11-18T13:30:00-03:00".into()), date: None },
             location: Some(" ".into()),
             description: None,
+            attendees: vec![],
+            reminders: None,
+            meet: false,
         }))
         .unwrap();
         assert_eq!(body["summary"], "Almoço");
@@ -376,10 +473,57 @@ mod tests {
             end: EventTime { date_time: None, date: Some("2026-11-21".into()) },
             location: Some("Casa".into()),
             description: None,
+            attendees: vec![],
+            reminders: None,
+            meet: false,
         }))
         .unwrap();
         assert_eq!(all_day["summary"], "(sem título)");
         assert_eq!(all_day["start"]["date"], "2026-11-20");
         assert_eq!(all_day["location"], "Casa");
+    }
+
+    #[test]
+    fn evento_novo_com_convidados_lembrete_e_meet() {
+        let body: serde_json::Value = serde_json::from_str(&new_event_body(&NewEvent {
+            title: "Reunião".into(),
+            start: EventTime { date_time: Some("2026-11-18T10:00:00-03:00".into()), date: None },
+            end: EventTime { date_time: Some("2026-11-18T11:00:00-03:00".into()), date: None },
+            location: None,
+            description: None,
+            attendees: vec!["ana@x.com".into(), " bia@y.com ".into(), "".into()],
+            reminders: Some(vec![10, 60]),
+            meet: true,
+        }))
+        .unwrap();
+        assert_eq!(body["attendees"][0]["email"], "ana@x.com");
+        assert_eq!(body["attendees"][1]["email"], "bia@y.com");
+        assert_eq!(body["attendees"].as_array().unwrap().len(), 2);
+        assert_eq!(body["reminders"]["useDefault"], false);
+        assert_eq!(body["reminders"]["overrides"][1]["minutes"], 60);
+        assert_eq!(body["conferenceData"]["createRequest"]["conferenceSolutionKey"]["type"], "hangoutsMeet");
+        assert!(body["conferenceData"]["createRequest"]["requestId"].as_str().unwrap().len() >= 8);
+    }
+
+    #[test]
+    fn edicao_manda_so_o_que_mudou() {
+        let body: serde_json::Value = serde_json::from_str(&event_patch_body(&EventPatch {
+            title: Some("Novo título".into()),
+            start: None,
+            end: None,
+            location: Some("".into()),
+            description: None,
+            attendees: Some(vec!["ana@x.com".into()]),
+            reminders: Some(vec![]),
+        }))
+        .unwrap();
+        assert_eq!(body["summary"], "Novo título");
+        assert_eq!(body["location"], "");
+        assert!(body.get("start").is_none());
+        assert!(body.get("description").is_none());
+        assert_eq!(body["attendees"][0]["email"], "ana@x.com");
+        // lista vazia = sem lembrete
+        assert_eq!(body["reminders"]["useDefault"], false);
+        assert_eq!(body["reminders"]["overrides"].as_array().unwrap().len(), 0);
     }
 }

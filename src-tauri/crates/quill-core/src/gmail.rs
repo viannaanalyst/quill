@@ -186,6 +186,8 @@ pub fn parse_message_metadata(json: &str, now_ms: i64, tz_offset_min: i32) -> Re
 #[serde(rename_all = "camelCase")]
 struct FullPart {
     #[serde(default)]
+    headers: Vec<FullHeader>,
+    #[serde(default)]
     mime_type: String,
     #[serde(default)]
     filename: String,
@@ -193,6 +195,12 @@ struct FullPart {
     body: Option<PartBody>,
     #[serde(default)]
     parts: Vec<FullPart>,
+}
+
+#[derive(Deserialize)]
+struct FullHeader {
+    name: String,
+    value: String,
 }
 
 #[derive(Deserialize)]
@@ -286,6 +294,8 @@ pub struct AttachmentInfo {
     pub name: String,
     pub mime_type: String,
     pub size: u64,
+    /// imagem embutida no texto (`<img src="cid:...">`), sem os sinais < >
+    pub content_id: Option<String>,
 }
 
 /// Texto do e-mail e os anexos dele.
@@ -300,11 +310,18 @@ pub struct MessageBody {
 fn collect_attachments(part: &FullPart, out: &mut Vec<AttachmentInfo>) {
     if !part.filename.is_empty() {
         if let Some(id) = part.body.as_ref().and_then(|b| b.attachment_id.clone()) {
+            let content_id = part
+                .headers
+                .iter()
+                .find(|h| h.name.eq_ignore_ascii_case("Content-ID") || h.name.eq_ignore_ascii_case("X-Attachment-Id"))
+                .map(|h| h.value.trim().trim_start_matches('<').trim_end_matches('>').to_string())
+                .filter(|v| !v.is_empty());
             out.push(AttachmentInfo {
                 id,
                 name: part.filename.clone(),
                 mime_type: part.mime_type.clone(),
                 size: part.body.as_ref().map(|b| b.size).unwrap_or(0),
+                content_id,
             });
         }
     }
@@ -337,6 +354,71 @@ pub fn decode_attachment(json: &str) -> Result<Vec<u8>, String> {
     base64::engine::general_purpose::URL_SAFE_NO_PAD
         .decode(a.data.trim_end_matches('='))
         .map_err(|e| e.to_string())
+}
+
+/// Rascunho aberto para editar: destinatários, assunto e corpo.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DraftContent {
+    pub draft_id: String,
+    pub to: Vec<String>,
+    pub cc: Vec<String>,
+    pub bcc: Vec<String>,
+    pub subject: String,
+    pub html: Option<String>,
+    pub text: String,
+}
+
+/// Lê o `messages.get?format=full` de um rascunho.
+pub fn parse_draft_content(json: &str, draft_id: &str) -> Result<DraftContent, String> {
+    #[derive(Deserialize)]
+    struct Full {
+        payload: FullPart,
+    }
+    let full: Full = serde_json::from_str(json).map_err(|e| e.to_string())?;
+    let header = |name: &str| {
+        full.payload.headers.iter().filter(|h| h.name.eq_ignore_ascii_case(name)).map(|h| h.value.clone()).collect::<Vec<_>>().join(", ")
+    };
+    let list = |name: &str| {
+        crate::contacts::parse_address_list(&header(name))
+            .into_iter()
+            .map(|(n, e)| match n {
+                Some(n) => format!("{n} <{e}>"),
+                None => e,
+            })
+            .collect::<Vec<_>>()
+    };
+    Ok(DraftContent {
+        draft_id: draft_id.to_string(),
+        to: list("To"),
+        cc: list("Cc"),
+        bcc: list("Bcc"),
+        subject: decode_entities(&header("Subject")),
+        html: find_part(&full.payload, "text/html").and_then(decode_part),
+        text: extract_body_text(json)?,
+    })
+}
+
+/// Valores dos cabeçalhos pedidos (na ordem em que aparecem) de um `messages.get?format=metadata`.
+pub fn header_values(json: &str, names: &[&str]) -> Vec<String> {
+    #[derive(Deserialize)]
+    struct M {
+        payload: Option<P>,
+    }
+    #[derive(Deserialize)]
+    struct P {
+        #[serde(default)]
+        headers: Vec<H>,
+    }
+    #[derive(Deserialize)]
+    struct H {
+        name: String,
+        value: String,
+    }
+    let Ok(m) = serde_json::from_str::<M>(json) else { return Vec::new() };
+    m.payload
+        .map(|p| p.headers.into_iter().filter(|h| names.iter().any(|n| n.eq_ignore_ascii_case(&h.name))).map(|h| h.value).collect())
+        .unwrap_or_default()
 }
 
 /// Parâmetros de `messages.list` para cada caixa do app.
@@ -487,6 +569,11 @@ pub fn upload_body(mime: &str, thread_id: Option<&str>, boundary: &str) -> Strin
         Some(t) => serde_json::json!({ "threadId": t }).to_string(),
         None => "{}".to_string(),
     };
+    upload_body_with_meta(mime, &meta, boundary)
+}
+
+/// Igual a `upload_body`, com os dados (JSON) que cada pedido precisa (envio ou rascunho).
+pub fn upload_body_with_meta(mime: &str, meta: &str, boundary: &str) -> String {
     format!(
         "--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{meta}\r\n--{boundary}\r\nContent-Type: message/rfc822\r\n\r\n{mime}\r\n--{boundary}--\r\n"
     )
@@ -789,7 +876,10 @@ mod tests {
         assert_eq!(body.text, "Olá");
         assert_eq!(body.html, None);
         assert_eq!(body.attachments.len(), 2);
-        assert_eq!(body.attachments[0], AttachmentInfo { id: "ANX1".into(), name: "resumo.pdf".into(), mime_type: "application/pdf".into(), size: 1258291 });
+        assert_eq!(
+            body.attachments[0],
+            AttachmentInfo { id: "ANX1".into(), name: "resumo.pdf".into(), mime_type: "application/pdf".into(), size: 1258291, content_id: None }
+        );
         assert_eq!(body.attachments[1].name, "logo.png");
     }
 
@@ -840,5 +930,28 @@ mod tests {
         let body = parse_message_body(json).unwrap();
         assert_eq!(body.text, "Oi Ana");
         assert_eq!(body.html.as_deref(), Some("<p>Oi <b>Ana</b></p>"));
+    }
+
+    #[test]
+    fn le_cabecalhos_do_rascunho() {
+        let json = r#"{"id":"m1","payload":{"mimeType":"text/html","filename":"",
+            "headers":[{"name":"To","value":"Ana <ana@x.com>, bia@y.com"},{"name":"Cc","value":"c@z.com"},{"name":"Subject","value":"Oi"}],
+            "body":{"data":"PGI-T2k8L2I-"}}}"#;
+        let d = parse_draft_content(json, "r1").unwrap();
+        assert_eq!(d.draft_id, "r1");
+        assert_eq!(d.to, vec!["Ana <ana@x.com>".to_string(), "bia@y.com".to_string()]);
+        assert_eq!(d.cc, vec!["c@z.com".to_string()]);
+        assert!(d.bcc.is_empty());
+        assert_eq!(d.subject, "Oi");
+        assert_eq!(d.html.as_deref(), Some("<b>Oi</b>"));
+    }
+
+    #[test]
+    fn imagem_embutida_traz_o_content_id() {
+        let json = r#"{"payload":{"mimeType":"multipart/related","parts":[
+            {"mimeType":"text/html","filename":"","body":{"data":"PGltZyBzcmM9ImNpZDppaV8xIj4"}},
+            {"mimeType":"image/png","filename":"image.png","headers":[{"name":"Content-ID","value":"<ii_1>"}],"body":{"attachmentId":"A1","size":10}}]}}"#;
+        let body = parse_message_body(json).unwrap();
+        assert_eq!(body.attachments[0].content_id.as_deref(), Some("ii_1"));
     }
 }

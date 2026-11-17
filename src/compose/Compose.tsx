@@ -1,26 +1,8 @@
-import { useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import "./compose.css";
 import { TopBar } from "../components/TopBar";
 import { Logo } from "../components/Logo";
-import {
-  Bold,
-  CircleCheck,
-  Clock,
-  LoaderCircle,
-  Italic,
-  Link,
-  List,
-  ListOrdered,
-  Paperclip,
-  Pencil,
-  Plus,
-  SendHorizontal,
-  Trash2,
-  Type,
-  Underline,
-  Users,
-  X,
-} from "../components/icons";
+import { CircleCheck, Clock, LoaderCircle, Paperclip, Pencil, SendHorizontal, Trash2, TriangleAlert, Users, X } from "../components/icons";
 import { ACCOUNTS, ACCOUNT_BY_ID } from "../inbox/sampleData";
 import type { Message } from "../inbox/types";
 import { backToFolder, navigate, type ComposeDraft } from "../state/store";
@@ -30,11 +12,16 @@ import { SliderGroup } from "../components/SliderGroup";
 import { toast } from "../components/Toasts";
 import { isTauri } from "../lib/platform";
 import { usePref } from "../lib/usePref";
-import { friendlyError } from "../lib/api";
-import { sendMessage, useMailbox } from "../state/mailbox";
+import { useMailbox } from "../state/mailbox";
+import { queueSend } from "../state/outbox";
+import { loadContacts, useContacts } from "../state/contacts";
+import { MessageAvatar } from "../components/MessageAvatar";
 import { signatureHtml } from "../lib/signature";
 import { FileIcon } from "../components/FileIcon";
+import { previewAttachment } from "../components/AttachmentPreview";
 import { FILE_LABEL, fileSize, fileType, mimeFor } from "../lib/files";
+import { api, friendlyError, type OutgoingMessage } from "../lib/api";
+import { RichToolbar } from "./RichToolbar";
 
 const EMAIL_RE = /^[^\s@<>(),;:]+@[^\s@<>(),;:]+\.[^\s@<>(),;:]+$/;
 const TONES = ["peach", "blue", "neutral"] as const;
@@ -45,11 +32,11 @@ function initialsFrom(name: string) {
 }
 
 /** Pessoa a partir de um nome e e-mail (digitado ou vindo de um e-mail recebido). */
-function contactOf(name: string, email: string, account = "", recent?: string): Contact {
+function contactOf(name: string, email: string, account = "", recent?: string, photo?: string | null): Contact {
   let h = 0;
   for (let i = 0; i < email.length; i++) h = (h * 31 + email.charCodeAt(i)) | 0;
   const shown = name.trim() || email;
-  return { id: email.toLowerCase(), name: shown, email, initials: initialsFrom(shown), tone: TONES[Math.abs(h) % 3], account, recent };
+  return { id: email.toLowerCase(), name: shown, email, initials: initialsFrom(shown), tone: TONES[Math.abs(h) % 3], account, recent, photo };
 }
 
 /** Contatos = quem aparece nos e-mails já carregados (remetentes e destinatários), mais recentes primeiro. */
@@ -103,11 +90,10 @@ function ContactAvatar({ c, size = 20 }: { c: Contact; size?: number }) {
       </span>
     );
   }
-  return (
-    <span className={`av ${c.tone}`} style={{ width: size, height: size, fontSize: Math.max(8, size * 0.36) }} aria-hidden>
-      {c.initials}
-    </span>
-  );
+  if (c.photo) {
+    return <img className="av cp-photo" src={c.photo} alt="" width={size} height={size} referrerPolicy="no-referrer" style={{ width: size, height: size }} />;
+  }
+  return <MessageAvatar message={{ avatar: { kind: "initials", initials: c.initials, tone: c.tone }, fromEmail: c.email }} size={size} />;
 }
 
 /** Campo de destinatários: pílulas + sugestões enquanto digita (setas, Enter e Backspace). */
@@ -131,12 +117,23 @@ function RecipientField({
   const listId = useId();
   const q = text.trim().toLocaleLowerCase("pt-BR");
   const suggestions = useMemo(
-    () =>
-      q
-        ? contacts.filter(
-            (c) => !value.some((v) => v.id === c.id) && `${c.name} ${c.email}`.toLocaleLowerCase("pt-BR").includes(q),
-          ).slice(0, 5)
-        : [],
+    () => {
+      if (!q) return [];
+      const taken = new Set(value.map((v) => v.email.toLowerCase()));
+      const norm = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("pt-BR");
+      const t = norm(q);
+      const hits: [Contact, number][] = [];
+      // a lista já vem na ordem de quem você mais escreve; começo de palavra (nome ou e-mail) vem antes
+      for (const c of contacts) {
+        if (taken.has(c.email.toLowerCase())) continue;
+        const name = norm(c.name);
+        const email = norm(c.email);
+        if (name.split(/[\s.\-_]+/).some((w) => w.startsWith(t)) || email.split(/[@.\-_+]/).some((w) => w.startsWith(t))) hits.push([c, 2]);
+        else if (name.includes(t) || email.includes(t)) hits.push([c, 1]);
+        if (hits.length >= 60) break;
+      }
+      return hits.toSorted((a, b) => b[1] - a[1]).slice(0, 8).map(([c]) => c);
+    },
     [q, value, contacts],
   );
   const open = suggestions.length > 0;
@@ -275,6 +272,65 @@ interface Sender {
 
 const PREVIEW_SENDERS: Sender[] = ACCOUNTS.map((a) => ({ id: a.id, name: a.name, email: SENDER_EMAILS[a.id], logo: a.logo, color: a.color }));
 
+/** Espera depois da última mudança para salvar o rascunho. */
+const DRAFT_DELAY = 3000;
+
+type SaveState = { kind: "idle" } | { kind: "saving" } | { kind: "saved"; at: number } | { kind: "error"; reason: string };
+
+function savedAgo(at: number) {
+  const s = Math.max(0, Math.round((Date.now() - at) / 1000));
+  if (s < 5) return "Rascunho salvo agora";
+  if (s < 60) return `Rascunho salvo há ${s} s`;
+  if (s < 3600) return `Rascunho salvo há ${Math.floor(s / 60)} min`;
+  return `Rascunho salvo às ${new Date(at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+}
+
+/** Aviso do rascunho ("Salvando…", "Rascunho salvo há 12 s", "Não salvou"). O tempo anda sozinho. */
+function DraftStatus({ state, style }: { state: SaveState; style?: CSSProperties }) {
+  const [, tick] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    if (state.kind !== "saved") return;
+    const t = window.setInterval(tick, 1000);
+    return () => window.clearInterval(t);
+  }, [state]);
+  if (state.kind === "idle") return null;
+  if (state.kind === "error") {
+    const reason = state.reason.length > 90 ? `${state.reason.slice(0, 88)}…` : state.reason;
+    return (
+      <span className="saved-note cp-save-error" role="status" tabIndex={0} data-tip={reason} style={style}>
+        <TriangleAlert size={13} aria-hidden />
+        Não salvou
+        <span className="sr-only">: {state.reason}</span>
+      </span>
+    );
+  }
+  return (
+    <span className="saved-note" role="status" style={style}>
+      {state.kind === "saving" ? (
+        <>
+          <span className="spinning cp-saving" aria-hidden>
+            <LoaderCircle size={13} />
+          </span>
+          Salvando…
+        </>
+      ) : (
+        <>
+          <CircleCheck size={13} aria-hidden />
+          {/* o texto que anda a cada segundo não é lido de novo pelo leitor de tela */}
+          <span aria-hidden>{savedAgo(state.at)}</span>
+          <span className="sr-only">Rascunho salvo</span>
+        </>
+      )}
+    </span>
+  );
+}
+
+/** Tem algo escrito que valha salvar? */
+function hasContent(m: OutgoingMessage) {
+  const text = m.html.replace(/<(?!img|hr)[^>]*>/gi, "").replace(/&nbsp;/g, " ").trim();
+  return m.to.length + m.cc.length + m.bcc.length > 0 || !!m.subject.trim() || !!text || (m.attachments?.length ?? 0) > 0;
+}
+
 export default function Compose({ draft }: { draft?: ComposeDraft }) {
   const live = isTauri;
   const accounts = useMailbox((s) => s.accounts);
@@ -284,21 +340,29 @@ export default function Compose({ draft }: { draft?: ComposeDraft }) {
     () => (live ? accounts.map((a) => ({ id: a.id, name: a.name, email: a.id, logo: a.logo, color: a.color })) : PREVIEW_SENDERS),
     [live, accounts],
   );
-  const contacts = useMemo(
-    () => (live ? contactsFromMail([folders.inbox, folders.sent, folders.starred, folders.archive]) : CONTACTS),
-    [live, folders.inbox, folders.sent, folders.starred, folders.archive],
-  );
+  const suggested = useContacts();
+  useEffect(() => void loadContacts(), []);
+  const contacts = useMemo(() => {
+    if (!live) return CONTACTS;
+    // contatos do Google e dos enviados primeiro; depois quem aparece nos e-mails já carregados
+    const fromGoogle = suggested.map((c) => contactOf(c.name ?? "", c.email, "", undefined, c.photo));
+    const seen = new Set(fromGoogle.map((c) => c.id));
+    const fromMail = contactsFromMail([folders.inbox, folders.sent, folders.starred, folders.archive]).filter((c) => !seen.has(c.id));
+    return [...fromGoogle, ...fromMail];
+  }, [live, suggested, folders.inbox, folders.sent, folders.starred, folders.archive]);
 
   const [from, setFrom] = useState<string>(() => draft?.from ?? (live ? (accounts[0]?.id ?? "") : "inchurch"));
   const [to, setTo] = useState<Contact[]>(() => (draft?.to ? draft.to.map((p) => contactOf(p.name, p.email)) : live ? [] : [CONTACTS[0]]));
-  const [cc, setCc] = useState<Contact[]>(() => (live || draft ? [] : [CONTACTS[1]]));
-  const [showBcc, setShowBcc] = useState(false);
-  const [bcc, setBcc] = useState<Contact[]>([]);
+  const [cc, setCc] = useState<Contact[]>(() => (draft?.cc ? draft.cc.map((p) => contactOf(p.name, p.email)) : live || draft ? [] : [CONTACTS[1]]));
+  const [bcc, setBcc] = useState<Contact[]>(() => (draft?.bcc ? draft.bcc.map((p) => contactOf(p.name, p.email)) : []));
+  const [showBcc, setShowBcc] = useState(() => (draft?.bcc?.length ?? 0) > 0);
   const [subject, setSubject] = useState(() => draft?.subject ?? (live ? "" : "Resumo do fechamento de outubro"));
   const [schedule, setSchedule] = useState<(typeof SCHEDULE)[number]["id"]>("tomorrow");
   const [signature, setSignature] = useState<keyof typeof SIGNATURES>("inchurch");
   const [files, setFiles] = useState<Draft[]>(() =>
-    live
+    draft?.attachments
+      ? draft.attachments.map((a, i) => ({ key: `d${i}-${a.name}`, name: a.name, bytes: a.size, mime: a.mimeType, data: a.data }))
+      : live
       ? []
       : [
           { key: "ex1", name: "resumo-diretoria.pdf", bytes: 0, size: "1,2 MB", mime: "application/pdf", data: "" },
@@ -335,7 +399,7 @@ export default function Compose({ draft }: { draft?: ComposeDraft }) {
       reader.readAsDataURL(file);
     }
   };
-  const [sending, setSending] = useState(false);
+  const sending = false;
   const [sendError, setSendError] = useState<string | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const [initialBody] = useState(() => draft?.body ?? (live ? "" : INITIAL_BODY));
@@ -349,20 +413,152 @@ export default function Compose({ draft }: { draft?: ComposeDraft }) {
   // a conta escolhida sumiu (ou ainda não tinha carregado): usa a primeira
   if (live && senders.length > 0 && !senders.some((a) => a.id === from)) setFrom(senders[0].id);
 
-  const format = (cmd: string) => {
-    bodyRef.current?.focus();
-    // execCommand ainda é o caminho mais simples para editar texto rico no WebView.
-    document.execCommand(cmd);
+  // ---------- rascunho no Gmail: salva sozinho 3 s depois da última mudança ----------
+  const [save, setSave] = useState<SaveState>(() => (live ? { kind: "idle" } : { kind: "saved", at: Date.now() - 5000 }));
+  const draftId = useRef<string | null>(draft?.draftId ?? null);
+  /** conta em que o rascunho está salvo (se trocar o "De", o antigo sai dessa conta) */
+  const draftAccount = useRef<string | null>(draft?.draftId ? (draft.from ?? null) : null);
+  const htmlRef = useRef(initialBody);
+  const dirty = useRef(false);
+  /** enviado ou descartado: não salva mais */
+  const closed = useRef(false);
+  const saveTimer = useRef<number | undefined>(undefined);
+  const inflight = useRef<Promise<void> | null>(null);
+  const saveAgain = useRef(false);
+  const latest = useRef({ to, cc, bcc, subject, files, sender, profiles });
+  useLayoutEffect(() => {
+    latest.current = { to, cc, bcc, subject, files, sender, profiles };
+  });
+
+  const buildMessage = (): OutgoingMessage | null => {
+    const s = latest.current;
+    if (!s.sender) return null;
+    return {
+      from: s.sender.email,
+      fromName: s.profiles[s.sender.email]?.name ?? null,
+      to: s.to.map((c) => c.email),
+      cc: s.cc.map((c) => c.email),
+      bcc: s.bcc.map((c) => c.email),
+      subject: s.subject.trim(),
+      // sem a assinatura: ela entra só no envio (senão duplicaria ao reabrir o rascunho)
+      html: htmlRef.current,
+      attachments: s.files.filter((f) => f.data).map((f) => ({ name: f.name, mimeType: f.mime, data: f.data! })),
+    };
   };
-  const insertLink = () => {
-    const url = window.prompt("Endereço do link (https://…)");
-    if (url && /^https?:\/\//i.test(url.trim())) format2("createLink", url.trim());
+
+  const saveDraft = (): Promise<void> => {
+    window.clearTimeout(saveTimer.current);
+    if (closed.current || !dirty.current) return Promise.resolve();
+    if (inflight.current) {
+      saveAgain.current = true;
+      return inflight.current;
+    }
+    // anexo ainda carregando: espera ele terminar (a mudança na lista agenda de novo)
+    if (live && latest.current.files.some((f) => f.progress !== undefined)) return Promise.resolve();
+    const msg = buildMessage();
+    if (!msg || !hasContent(msg)) return Promise.resolve();
+    dirty.current = false;
+    setSave({ kind: "saving" });
+    const run = (async () => {
+      try {
+        if (!live) {
+          await new Promise((r) => window.setTimeout(r, 450));
+          draftId.current = "preview";
+        } else {
+          if (draftId.current && draftAccount.current && draftAccount.current !== msg.from) {
+            const [oldAccount, oldId] = [draftAccount.current, draftId.current];
+            draftId.current = null;
+            void api.draftDelete(oldAccount, oldId).catch(() => undefined);
+          }
+          draftId.current = await api.draftSave(msg, draftId.current, draft?.threadId);
+        }
+        draftAccount.current = msg.from;
+        setSave({ kind: "saved", at: Date.now() });
+      } catch (e) {
+        dirty.current = true;
+        setSave({ kind: "error", reason: friendlyError(e) });
+      }
+    })().finally(() => {
+      inflight.current = null;
+      if (saveAgain.current) {
+        saveAgain.current = false;
+        void saveDraft();
+      }
+    });
+    inflight.current = run;
+    return run;
   };
-  const format2 = (cmd: string, value: string) => {
-    bodyRef.current?.focus();
-    document.execCommand(cmd, false, value);
+  const saveRef = useRef(saveDraft);
+  useLayoutEffect(() => {
+    saveRef.current = saveDraft;
+  });
+
+  /** Algo mudou: salva daqui a 3 s (se nada mais mudar). */
+  const changed = () => {
+    if (closed.current) return;
+    dirty.current = true;
+    window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => void saveRef.current(), DRAFT_DELAY);
   };
-  const recent = live ? contacts.slice(0, 5) : CONTACTS.filter((c) => c.recent);
+  const changedRef = useRef(changed);
+  useLayoutEffect(() => {
+    changedRef.current = changed;
+  });
+
+  // destinatários, assunto e anexos (prontos); o texto avisa pelo onInput do editor
+  const fieldsSig = JSON.stringify([
+    to.map((c) => c.email),
+    cc.map((c) => c.email),
+    bcc.map((c) => c.email),
+    subject,
+    files.map((f) => `${f.key}:${f.data === undefined ? 0 : 1}`),
+  ]);
+  const lastSig = useRef(fieldsSig);
+  useEffect(() => {
+    if (fieldsSig === lastSig.current) return;
+    lastSig.current = fieldsSig;
+    changedRef.current();
+  }, [fieldsSig]);
+  // trocou a conta do "De" com rascunho já salvo: salva na conta nova
+  const lastFrom = useRef(from);
+  useEffect(() => {
+    if (from === lastFrom.current) return;
+    lastFrom.current = from;
+    if (draftId.current) changedRef.current();
+  }, [from]);
+
+  // saiu da tela com mudança não salva (Fechar, outra tela): salva na hora
+  useEffect(
+    () => () => {
+      window.clearTimeout(saveTimer.current);
+      if (!closed.current && dirty.current) void saveRef.current();
+    },
+    [],
+  );
+
+  /** Espera um salvamento em andamento (para saber o id do rascunho). */
+  const settle = async () => {
+    window.clearTimeout(saveTimer.current);
+    while (inflight.current) await inflight.current.catch(() => undefined);
+  };
+
+  const discard = async () => {
+    closed.current = true;
+    window.clearTimeout(saveTimer.current);
+    const account = draftAccount.current ?? sender?.email ?? "";
+    done();
+    await settle();
+    const id = draftId.current;
+    if (!id) return;
+    if (!live) return toast("Rascunho descartado");
+    try {
+      await api.draftDelete(draftAccount.current ?? account, id);
+      toast("Rascunho descartado");
+    } catch (e) {
+      toast(`Não descartou o rascunho: ${friendlyError(e)}`, "error");
+    }
+  };
+
   const chosen = SCHEDULE.find((s) => s.id === schedule)!;
 
   const send = async () => {
@@ -374,28 +570,37 @@ export default function Compose({ draft }: { draft?: ComposeDraft }) {
     if (to.length + cc.length + bcc.length === 0) return setSendError("Coloque pelo menos um destinatário em Para.");
     if (files.some((f) => f.progress !== undefined)) return setSendError("Espere os anexos terminarem de carregar.");
     setSendError(null);
-    setSending(true);
-    try {
-      await sendMessage(
-        {
-          from: sender.email,
-          fromName: profiles[sender.email]?.name ?? null,
-          to: to.map((c) => c.email),
-          cc: cc.map((c) => c.email),
-          bcc: bcc.map((c) => c.email),
-          subject: subject.trim(),
-          html: `${bodyRef.current?.innerHTML ?? ""}${signatureHtml(sender.email)}`,
-          attachments: files.filter((f) => f.data).map((f) => ({ name: f.name, mimeType: f.mime, data: f.data! })),
-        },
-        draft?.threadId,
-      );
-      toast("E-mail enviado");
-      done();
-    } catch (e) {
-      setSendError(`Não enviou: ${friendlyError(e)}`);
-    } finally {
-      setSending(false);
-    }
+    const html = bodyRef.current?.innerHTML ?? "";
+    // não salva mais; espera um salvamento em andamento para o rascunho sair de Rascunhos depois do envio
+    closed.current = true;
+    await settle();
+    const ready = files.filter((f) => f.data);
+    const person = (c: Contact) => ({ name: c.name, email: c.email });
+    queueSend(
+      {
+        from: sender.email,
+        fromName: profiles[sender.email]?.name ?? null,
+        to: to.map((c) => c.email),
+        cc: cc.map((c) => c.email),
+        bcc: bcc.map((c) => c.email),
+        subject: subject.trim(),
+        html: `${html}${signatureHtml(sender.email)}`,
+        attachments: ready.map((f) => ({ name: f.name, mimeType: f.mime, data: f.data! })),
+      },
+      draft?.threadId,
+      {
+        from: sender.email,
+        to: to.map(person),
+        cc: cc.map(person),
+        bcc: bcc.map(person),
+        subject,
+        body: html,
+        threadId: draft?.threadId,
+        draftId: draftId.current ?? undefined,
+        attachments: ready.map((f) => ({ name: f.name, mimeType: f.mime, data: f.data!, size: f.bytes })),
+      },
+    );
+    done();
   };
 
   return (
@@ -444,14 +649,9 @@ export default function Compose({ draft }: { draft?: ComposeDraft }) {
               {sendError}
             </span>
           ) : (
-            !live && (
-              <span className="saved-note" role="status" style={{ marginLeft: "auto" }}>
-                <CircleCheck size={13} aria-hidden />
-                Rascunho salvo há 5 s
-              </span>
-            )
+            <DraftStatus state={save} style={{ marginLeft: "auto" }} />
           )}
-          <button className="btn glass" onClick={done} style={live && !sendError ? { marginLeft: "auto" } : undefined}>
+          <button className="btn glass" onClick={() => void discard()} style={save.kind === "idle" && !sendError ? { marginLeft: "auto" } : undefined}>
             <Trash2 size={16} aria-hidden />
             Descartar
           </button>
@@ -528,32 +728,10 @@ export default function Compose({ draft }: { draft?: ComposeDraft }) {
               <input id="cp-subject" className="cp-subject" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Sem assunto" />
             </div>
 
-            <div className="format-bar cp-format">
-              <span className="cp-style">
-                <Type size={14} aria-hidden />
-                Texto normal
-              </span>
-              {[
-                { icon: Bold, label: "Negrito", cmd: "bold" },
-                { icon: Italic, label: "Itálico", cmd: "italic" },
-                { icon: Underline, label: "Sublinhado", cmd: "underline" },
-              ].map((b) => (
-                <button key={b.label} className="btn ic" aria-label={b.label} data-tip={b.label} onMouseDown={(e) => e.preventDefault()} onClick={() => format(b.cmd)}>
-                  <b.icon size={16} aria-hidden />
-                </button>
-              ))}
-              <span className="vsep" aria-hidden />
-              <button className="btn ic" aria-label="Lista" data-tip="Lista" onMouseDown={(e) => e.preventDefault()} onClick={() => format("insertUnorderedList")}>
-                <List size={16} aria-hidden />
-              </button>
-              <button className="btn ic" aria-label="Lista numerada" data-tip="Lista numerada" onMouseDown={(e) => e.preventDefault()} onClick={() => format("insertOrderedList")}>
-                <ListOrdered size={16} aria-hidden />
-              </button>
-              <span className="vsep" aria-hidden />
-              <button className="btn ic" aria-label="Link" data-tip="Link" onMouseDown={(e) => e.preventDefault()} onClick={insertLink}>
-                <Link size={16} aria-hidden />
-              </button>
-            </div>
+            <RichToolbar editorRef={bodyRef} onImages={addFiles} onEdited={() => {
+                htmlRef.current = bodyRef.current?.innerHTML ?? "";
+                changed();
+              }} />
 
             <div
               ref={bodyRef}
@@ -565,6 +743,10 @@ export default function Compose({ draft }: { draft?: ComposeDraft }) {
               aria-label="Texto do e-mail"
               data-placeholder="Escreva sua mensagem…"
               dangerouslySetInnerHTML={{ __html: initialBody }}
+              onInput={(e) => {
+                htmlRef.current = e.currentTarget.innerHTML;
+                changed();
+              }}
             />
             {signatureText && <div className="cp-signature">{signatureText}</div>}
 
@@ -574,7 +756,15 @@ export default function Compose({ draft }: { draft?: ComposeDraft }) {
                   const busy = f.progress !== undefined || sending;
                   return (
                     <li key={f.key} className="cp-attachment">
-                      <FileIcon name={f.name} mime={f.mime} size={38} />
+                      <button
+                        className="cp-att-open"
+                        aria-label={`Ver ${f.name}`}
+                        data-tip="Ver"
+                        disabled={!f.data}
+                        onClick={() => f.data && previewAttachment({ name: f.name, mime: f.mime, size: f.bytes, load: async () => f.data! })}
+                      >
+                        <FileIcon name={f.name} mime={f.mime} size={38} />
+                      </button>
                       <div style={{ minWidth: 0 }}>
                         <div className="cp-att-name">{f.name}</div>
                         {busy ? (
@@ -654,41 +844,6 @@ export default function Compose({ draft }: { draft?: ComposeDraft }) {
               )}
             </section>
 
-            <section className="card cp-side-card">
-              <div className="section-label">
-                <Users size={14} aria-hidden />
-                Contatos recentes
-              </div>
-              {recent.length === 0 ? (
-                <p className="cp-sig-preview">Quem aparecer nos seus e-mails vira sugestão aqui.</p>
-              ) : (
-                <ul className="cp-contacts stagger">
-                  {recent.map((c) => {
-                    const added = to.some((t) => t.email.toLowerCase() === c.email.toLowerCase());
-                    return (
-                      <li key={c.id} className="cp-contact">
-                        <ContactAvatar c={c} size={32} />
-                        <div>
-                          <div className="cp-contact-name">{c.name}</div>
-                          <div className="cp-contact-meta">
-                            {live ? c.email : `${ACCOUNT_BY_ID.get(c.account)?.name ?? ""} · ${c.recent}`}
-                          </div>
-                        </div>
-                        <button
-                          className="btn glass ic"
-                          aria-label={added ? `${c.name} já está em Para` : `Adicionar ${c.name} em Para`}
-                          data-tip={added ? "Já adicionado" : "Adicionar"}
-                          onClick={() => !added && setTo((v) => [...v, c])}
-                          disabled={added}
-                        >
-                          {added ? <CircleCheck size={14} aria-hidden /> : <Plus size={14} aria-hidden />}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </section>
           </aside>
         </div>
       </div>

@@ -35,10 +35,14 @@ import { bulkAction, folderMessages, loadFolder, markReadRemote, refreshMailbox,
 import { SliderGroup } from "../components/SliderGroup";
 import { usePref } from "../lib/usePref";
 import { ConnectGoogleButton } from "../components/ConnectGoogle";
+import { Banner } from "./Banner";
 import { isTauri } from "../lib/platform";
 import { markRead, markUnread, navigate, useStore } from "../state/store";
 import { getPref } from "../lib/storage";
 import type { MessageAction } from "../lib/api";
+import { api, friendlyError } from "../lib/api";
+import { toast } from "../components/Toasts";
+import { sanitizeHtml, textToHtml } from "../compose/richText";
 import { addDays, eventsOnDay, loadRange, sameDay, startOfDay, startOfWeek, timeRange, useCalendar, visibleEvents, type AgendaEvent } from "../state/calendar";
 import { calendarMap, dayLong, dayShort, dowShort, fmtDuration, fmtTime, openCalendarAt, useClock } from "../calendar/shared";
 
@@ -97,6 +101,7 @@ export default function Inbox({ folder: folderParam }: { folder: string }) {
   const [markOnOpen] = usePref("markReadOnOpen", true);
   const [visibleFolders] = usePref<string[]>("folders.visible", FOLDERS.map((f) => f.id));
   const refreshing = useMailbox((s) => s.refreshing);
+  const updatedAt = useMailbox((s) => s.updatedAt);
   const live = useMailbox((s) => s.live);
   const status = useMailbox((s) => s.status);
   const needsLogin = useMailbox((s) => s.needsLogin);
@@ -148,6 +153,37 @@ export default function Inbox({ folder: folderParam }: { folder: string }) {
   const showsRecipient = folder === "sent" || folder === "drafts";
 
   const open = (id: string) => {
+    // rascunho: abre no Escrever para continuar (e atualizar o mesmo rascunho no Gmail)
+    const draftMsg = live && folder === "drafts" ? messages.find((m) => m.id === id) : undefined;
+    if (draftMsg?.accountEmail) {
+      const email = draftMsg.accountEmail;
+      const people = (list: string[]) =>
+        list.map((raw) => {
+          const m = /^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/.exec(raw);
+          return m ? { name: m[1].trim(), email: m[2].trim() } : { name: "", email: raw.trim() };
+        });
+      void api
+        .draftGet(email, id)
+        .then((d) =>
+          navigate({
+            name: "compose",
+            draft: {
+              draftId: d.draftId,
+              from: email,
+              to: people(d.to),
+              cc: people(d.cc),
+              bcc: people(d.bcc),
+              subject: d.subject,
+              body: d.html ? sanitizeHtml(d.html, "draft") : textToHtml(d.text),
+            },
+          }),
+        )
+        .catch((e) => {
+          toast(`Não abriu o rascunho: ${friendlyError(e)}`, "error");
+          navigate({ name: "read", id });
+        });
+      return;
+    }
     if (markOnOpen) {
       markRead(id);
       markReadRemote(id);
@@ -289,7 +325,7 @@ export default function Inbox({ folder: folderParam }: { folder: string }) {
             {(live || !isTauri) && (
               <p className="sync">
                 <CircleCheck size={15} aria-hidden />
-                {status === "loading" ? "Atualizando…" : "Tudo sincronizado"}
+                {status === "loading" || refreshing ? "Atualizando…" : <SyncedAgo at={updatedAt} />}
               </p>
             )}
           </aside>
@@ -321,6 +357,18 @@ function AccountsBar({ accounts, filter, onChange }: { accounts: Account[]; filt
       ))}
     </SliderGroup>
   );
+}
+
+/** "Atualizado agora" / "Atualizado há 3 min" (anda sozinho a cada 30 s). */
+function SyncedAgo({ at }: { at: number | null }) {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const t = window.setInterval(() => tick((n) => n + 1), 30_000);
+    return () => window.clearInterval(t);
+  }, []);
+  if (!at) return <>Tudo sincronizado</>;
+  const min = Math.floor((Date.now() - at) / 60_000);
+  return <>{min < 1 ? "Atualizado agora" : min < 60 ? `Atualizado há ${min} min` : `Atualizado às ${new Date(at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`}</>;
 }
 
 /** Caixinha de seleção no estilo do Quill (marcada, desmarcada ou "alguns"). */
@@ -366,12 +414,10 @@ function MessageRow({
   return (
     <li className={`row${unread ? " unread" : ""}${selected ? " is-selected" : ""}${selecting ? " selecting" : ""}`}>
       <button className="row-hit" onClick={selecting ? onSelect : onOpen} aria-label={`${unread ? "Não lido. " : ""}${who}: ${m.subject}`} />
-      <span className="row-avatar">
-        <MessageAvatar message={m} />
-        <span className="row-check">
-          <Checkbox checked={selected} onChange={onSelect} label={`Selecionar ${who}`} />
-        </span>
+      <span className="row-check">
+        <Checkbox checked={selected} onChange={onSelect} label={`Selecionar ${who}`} />
       </span>
+      <MessageAvatar message={m} />
       <div className="row-body">
         <div className="row-top">
           <span className="row-from">{who}</span>
@@ -540,81 +586,5 @@ function InviteCard({ e }: { e: AgendaEvent }) {
       )}
       <EventRsvpButtons rsvp={rsvp} />
     </section>
-  );
-}
-
-function Envelope({ x, y, w, rotate }: { x: number; y: number; w: number; rotate: number }) {
-  const h = w * 0.66;
-  return (
-    <g transform={`translate(${x} ${y}) rotate(${rotate})`}>
-      <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={w * 0.09} fill="var(--env)" stroke="var(--envline)" strokeWidth="1.2" />
-      <path
-        d={`M${-w / 2 + 2} ${-h / 2 + 2} L0 ${h * 0.08} L${w / 2 - 2} ${-h / 2 + 2}`}
-        fill="none"
-        stroke="var(--envline)"
-        strokeWidth="1.2"
-        strokeLinejoin="round"
-      />
-    </g>
-  );
-}
-
-/** Banner ilustrado do topo da lista (de dia no claro, à noite no escuro). */
-function Banner({ unread, accounts }: { unread: number; accounts: number }) {
-  const clock = useClock();
-  const events = useCalendar(visibleEvents);
-  // compromissos que ainda faltam hoje
-  const left = eventsOnDay(events, clock).filter((e) => e.end > clock).length;
-  return (
-    <div className="banner">
-      <svg viewBox="0 0 1000 112" preserveAspectRatio="xMidYMid slice" aria-hidden>
-        <defs>
-          <linearGradient id="quill-sky" x1="0" x2="1" y1="0" y2=".5">
-            <stop offset=".25" stopColor="var(--sky1)" />
-            <stop offset="1" stopColor="var(--sky2)" />
-          </linearGradient>
-          <radialGradient id="quill-glow">
-            <stop offset="0" stopColor="var(--sun)" stopOpacity=".9" />
-            <stop offset="1" stopColor="var(--sun)" stopOpacity="0" />
-          </radialGradient>
-        </defs>
-        <rect width="1000" height="112" fill="url(#quill-sky)" />
-        <g fill="var(--star)">
-          <circle cx="560" cy="18" r="1.2" />
-          <circle cx="640" cy="40" r="1" />
-          <circle cx="720" cy="14" r="1.4" />
-          <circle cx="790" cy="52" r="1" />
-          <circle cx="960" cy="22" r="1.2" />
-          <circle cx="600" cy="70" r=".9" />
-        </g>
-        <circle cx="905" cy="32" r="44" fill="url(#quill-glow)" />
-        <circle cx="905" cy="32" r="15" fill="var(--sun)" />
-        <g fill="var(--cloud2)">
-          <circle cx="700" cy="122" r="40" />
-          <circle cx="760" cy="104" r="38" />
-          <circle cx="830" cy="114" r="44" />
-          <circle cx="900" cy="98" r="36" />
-          <circle cx="970" cy="108" r="42" />
-        </g>
-        <g fill="var(--cloud)">
-          <circle cx="760" cy="132" r="34" />
-          <circle cx="815" cy="120" r="30" />
-          <circle cx="870" cy="134" r="36" />
-          <circle cx="940" cy="124" r="30" />
-          <circle cx="1000" cy="130" r="34" />
-        </g>
-        <path d="M470 82 C540 56 590 88 650 62 S770 28 860 46" fill="none" stroke="#8FAA87" strokeWidth="2" strokeDasharray="1 7" strokeLinecap="round" />
-        <Envelope x={470} y={82} w={24} rotate={-10} />
-        <Envelope x={600} y={58} w={30} rotate={8} />
-        <Envelope x={745} y={36} w={38} rotate={-6} />
-      </svg>
-      <div className="banner-text">
-        <h2>Bom dia, Gabriel</h2>
-        <p>
-          {unread} {unread === 1 ? "e-mail novo" : "e-mails novos"} em {accounts} {accounts === 1 ? "conta" : "contas"}
-          {left > 0 ? ` · ${left} ${left === 1 ? "compromisso" : "compromissos"} hoje` : ""}
-        </p>
-      </div>
-    </div>
   );
 }

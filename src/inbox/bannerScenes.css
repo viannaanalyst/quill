@@ -1,0 +1,566 @@
+/* Cartão de saudação e cenas ilustradas (claro e escuro), usados na caixa de entrada e nos Ajustes. */
+
+/* ---------- cartão ---------- */
+.banner {
+  position: relative;
+  height: 112px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--line2);
+  --banner-ink: #1b1c1e;
+  --banner-ink2: #5c6168;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .banner {
+    --banner-ink: #f4f4f5;
+    --banner-ink2: #a9b3bc;
+  }
+}
+:root[data-theme="dark"] .banner {
+  --banner-ink: #f4f4f5;
+  --banner-ink2: #a9b3bc;
+}
+/* com foto: texto claro sobre um véu escuro à esquerda, nos dois temas */
+.banner.banner-is-photo {
+  --banner-ink: #ffffff;
+  --banner-ink2: rgba(255, 255, 255, 0.86);
+  background: #1b1c1e;
+}
+.banner.banner-is-photo h2,
+.banner.banner-is-photo p {
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.35);
+}
+/* sem imagem: só o texto num fundo discreto */
+.banner.banner-is-none {
+  height: auto;
+  background: var(--sel);
+}
+.banner.banner-is-none .banner-text {
+  padding: 22px 24px;
+}
+.banner-photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.banner-veil {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to right, rgba(10, 12, 15, 0.62), rgba(10, 12, 15, 0.32) 45%, rgba(10, 12, 15, 0) 80%);
+}
+.banner-text {
+  position: relative;
+  padding: 28px 24px;
+}
+.banner h2 {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--banner-ink);
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  text-wrap: balance;
+}
+.banner p {
+  font-size: 14px;
+  color: var(--banner-ink2);
+  margin-top: 5px;
+  text-wrap: pretty;
+}
+
+/* botão de trocar a imagem: aparece ao passar o mouse (e sempre que recebe foco pelo teclado) */
+.banner-edit {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  box-shadow:
+    inset 0 1px 0 var(--ghl),
+    inset 0 0 0 1px var(--gedge),
+    0 1px 3px rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  opacity: 0;
+  transition:
+    opacity 0.15s ease-out,
+    transform 0.15s ease;
+}
+.banner:hover .banner-edit,
+.banner-edit:focus-visible,
+.banner-edit[data-state="open"] {
+  opacity: 1;
+}
+.banner-edit:hover {
+  background: var(--surface);
+}
+.banner-edit:active {
+  transform: scale(0.94);
+}
+
+.banner-pop {
+  width: 372px;
+  padding: 14px;
+}
+.banner-pop-head {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0 2px 10px;
+}
+
+/* ---------- cenas ---------- */
+.banner-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.banner-art,
+.banner[data-scene] {
+  /* cada slot pega a cor clara; no escuro, a escura (definidas por cena logo abaixo) */
+  --s-sky1: var(--l-sky1);
+  --s-sky2: var(--l-sky2);
+  --s-sun: var(--l-sun);
+  --s-star: transparent;
+  --s-c1: var(--l-c1);
+  --s-c2: var(--l-c2);
+  --s-c3: var(--l-c3);
+  --s-c4: var(--l-c4);
+  --s-c5: var(--l-c5);
+  --s-snow: var(--l-snow);
+  --s-win: var(--l-win);
+  --s-lit: var(--l-lit);
+  --s-stem: var(--l-stem);
+  --s-f1: var(--l-f1);
+  --s-f2: var(--l-f2);
+  --s-f3: var(--l-f3);
+  --s-band: var(--l-band);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .banner-art,
+  :root:not([data-theme="light"]) .banner[data-scene] {
+    --s-sky1: var(--d-sky1);
+    --s-sky2: var(--d-sky2);
+    --s-sun: var(--d-sun);
+    --s-star: #c9d6e2;
+    --s-c1: var(--d-c1);
+    --s-c2: var(--d-c2);
+    --s-c3: var(--d-c3);
+    --s-c4: var(--d-c4);
+    --s-c5: var(--d-c5);
+    --s-snow: var(--d-snow);
+    --s-win: var(--d-win);
+    --s-lit: var(--d-lit);
+    --s-stem: var(--d-stem);
+    --s-f1: var(--d-f1);
+    --s-f2: var(--d-f2);
+    --s-f3: var(--d-f3);
+    --s-band: var(--d-band);
+  }
+}
+:root[data-theme="dark"] .banner-art,
+:root[data-theme="dark"] .banner[data-scene] {
+  --s-sky1: var(--d-sky1);
+  --s-sky2: var(--d-sky2);
+  --s-sun: var(--d-sun);
+  --s-star: #c9d6e2;
+  --s-c1: var(--d-c1);
+  --s-c2: var(--d-c2);
+  --s-c3: var(--d-c3);
+  --s-c4: var(--d-c4);
+  --s-c5: var(--d-c5);
+  --s-snow: var(--d-snow);
+  --s-win: var(--d-win);
+  --s-lit: var(--d-lit);
+  --s-stem: var(--d-stem);
+  --s-f1: var(--d-f1);
+  --s-f2: var(--d-f2);
+  --s-f3: var(--d-f3);
+  --s-band: var(--d-band);
+}
+
+/* sol/lua e céu comuns; cada cena ajusta o que precisa (:where = sem peso, a cena sempre ganha) */
+:where(.banner-art, .banner[data-scene]) {
+  --l-sky1: #fdf5ec;
+  --l-sky2: #cce0f0;
+  --l-sun: #ffefd9;
+  --d-sky1: #0f1317;
+  --d-sky2: #2a3f52;
+  --d-sun: #ededef;
+}
+
+/* céu: nuvens (c1 frente, c2 fundo) e trilha pontilhada (c3) */
+[data-scene="sky"] {
+  --l-c1: #ffffff;
+  --l-c2: #e3eef7;
+  --l-c3: #8faa87;
+  --d-c1: #3b5770;
+  --d-c2: #2c4459;
+  --d-c3: #8faa87;
+}
+
+/* montanhas: da mais distante (c1) à mais próxima (c4), nuvem (c5) e neve */
+[data-scene="mountains"] {
+  --l-sky1: #fbf4ec;
+  --l-sky2: #d6e5f1;
+  --l-c1: #c3d4e2;
+  --l-c2: #abc3d4;
+  --l-c3: #9cb8a7;
+  --l-c4: #85a38f;
+  --l-c5: #ffffff;
+  --l-snow: #ffffff;
+  --d-sky1: #0e1216;
+  --d-sky2: #283c4e;
+  --d-c1: #1f2f3d;
+  --d-c2: #192733;
+  --d-c3: #142029;
+  --d-c4: #0f1820;
+  --d-c5: #2c4053;
+  --d-snow: #6f8496;
+}
+
+/* mar: água (c1 → c2), ondas e horizonte (c3), vela (c4) e casco (c5) */
+[data-scene="sea"] {
+  --l-sky1: #fdf3e8;
+  --l-sky2: #d4e5f1;
+  --l-sun: #ffe6c7;
+  --l-c1: #c3dae9;
+  --l-c2: #a2c4da;
+  --l-c3: #ffffff;
+  --l-c4: #fbfcfd;
+  --l-c5: #7d9db3;
+  --d-sky1: #0e1216;
+  --d-sky2: #263b4e;
+  --d-c1: #1c2d3b;
+  --d-c2: #111c25;
+  --d-c3: #4b6880;
+  --d-c4: #c9d3dc;
+  --d-c5: #3a5266;
+}
+
+/* cidade: prédios do fundo (c1) e da frente (c2), janelas apagadas e acesas */
+[data-scene="city"] {
+  --l-sky1: #fbf4ec;
+  --l-sky2: #d3e2ee;
+  --l-sun: #ffeed6;
+  --l-c1: #c8d6e2;
+  --l-c2: #adbfcf;
+  --l-win: #bccbd8;
+  --l-lit: #e8eff5;
+  --d-sky1: #0d1115;
+  --d-sky2: #24374a;
+  --d-c1: #1c2a37;
+  --d-c2: #141e28;
+  --d-win: #1d2a36;
+  --d-lit: #f0d49a;
+}
+
+/* aurora: faixas de luz (c1 verde-água, c2 azul), serra (c3), chão (c4) e pinheiros (c5) */
+[data-scene="aurora"] {
+  --l-sky1: #f8f4ec;
+  --l-sky2: #dcebe8;
+  --l-c1: #94d4bb;
+  --l-c2: #a9cbe6;
+  --l-c3: #d3dfe6;
+  --l-c4: #e6edf1;
+  --l-c5: #9fb5ac;
+  --l-band: 0.6;
+  --d-sky1: #0a0e13;
+  --d-sky2: #13222d;
+  --d-c1: #59cfa2;
+  --d-c2: #64a6d4;
+  --d-c3: #0f1a22;
+  --d-c4: #0b141b;
+  --d-c5: #081015;
+  --d-band: 0.42;
+}
+
+/* campo: colinas (c1 → c3), árvore (c4), caules e flores */
+[data-scene="field"] {
+  --l-sky1: #fdf6ea;
+  --l-sky2: #d8e8f1;
+  --l-sun: #ffeccf;
+  --l-c1: #cfe0c4;
+  --l-c2: #b6d0a7;
+  --l-c3: #9fc08f;
+  --l-c4: #7f9f72;
+  --l-stem: #7f9f72;
+  --l-f1: #f0bdb6;
+  --l-f2: #ffffff;
+  --l-f3: #efcf7f;
+  --d-sky1: #0e1216;
+  --d-sky2: #24364a;
+  --d-c1: #1f2c25;
+  --d-c2: #18231d;
+  --d-c3: #121b16;
+  --d-c4: #0d150f;
+  --d-stem: #2e4034;
+  --d-f1: #c79b97;
+  --d-f2: #b9c3cc;
+  --d-f3: #c9b06e;
+}
+
+/* no cartão, o desenho esmaece atrás do texto: em janelas estreitas ele se corta pela esquerda
+   e os detalhes chegariam embaixo da saudação */
+.banner[data-scene] {
+  background: var(--s-sky1);
+}
+.banner-scene {
+  -webkit-mask-image: linear-gradient(to right, transparent 260px, #000 440px);
+  mask-image: linear-gradient(to right, transparent 260px, #000 440px);
+}
+
+/* ---------- animação leve: um elemento por cena, só no cartão ---------- */
+.banner-scene .banner-anim {
+  transform-box: fill-box;
+  animation-duration: 7s;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+}
+.banner-scene .banner-anim-float {
+  animation-name: banner-float;
+}
+.banner-scene .banner-anim-drift {
+  animation-name: banner-drift;
+  animation-duration: 26s;
+}
+.banner-scene .banner-anim-bob {
+  animation-name: banner-bob;
+  animation-duration: 4.5s;
+}
+.banner-scene .banner-anim-blink {
+  animation-name: banner-blink;
+  animation-duration: 5s;
+}
+.banner-scene .banner-anim-glow {
+  animation-name: banner-glow;
+  animation-duration: 14s;
+}
+.banner-scene .banner-anim-sway {
+  transform-origin: 50% 100%;
+  animation-name: banner-sway;
+  animation-duration: 5s;
+}
+@keyframes banner-float {
+  to {
+    transform: translateY(-4px);
+  }
+}
+@keyframes banner-drift {
+  to {
+    transform: translateX(26px);
+  }
+}
+@keyframes banner-bob {
+  to {
+    transform: translateY(1.5px);
+  }
+}
+@keyframes banner-blink {
+  from {
+    opacity: 0.15;
+  }
+}
+@keyframes banner-glow {
+  from {
+    opacity: 0.55;
+    transform: translateX(-14px);
+  }
+}
+@keyframes banner-sway {
+  from {
+    transform: rotate(-5deg);
+  }
+  to {
+    transform: rotate(5deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .banner-scene .banner-anim {
+    animation: none;
+  }
+}
+
+/* ---------- escolha da imagem (miniaturas) ---------- */
+.banner-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.banner-picker-compact .banner-grid {
+  gap: 10px 8px;
+}
+.banner-thumb {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  text-align: left;
+  border-radius: 12px;
+}
+.banner-thumb-img {
+  position: relative;
+  display: block;
+  aspect-ratio: 2.6;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--sel);
+  box-shadow: inset 0 0 0 1px var(--line);
+  transition: box-shadow 0.15s ease-out, transform 0.15s ease;
+}
+/* contorno por cima do desenho (o inset some atrás do SVG) */
+.banner-thumb-img::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 9%, transparent);
+  pointer-events: none;
+  transition: box-shadow 0.15s ease-out;
+}
+.banner-thumb:hover .banner-thumb-img::after {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 22%, transparent);
+}
+.banner-thumb:active .banner-thumb-img {
+  transform: scale(0.97);
+}
+.banner-thumb[aria-pressed="true"] .banner-thumb-img::after {
+  box-shadow:
+    inset 0 0 0 2px var(--blue),
+    inset 0 0 0 3.5px color-mix(in srgb, var(--surface) 70%, transparent);
+}
+.banner-thumb:focus-visible {
+  outline: none;
+}
+.banner-thumb:focus-visible .banner-thumb-img {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+.banner-thumb-img > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.banner-thumb-label {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-left: 2px;
+}
+.banner-thumb[aria-pressed="true"] .banner-thumb-label {
+  color: var(--ink);
+}
+.banner-picker-compact .banner-thumb-label {
+  font-size: 12px;
+}
+.banner-thumb-check {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: var(--blue);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.banner-thumb-badge {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 18px;
+  padding: 0 7px 0 5px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+.banner-thumb-add {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--ink3);
+}
+.banner-thumb-img.is-empty {
+  background: transparent;
+}
+.banner-thumb-img.is-empty::after {
+  box-shadow: none;
+  border: 1.5px dashed color-mix(in srgb, var(--ink) 20%, transparent);
+}
+.banner-thumb:hover .banner-thumb-img.is-empty::after {
+  box-shadow: none;
+  border-color: color-mix(in srgb, var(--ink) 34%, transparent);
+}
+.banner-thumb:hover .banner-thumb-add {
+  color: var(--ink2);
+}
+.banner-thumb-none {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 14%;
+}
+.banner-thumb-none i {
+  display: block;
+  height: 5px;
+  width: 62%;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--ink) 22%, transparent);
+}
+.banner-thumb-none i + i {
+  width: 82%;
+  height: 4px;
+  background: color-mix(in srgb, var(--ink) 11%, transparent);
+}
+.banner-picker-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+/* ilustrações em imagem (substituem os desenhos em SVG) */
+.banner-img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  overflow: hidden;
+  pointer-events: none;
+}
+.banner-img img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  animation: banner-img-in 0.6s var(--ease-out-soft) both;
+}
+@keyframes banner-img-in {
+  from {
+    opacity: 0;
+    transform: scale(1.02);
+  }
+}

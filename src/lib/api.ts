@@ -41,6 +41,8 @@ export interface AttachmentInfo {
   name: string;
   mimeType: string;
   size: number;
+  /** imagem embutida no texto (cid:) */
+  contentId?: string | null;
 }
 
 /** Arquivo anexado para enviar (conteúdo em base64 comum). */
@@ -48,6 +50,40 @@ export interface OutAttachment {
   name: string;
   mimeType: string;
   data: string;
+}
+
+/** Rascunho do Gmail aberto para editar (draft_get). */
+export interface DraftContent {
+  draftId: string;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  html?: string | null;
+  text: string;
+}
+
+/** Servidores de uma conta iCloud/IMAP (quill-core::imap::ImapConfig). A senha vai à parte. */
+export interface ImapConfig {
+  email: string;
+  name?: string | null;
+  provider: "icloud" | "imap";
+  imapHost: string;
+  imapPort: number;
+  smtpHost: string;
+  smtpPort: number;
+  /** vazio = pela porta (465 → TLS, outras → STARTTLS) */
+  smtpSecurity?: "tls" | "starttls" | null;
+  /** vazio = o próprio e-mail */
+  username: string;
+}
+
+/** Palpite de servidores (quill-core::imap_client::Guess). */
+export interface ImapGuess {
+  config: ImapConfig | null;
+  source: "known" | "mx" | "generic";
+  label?: string | null;
+  hint?: string | null;
 }
 
 export type MessageAction = "archive" | "unarchive" | "spam" | "notspam" | "star" | "unstar" | "unread" | "read" | "trash" | "untrash";
@@ -86,10 +122,21 @@ export const api = {
   /** baixa um anexo: "save" (Downloads), "open" (app padrão) ou "preview" (Quick Look) */
   attachment: (email: string, messageId: string, attachmentId: string, name: string, action: "save" | "open" | "preview") =>
     call<string>("attachment_get", { email, messageId, attachmentId, name, action }),
+  attachmentData: (email: string, messageId: string, attachmentId: string) => call<string>("attachment_data", { email, messageId, attachmentId }),
   revealDownload: (path: string) => call<void>("reveal_download", { path }),
   markRead: (email: string, id: string) => call<void>("message_mark_read", { email, id }),
   send: (message: OutgoingMessage, threadId?: string) => call<string>("message_send", { message, threadId: threadId ?? null }),
+  /** cria (sem draftId) ou atualiza o rascunho no Gmail; devolve o id do rascunho */
+  draftSave: (message: OutgoingMessage, draftId?: string | null, threadId?: string | null) =>
+    call<string>("draft_save", { message, draftId: draftId ?? null, threadId: threadId ?? null }),
+  draftDelete: (email: string, draftId: string) => call<void>("draft_delete", { email, draftId }),
+  /** conteúdo de um rascunho a partir do id da mensagem (lista Rascunhos) */
+  draftGet: (email: string, messageId: string) => call<DraftContent>("draft_get", { email, messageId }),
   action: (email: string, id: string, action: MessageAction) => call<void>("message_action", { email, id, action }),
+  /** palpite de servidores IMAP/SMTP para um e-mail (domínio conhecido, MX ou imap./smtp.<domínio>) */
+  imapGuess: (email: string, provider: "icloud" | "imap") => call<ImapGuess>("imap_guess", { email, provider }),
+  /** testa IMAP e SMTP e, se der certo, guarda a senha nas Chaves do sistema e conecta a conta */
+  imapConnect: (config: ImapConfig, password: string) => call<AccountInfo>("imap_connect", { config, password }),
 };
 
 /** Mensagem amigável para um erro vindo da parte nativa. */

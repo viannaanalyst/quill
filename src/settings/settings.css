@@ -680,3 +680,22 @@
     0 0 0 1px #9c332c,
     0 8px 20px -8px rgba(178, 60, 52, 0.5);
 }
+
+/* Aparência: imagem da saudação (a grade de miniaturas vem de inbox/bannerScenes.css) */
+.st-prow.st-banner-block {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+  padding-bottom: 18px;
+}
+.st-prow.st-banner-block:hover {
+  background: none;
+}
+.st-banner-block .banner-picker {
+  max-width: 600px;
+}
+.st-seg button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}

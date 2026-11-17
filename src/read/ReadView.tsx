@@ -31,7 +31,8 @@ import {
 } from "../components/icons";
 import { MessageAvatar } from "../components/MessageAvatar";
 import type { Account, Message } from "../inbox/types";
-import { getMailbox, listContaining, loadBody, markReadRemote, messageAction, sendMessage, useMailbox } from "../state/mailbox";
+import { getMailbox, listContaining, loadBody, markReadRemote, messageAction, useMailbox } from "../state/mailbox";
+import { queueSend } from "../state/outbox";
 import { backToFolder, getStore, markRead, markUnread, navigate } from "../state/store";
 import { getPref } from "../lib/storage";
 import { isTauri } from "../lib/platform";
@@ -40,13 +41,16 @@ import { api, friendlyError, type AttachmentInfo } from "../lib/api";
 import { toast } from "../components/Toasts";
 import { THREADS, type Attachment, type Thread } from "./threads";
 import { FileIcon } from "../components/FileIcon";
+import { previewAttachment } from "../components/AttachmentPreview";
 import { EmailFrame } from "./EmailFrame";
 import { FILE_LABEL, fileSize, fileType } from "../lib/files";
 
 /** Conversa de um e-mail: a de exemplo completa ou uma versão simples montada a partir da prévia. */
 function threadFor(m: Message, account: Account | undefined, body: string | undefined, atts: AttachmentInfo[] | undefined, html: string | null | undefined): Thread {
   if (THREADS[m.id]) return THREADS[m.id];
-  const realAtts: Attachment[] = (atts ?? []).map((a) => ({
+  // imagens embutidas no texto não entram na lista de anexos (aparecem no próprio e-mail)
+  const shownAtts = (atts ?? []).filter((a) => !(a.contentId && html && html.includes(`cid:${a.contentId}`)));
+  const realAtts: Attachment[] = shownAtts.map((a) => ({
     name: a.name,
     kind: (({ pdf: "pdf", sheet: "sheet", image: "image" }) as Record<string, Attachment["kind"]>)[fileType(a.name, a.mimeType)] ?? "file",
     size: fileSize(a.size),
@@ -97,7 +101,23 @@ function linkify(text: string) {
   });
 }
 
-/** Abre a prévia (Quick Look), abre no app padrão ou guarda em Downloads. */
+/** Prévia dentro do Quill (imagem, PDF, texto, vídeo), com Baixar e Abrir no app. */
+function showPreview(a: Attachment) {
+  if (!a.remote) {
+    toast("Prévia de design: nada para mostrar");
+    return;
+  }
+  const r = a.remote;
+  previewAttachment({
+    name: a.name,
+    mime: a.mime,
+    load: () => api.attachmentData(r.email, r.messageId, r.id),
+    onDownload: () => void attachmentAction(a, "save"),
+    onOpen: () => void attachmentAction(a, "open"),
+  });
+}
+
+/** Abre no app padrão ou guarda em Downloads. */
 async function attachmentAction(a: Attachment, action: "save" | "open" | "preview") {
   if (!a.remote) {
     toast("Prévia de design: nada para baixar");
@@ -134,13 +154,32 @@ export default function ReadView({ id }: { id: string }) {
   }
   const m = messages[index];
   const account = accounts.find((a) => a.id === m.account);
-  return <ReadMessage key={id} m={m} t={threadFor(m, account, body, atts, html)} account={account} index={index} messages={messages} />;
+  return <ReadMessage key={id} m={m} t={threadFor(m, account, body, atts, html)} inlineLoaders={inlineFor(m, atts)} account={account} index={index} messages={messages} />;
 }
 
 const withPrefix = (prefix: string, subject: string) => (subject.toLowerCase().startsWith(prefix.toLowerCase()) ? subject : `${prefix} ${subject}`);
 
 
+/** Carregadores das imagens embutidas (cid → data URL) de um e-mail real. */
+const inlineCache = new Map<string, Record<string, () => Promise<string>>>();
+function inlineFor(m: Message, atts: AttachmentInfo[] | undefined) {
+  if (!m.accountEmail || !atts?.some((a) => a.contentId)) return undefined;
+  const key = `${m.id}:${atts.length}`;
+  let map = inlineCache.get(key);
+  if (!map) {
+    map = {};
+    for (const a of atts) {
+      if (!a.contentId) continue;
+      const email = m.accountEmail;
+      map[a.contentId] = () => api.attachmentData(email, m.id, a.id).then((b64) => `data:${a.mimeType || "image/png"};base64,${b64}`);
+    }
+    inlineCache.set(key, map);
+  }
+  return map;
+}
+
 function ReadMessage({
+  inlineLoaders,
   m,
   t,
   account,
@@ -152,6 +191,7 @@ function ReadMessage({
   account: Account | undefined;
   index: number;
   messages: Message[];
+  inlineLoaders?: Record<string, () => Promise<string>>;
 }) {
   const firstName = m.from.split(" ")[0];
 
@@ -159,7 +199,7 @@ function ReadMessage({
   const [starred, setStarred] = useState(!!m.starred);
   const [reply, setReply] = useState("");
   const [sent, setSent] = useState(false);
-  const [sending, setSending] = useState(false);
+  const sending = false;
   const replyRef = useRef<HTMLTextAreaElement>(null);
   const inSpam = getStore().lastFolder === "spam";
 
@@ -193,28 +233,22 @@ function ReadMessage({
       setSent(true);
       return;
     }
-    setSending(true);
-    try {
-      await sendMessage(
-        {
-          from: m.accountEmail,
-          fromName,
-          to: [m.fromEmail],
-          cc: [],
-          bcc: [],
-          subject: withPrefix("Re:", m.subject),
-          html: `<div>${textToHtml(reply.trim())}</div>${signatureHtml(m.accountEmail)}`,
-        },
-        m.threadId,
-      );
-      setReply("");
-      setSent(true);
-      toast("Resposta enviada");
-    } catch (e) {
-      toast(`Não enviou: ${friendlyError(e)}`, "error");
-    } finally {
-      setSending(false);
-    }
+    const html = `<div>${textToHtml(reply.trim())}</div>`;
+    queueSend(
+      {
+        from: m.accountEmail,
+        fromName,
+        to: [m.fromEmail],
+        cc: [],
+        bcc: [],
+        subject: withPrefix("Re:", m.subject),
+        html: `${html}${signatureHtml(m.accountEmail)}`,
+      },
+      m.threadId,
+      { from: m.accountEmail, to: [{ name: m.from, email: m.fromEmail }], subject: withPrefix("Re:", m.subject), body: html, threadId: m.threadId },
+    );
+    setReply("");
+    setSent(true);
   };
   const quoted = () =>
     `<br><br><div>---------- Mensagem encaminhada ----------<br>De: ${escapeHtml(m.from)} &lt;${escapeHtml(t.email)}&gt;<br>Data: ${escapeHtml(t.date)}<br>Assunto: ${escapeHtml(m.subject)}<br><br>${t.body.map(textToHtml).join("<br><br>")}</div>`;
@@ -393,7 +427,7 @@ function ReadMessage({
                     </div>
                   </div>
                   {t.html ? (
-                    <EmailFrame html={t.html} />
+                    <EmailFrame html={t.html} inline={inlineLoaders} />
                   ) : (
                     <div className="rd-body">
                       {t.body.map((p, i) => (
@@ -405,7 +439,7 @@ function ReadMessage({
                     <div className="rd-atts">
                       {t.attachments.map((a) => (
                         <div key={a.name} className="rd-att">
-                          <button className="rd-att-open" onClick={() => void attachmentAction(a, "preview")} data-tip="Ver sem baixar" aria-label={`Ver ${a.name}`}>
+                          <button className="rd-att-open" onClick={() => showPreview(a)} data-tip="Ver sem baixar" aria-label={`Ver ${a.name}`}>
                             <FileIcon name={a.name} mime={a.mime} size={34} />
                             <span>
                               <span className="rd-att-name">{a.name}</span>
@@ -457,7 +491,7 @@ function ReadMessage({
                     {sent ? (
                       <>
                         <CircleCheck size={13} aria-hidden />
-                        {m.accountEmail ? "Resposta enviada" : "Resposta enviada (exemplo)"}
+                        {m.accountEmail ? "Resposta a caminho (dá para desfazer embaixo)" : "Resposta enviada (exemplo)"}
                       </>
                     ) : null}
                   </span>
@@ -518,7 +552,7 @@ function ReadMessage({
                 <ul className="rd-files">
                   {t.attachments.map((a) => (
                     <li key={a.name} className="rd-file">
-                      <button className="rd-att-open" onClick={() => void attachmentAction(a, "open")} data-tip="Abrir" aria-label={`Abrir ${a.name}`}>
+                      <button className="rd-att-open" onClick={() => showPreview(a)} data-tip="Ver sem baixar" aria-label={`Ver ${a.name}`}>
                         <FileIcon name={a.name} mime={a.mime} size={30} />
                         <span>
                           <span className="rd-att-name">{a.name}</span>

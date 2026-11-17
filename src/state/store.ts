@@ -4,12 +4,18 @@ import { getPref } from "../lib/storage";
 
 /** Texto já preenchido ao abrir Escrever (responder, encaminhar, escrever para alguém). */
 export interface ComposeDraft {
+  /** rascunho do Gmail que está sendo editado */
+  draftId?: string;
   from?: string;
   to?: { name: string; email: string }[];
   subject?: string;
   /** HTML inicial do corpo */
   body?: string;
   threadId?: string;
+  cc?: { name: string; email: string }[];
+  bcc?: { name: string; email: string }[];
+  /** anexos já lidos (ao desfazer um envio) */
+  attachments?: { name: string; mimeType: string; data: string; size: number }[];
 }
 
 /** Telas do app. */

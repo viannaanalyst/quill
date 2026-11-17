@@ -21,7 +21,10 @@ export function AccountPhoto({ email, size = 34, main = false, className = "" }:
   const [custom] = usePref<string | null>(AVATAR_PREF, null);
   const profile = useMailbox((s) => (email ? s.profiles[email] : undefined));
   const [broken, setBroken] = useState<string | null>(null);
-  const src = (main && custom) || profile?.picture || null;
+  // a foto escolhida no Quill vale para a conta principal (a primeira conectada) em todo lugar
+  const firstEmail = useMailbox((s) => s.connected[0]?.email);
+  const isMain = main || (!!email && email === firstEmail);
+  const src = (isMain && custom) || profile?.picture || null;
   const style = { width: size, height: size, fontSize: Math.round(size * 0.36) };
 
   if (src && broken !== src) {

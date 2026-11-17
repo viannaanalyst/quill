@@ -1,16 +1,24 @@
-//! Parte nativa do Quill: comandos que as telas chamam para entrar com o Google e ler os e-mails.
+//! Parte nativa do Quill: comandos que as telas chamam para entrar (Google, iCloud ou IMAP) e ler os e-mails.
+//! Cada comando de e-mail olha o provedor da conta: iCloud/IMAP vai por `ImapSession`, o resto pelo Google.
 //! A lógica fica em `crates/quill-core` (testada); aqui só a ligação com o Tauri.
+
+mod touchid;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use quill_core::gmail::MessageSummary;
 use quill_core::google::LoginError;
+use quill_core::imap::{ImapConfig, ImapError};
+use quill_core::imap_session::ImapSession;
 use quill_core::session::GoogleSession;
 use serde::Serialize;
 use tauri::{Manager, State};
 
 struct AppState {
     google: Option<GoogleSession>,
+    /// contas iCloud e IMAP (não dependem das credenciais do Google)
+    imap: ImapSession,
+    accounts_file: std::path::PathBuf,
 }
 
 #[derive(Serialize)]
@@ -29,6 +37,17 @@ fn err(e: LoginError) -> String {
         other => other.to_string(),
     }
 }
+
+/// Erros das contas IMAP: senha recusada ou fora do cofre vira "needs_login" (conectar de novo).
+fn imap_err(e: ImapError) -> String {
+    match e {
+        ImapError::NeedsLogin | ImapError::Auth { .. } => "needs_login".into(),
+        other => other.to_string(),
+    }
+}
+
+/// Recursos que só existem nas contas Google (agenda, por enquanto).
+const IMAP_NO_CALENDAR: &str = "A agenda dessa conta ainda não está disponível no Quill.";
 
 fn google(state: &AppState) -> Result<&GoogleSession, String> {
     state.google.as_ref().ok_or_else(|| "not_configured".to_string())
@@ -63,53 +82,87 @@ fn google_sign_in_url(state: State<'_, AppState>) -> Result<Option<String>, Stri
     Ok(google(&state)?.auth_url())
 }
 
+/// Todas as contas conectadas (Google, iCloud e IMAP), com o provedor de cada uma.
 #[tauri::command]
 fn accounts_list(state: State<'_, AppState>) -> Vec<AccountInfo> {
-    state
-        .google
-        .as_ref()
-        .map(|g| {
-            g.accounts()
-                .into_iter()
-                .map(|a| AccountInfo { email: a.email, provider: a.provider, messages_total: None })
-                .collect()
-        })
-        .unwrap_or_default()
+    quill_core::accounts::AccountStore::new(state.accounts_file.clone())
+        .list()
+        .into_iter()
+        // contas Google só aparecem quando o login do Google está configurado nesta versão
+        .filter(|a| a.imap.is_some() || state.google.is_some())
+        .map(|a| AccountInfo { email: a.email, provider: a.provider, messages_total: None })
+        .collect()
 }
 
 #[tauri::command]
 fn account_remove(state: State<'_, AppState>, email: String) -> Result<(), String> {
+    if state.imap.is_imap(&email) {
+        return state.imap.remove(&email).map_err(imap_err);
+    }
     google(&state)?.remove(&email).map_err(err)
+}
+
+/// Palpite de servidores IMAP/SMTP para o formulário (domínio conhecido, MX ou imap./smtp.<domínio>).
+#[tauri::command]
+async fn imap_guess(state: State<'_, AppState>, email: String, provider: String) -> Result<quill_core::imap_client::Guess, String> {
+    Ok(state.imap.guess(&email, &provider).await)
+}
+
+/// Conecta uma conta iCloud/IMAP: testa a entrada no IMAP e no SMTP e só então guarda
+/// a senha de app nas Chaves do sistema. Erro vem como frase pronta para mostrar.
+#[tauri::command]
+async fn imap_connect(state: State<'_, AppState>, config: ImapConfig, password: String) -> Result<AccountInfo, String> {
+    let account = state.imap.connect(&config, &password).await.map_err(|e| e.to_string())?;
+    Ok(AccountInfo { email: account.email, provider: account.provider, messages_total: None })
 }
 
 #[tauri::command]
 async fn inbox_fetch(state: State<'_, AppState>, email: String, tz_offset_min: i32) -> Result<Vec<MessageSummary>, String> {
+    if state.imap.is_imap(&email) {
+        return state.imap.folder(&email, "inbox", 30, now_ms(), tz_offset_min).await.map_err(imap_err);
+    }
     google(&state)?.inbox(&email, 30, now_ms(), tz_offset_min).await.map_err(err)
 }
 
 #[tauri::command]
 async fn folder_fetch(state: State<'_, AppState>, email: String, folder: String, tz_offset_min: i32) -> Result<Vec<MessageSummary>, String> {
+    if state.imap.is_imap(&email) {
+        return state.imap.folder(&email, &folder, 30, now_ms(), tz_offset_min).await.map_err(imap_err);
+    }
     google(&state)?.folder(&email, &folder, 30, now_ms(), tz_offset_min).await.map_err(err)
 }
 
 #[tauri::command]
 async fn folder_counts(state: State<'_, AppState>, email: String) -> Result<std::collections::HashMap<String, u64>, String> {
+    if state.imap.is_imap(&email) {
+        return state.imap.counts(&email).await.map_err(imap_err);
+    }
     google(&state)?.counts(&email).await.map_err(err)
 }
 
 /// Nome e foto da conta; sem o escopo "profile" (contas antigas) devolve vazio em vez de erro.
+/// Contas IMAP: só o nome informado ao conectar.
 #[tauri::command]
 async fn account_profile(state: State<'_, AppState>, email: String) -> Result<quill_core::gmail::UserInfo, String> {
+    if state.imap.is_imap(&email) {
+        return Ok(state.imap.profile(&email));
+    }
     Ok(google(&state)?.profile(&email).await.unwrap_or_default())
 }
 
 #[tauri::command]
 async fn message_body(state: State<'_, AppState>, email: String, id: String) -> Result<quill_core::gmail::MessageBody, String> {
+    if state.imap.is_imap(&email) {
+        return state.imap.body(&email, &id).await.map_err(imap_err);
+    }
     google(&state)?.body(&email, &id).await.map_err(err)
 }
 
 #[tauri::command]
 async fn message_mark_read(state: State<'_, AppState>, email: String, id: String) -> Result<(), String> {
+    if state.imap.is_imap(&email) {
+        return state.imap.mark_read(&email, &id).await.map_err(imap_err);
+    }
     google(&state)?.mark_read(&email, &id).await.map_err(err)
 }
 
@@ -119,25 +172,99 @@ async fn message_send(state: State<'_, AppState>, message: quill_core::gmail::Ou
     if message.to.is_empty() && message.cc.is_empty() && message.bcc.is_empty() {
         return Err("Coloque pelo menos um destinatário.".into());
     }
+    if state.imap.is_imap(&message.from) {
+        return state.imap.send(&message).await.map_err(imap_err);
+    }
     google(&state)?.send(&message, thread_id.as_deref()).await.map_err(err)
+}
+
+/// Cria ou atualiza o rascunho no Gmail (salvo sozinho enquanto a pessoa escreve).
+#[tauri::command]
+async fn draft_save(
+    state: State<'_, AppState>,
+    message: quill_core::gmail::OutgoingMessage,
+    draft_id: Option<String>,
+    thread_id: Option<String>,
+) -> Result<String, String> {
+    if state.imap.is_imap(&message.from) {
+        return state.imap.draft_save(&message, draft_id.as_deref()).await.map_err(imap_err);
+    }
+    google(&state)?.draft_save(&message, draft_id.as_deref(), thread_id.as_deref()).await.map_err(err)
+}
+
+#[tauri::command]
+async fn draft_delete(state: State<'_, AppState>, email: String, draft_id: String) -> Result<(), String> {
+    if state.imap.is_imap(&email) {
+        return state.imap.draft_delete(&email, &draft_id).await.map_err(imap_err);
+    }
+    google(&state)?.draft_delete(&email, &draft_id).await.map_err(err)
+}
+
+#[tauri::command]
+async fn draft_get(state: State<'_, AppState>, email: String, message_id: String) -> Result<quill_core::gmail::DraftContent, String> {
+    if state.imap.is_imap(&email) {
+        return state.imap.draft_get(&email, &message_id).await.map_err(imap_err);
+    }
+    google(&state)?.draft_get(&email, &message_id).await.map_err(err)
 }
 
 /// Arquivar, spam, estrela, não lido, lixeira… (ver GoogleSession::act).
 #[tauri::command]
 async fn message_action(state: State<'_, AppState>, email: String, id: String, action: String) -> Result<(), String> {
+    if state.imap.is_imap(&email) {
+        return state.imap.act(&email, &id, &action).await.map_err(imap_err);
+    }
     google(&state)?.act(&email, &id, &action).await.map_err(err)
 }
 
 /// Agendas e eventos de uma conta Google entre duas datas (RFC 3339).
 #[tauri::command]
 async fn calendar_agenda(state: State<'_, AppState>, email: String, time_min: String, time_max: String) -> Result<quill_core::session::Agenda, String> {
+    if state.imap.is_imap(&email) {
+        // agenda do iCloud (CalDAV) ainda não: a conta só não mostra eventos
+        return Ok(quill_core::session::Agenda { calendars: Vec::new(), events: Vec::new() });
+    }
     google(&state)?.agenda(&email, &time_min, &time_max).await.map_err(err)
+}
+
+/// Sugestões de destinatário (contatos do Google e quem aparece nos enviados) de uma conta.
+#[tauri::command]
+async fn contacts_list(state: State<'_, AppState>, email: String) -> Result<Vec<quill_core::contacts::Contact>, String> {
+    if state.imap.is_imap(&email) {
+        return Ok(Vec::new());
+    }
+    google(&state)?.contacts(&email).await.map_err(err)
 }
 
 /// Responde a um convite: accepted, declined ou tentative.
 #[tauri::command]
 async fn calendar_rsvp(state: State<'_, AppState>, email: String, calendar_id: String, event_id: String, status: String) -> Result<(), String> {
+    if state.imap.is_imap(&email) {
+        return Err(IMAP_NO_CALENDAR.into());
+    }
     google(&state)?.rsvp(&email, &calendar_id, &event_id, &status).await.map_err(err)
+}
+
+#[tauri::command]
+async fn calendar_update(
+    state: State<'_, AppState>,
+    email: String,
+    calendar_id: String,
+    event_id: String,
+    patch: quill_core::calendar::EventPatch,
+) -> Result<quill_core::calendar::CalEvent, String> {
+    if state.imap.is_imap(&email) {
+        return Err(IMAP_NO_CALENDAR.into());
+    }
+    google(&state)?.update_event(&email, &calendar_id, &event_id, &patch).await.map_err(err)
+}
+
+#[tauri::command]
+async fn calendar_delete(state: State<'_, AppState>, email: String, calendar_id: String, event_id: String) -> Result<(), String> {
+    if state.imap.is_imap(&email) {
+        return Err(IMAP_NO_CALENDAR.into());
+    }
+    google(&state)?.delete_event(&email, &calendar_id, &event_id).await.map_err(err)
 }
 
 #[tauri::command]
@@ -147,7 +274,18 @@ async fn calendar_create(
     calendar_id: String,
     event: quill_core::calendar::NewEvent,
 ) -> Result<quill_core::calendar::CalEvent, String> {
+    if state.imap.is_imap(&email) {
+        return Err(IMAP_NO_CALENDAR.into());
+    }
     google(&state)?.create_event(&email, &calendar_id, &event).await.map_err(err)
+}
+
+/// Conteúdo de um anexo, pela conta certa (Google ou IMAP).
+async fn attachment_bytes(state: &AppState, email: &str, message_id: &str, attachment_id: &str) -> Result<Vec<u8>, String> {
+    if state.imap.is_imap(email) {
+        return state.imap.attachment(email, message_id, attachment_id).await.map_err(imap_err);
+    }
+    google(state)?.attachment(email, message_id, attachment_id).await.map_err(err)
 }
 
 /// Baixa um anexo e faz o que a pessoa pediu:
@@ -163,7 +301,7 @@ async fn attachment_get(
     name: String,
     action: String,
 ) -> Result<String, String> {
-    let bytes = google(&state)?.attachment(&email, &message_id, &attachment_id).await.map_err(err)?;
+    let bytes = attachment_bytes(&state, &email, &message_id, &attachment_id).await?;
     let dir = match action.as_str() {
         "preview" => app.path().app_cache_dir().map_err(|e| e.to_string())?.join("previa"),
         _ => app.path().download_dir().map_err(|e| e.to_string())?,
@@ -183,10 +321,32 @@ async fn attachment_get(
     Ok(path.to_string_lossy().into_owned())
 }
 
+/// O Mac pode pedir Touch ID (ou a senha do Mac)?
+#[tauri::command]
+fn touch_id_available() -> bool {
+    touchid::available()
+}
+
+/// Pede o Touch ID. true = confirmado, false = cancelado.
+#[tauri::command]
+async fn touch_id_authenticate(reason: String) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || touchid::authenticate(&reason))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// Abre um link de e-mail ou evento no navegador (só http, https e mailto).
 #[tauri::command]
 fn open_link(url: String) -> Result<(), String> {
     quill_core::files::open_link(&url)
+}
+
+/// Conteúdo de um anexo em base64 (para a prévia dentro do app: imagens, PDF, texto, vídeo).
+#[tauri::command]
+async fn attachment_data(state: State<'_, AppState>, email: String, message_id: String, attachment_id: String) -> Result<String, String> {
+    use base64::Engine;
+    let bytes = attachment_bytes(&state, &email, &message_id, &attachment_id).await?;
+    Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
 }
 
 /// Mostra um arquivo baixado pelo Quill na pasta (Finder no Mac). Só aceita a pasta Downloads.
@@ -205,11 +365,13 @@ pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
+            let accounts_file = data_dir.join("accounts.json");
             let google = match (option_env!("QUILL_GOOGLE_CLIENT_ID"), option_env!("QUILL_GOOGLE_CLIENT_SECRET")) {
-                (Some(id), Some(secret)) => Some(GoogleSession::new(id, secret, data_dir.join("accounts.json"))),
+                (Some(id), Some(secret)) => Some(GoogleSession::new(id, secret, accounts_file.clone())),
                 _ => None,
             };
-            app.manage(AppState { google });
+            let imap = ImapSession::new(accounts_file.clone());
+            app.manage(AppState { google, imap, accounts_file });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -219,6 +381,8 @@ pub fn run() {
             google_sign_in_url,
             accounts_list,
             account_remove,
+            imap_guess,
+            imap_connect,
             inbox_fetch,
             folder_fetch,
             folder_counts,
@@ -227,12 +391,21 @@ pub fn run() {
             message_mark_read,
             message_send,
             message_action,
+            draft_save,
+            draft_delete,
+            draft_get,
             calendar_agenda,
+            contacts_list,
             calendar_rsvp,
             calendar_create,
+            calendar_update,
+            calendar_delete,
             attachment_get,
+            attachment_data,
             reveal_download,
-            open_link
+            open_link,
+            touch_id_available,
+            touch_id_authenticate
         ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o Quill");

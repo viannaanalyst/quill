@@ -7,13 +7,20 @@ use std::path::PathBuf;
 #[serde(rename_all = "camelCase")]
 pub struct Account {
     pub email: String,
-    /// "google" por enquanto; depois "microsoft", "icloud", "imap"
+    /// "google", "icloud" ou "imap" (depois "microsoft")
     pub provider: String,
+    /// servidores das contas iCloud/IMAP (a senha fica no cofre do sistema, nunca aqui)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub imap: Option<crate::imap::ImapConfig>,
 }
 
 impl Account {
     pub fn google(email: &str) -> Self {
-        Self { email: email.to_lowercase(), provider: "google".into() }
+        Self { email: email.to_lowercase(), provider: "google".into(), imap: None }
+    }
+
+    pub fn imap(config: crate::imap::ImapConfig) -> Self {
+        Self { email: config.email.to_lowercase(), provider: config.provider.clone(), imap: Some(config) }
     }
 }
 
@@ -45,12 +52,19 @@ impl AccountStore {
         std::fs::rename(tmp, &self.path)
     }
 
+    /// Acrescenta a conta; se o e-mail já existir, troca pelos dados novos (ex.: servidores corrigidos).
     pub fn add(&self, account: Account) -> std::io::Result<()> {
         let mut all = self.list();
-        if !all.iter().any(|a| a.email.eq_ignore_ascii_case(&account.email)) {
-            all.push(account);
+        match all.iter_mut().find(|a| a.email.eq_ignore_ascii_case(&account.email)) {
+            Some(existing) => *existing = account,
+            None => all.push(account),
         }
         self.save(&all)
+    }
+
+    /// Dados de uma conta pelo e-mail.
+    pub fn get(&self, email: &str) -> Option<Account> {
+        self.list().into_iter().find(|a| a.email.eq_ignore_ascii_case(email))
     }
 
     pub fn remove(&self, email: &str) -> std::io::Result<()> {
@@ -89,6 +103,39 @@ mod tests {
         store.add(Account::google("a@x.com")).unwrap();
         store.add(Account::google("A@x.com")).unwrap();
         assert_eq!(store.list().len(), 1);
+    }
+
+    fn icloud() -> crate::imap::ImapConfig {
+        crate::imap::config_from_preset("ana@icloud.com", "icloud", &crate::imap::ICLOUD)
+    }
+
+    #[test]
+    fn imap_account_keeps_servers_and_provider() {
+        let path = temp_file("imap");
+        AccountStore::new(path.clone()).add(Account::imap(icloud())).unwrap();
+        let back = AccountStore::new(path).list();
+        assert_eq!(back[0].provider, "icloud");
+        assert_eq!(back[0].imap.as_ref().unwrap().imap_host, "imap.mail.me.com");
+    }
+
+    #[test]
+    fn json_never_has_a_password_field_and_old_files_still_load() {
+        let json = serde_json::to_string(&Account::imap(icloud())).unwrap();
+        assert!(!json.to_lowercase().contains("password"));
+        let google: Account = serde_json::from_str(r#"{"email":"a@x.com","provider":"google"}"#).unwrap();
+        assert_eq!(google, Account::google("a@x.com"));
+        assert!(!serde_json::to_string(&google).unwrap().contains("imap"));
+    }
+
+    #[test]
+    fn adding_again_replaces_the_servers() {
+        let store = AccountStore::new(temp_file("replace"));
+        store.add(Account::imap(icloud())).unwrap();
+        let mut changed = icloud();
+        changed.smtp_port = 465;
+        store.add(Account::imap(changed)).unwrap();
+        assert_eq!(store.list().len(), 1);
+        assert_eq!(store.list()[0].imap.as_ref().unwrap().smtp_port, 465);
     }
 
     #[test]

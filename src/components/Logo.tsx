@@ -6,6 +6,7 @@ import nubank from "../assets/logos/nubank.svg";
 import vercel from "../assets/logos/vercel.svg";
 import googleCalendar from "../assets/logos/google-calendar.svg";
 import supabase from "../assets/logos/supabase.svg";
+import mail from "../assets/logos/mail.svg";
 
 const LOGOS = {
   gmail,
@@ -16,6 +17,8 @@ const LOGOS = {
   vercel,
   "google-calendar": googleCalendar,
   supabase,
+  /** e-mail genérico (contas IMAP) */
+  mail,
 } as const;
 
 export type LogoName = keyof typeof LOGOS;

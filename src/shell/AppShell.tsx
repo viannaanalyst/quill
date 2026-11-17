@@ -8,6 +8,8 @@ import { isTauri } from "../lib/platform";
 import { navigate, useStore, type View } from "../state/store";
 import Inbox from "../inbox/Inbox";
 import { Toasts } from "../components/Toasts";
+import { UndoSendBar } from "../components/UndoSendBar";
+import { AttachmentPreview } from "../components/AttachmentPreview";
 import { usePalette } from "../components/paletteState";
 import { useShortcuts } from "./shortcuts";
 
@@ -72,7 +74,7 @@ function RailButton({ item, view }: { item: NavItem; view: View }) {
       aria-current={active ? "page" : undefined}
       onClick={() => navigate(item.to)}
     >
-      <item.icon size={19} aria-hidden />
+      <item.icon size={16} aria-hidden />
       {item.badge && <span className="badge" aria-hidden />}
     </button>
   );
@@ -129,6 +131,8 @@ export default function AppShell({ onRestartOnboarding }: { onRestartOnboarding:
       </main>
       <PaletteHost />
       <Toasts />
+      <UndoSendBar />
+      <AttachmentPreview />
     </div>
   );
 }

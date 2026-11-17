@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { api, friendlyError, NEEDS_LOGIN, type AccountInfo, type AttachmentInfo, type MessageAction, type MessageSummaryDto, type OutgoingMessage } from "../lib/api";
+import { api, friendlyError, NEEDS_LOGIN, type AccountInfo, type AttachmentInfo, type ImapConfig, type MessageAction, type MessageSummaryDto, type OutgoingMessage } from "../lib/api";
 import { isTauri } from "../lib/platform";
 import { ACCOUNTS, MESSAGES } from "../inbox/sampleData";
 import type { Account, Message } from "../inbox/types";
@@ -100,14 +100,21 @@ export function accountName(email: string) {
   return isGmail ? local : domain.split(".")[0];
 }
 
-function toAccount(info: AccountInfo, index: number, unread: number): Account {
+/** Rótulo e logo do serviço da conta (Gmail/Workspace, iCloud ou IMAP genérico). */
+export function providerOf(info: Pick<AccountInfo, "email" | "provider">): { label: string; logo: LogoName } {
+  if (info.provider === "icloud") return { label: "iCloud", logo: "icloud" };
+  if (info.provider === "imap") return { label: "IMAP", logo: "mail" };
   const domain = info.email.split("@")[1] ?? "";
   const isGmail = domain === "gmail.com" || domain === "googlemail.com";
-  const logo: LogoName = domain.includes("inchurch") ? "inchurch" : "gmail";
+  return { label: isGmail ? "Gmail" : "Workspace", logo: domain.includes("inchurch") ? "inchurch" : "gmail" };
+}
+
+function toAccount(info: AccountInfo, index: number, unread: number): Account {
+  const { label, logo } = providerOf(info);
   return {
     id: info.email,
     name: accountName(info.email),
-    provider: isGmail ? "Gmail" : "Workspace",
+    provider: label,
     logo,
     color: COLORS[index % COLORS.length],
     unread,
@@ -226,6 +233,14 @@ export async function loadMailbox(currentFolder: FolderId = "inbox") {
 /** Entra com uma conta Google pelo navegador e recarrega tudo. */
 export async function signInWithGoogle(loginHint?: string): Promise<AccountInfo> {
   const account = await api.googleSignIn(loginHint);
+  set({ connected: [...state.connected.filter((a) => a.email !== account.email), account] });
+  void loadMailbox();
+  return account;
+}
+
+/** Conecta uma conta iCloud ou IMAP (testa a senha no servidor antes) e recarrega tudo. */
+export async function connectImap(config: ImapConfig, password: string): Promise<AccountInfo> {
+  const account = await api.imapConnect(config, password);
   set({ connected: [...state.connected.filter((a) => a.email !== account.email), account] });
   void loadMailbox();
   return account;

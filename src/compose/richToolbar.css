@@ -1,0 +1,315 @@
+/* Barra de formatação do Escrever (como a do Gmail). Prefixo cp-. */
+
+.cp-format {
+  gap: 1px;
+  flex-wrap: wrap;
+  row-gap: 2px;
+  padding: 7px 12px;
+  min-height: 46px;
+}
+.cp-format .vsep {
+  margin: 0 5px;
+}
+.cp-format .btn.ic.cp-tb {
+  width: 30px;
+  height: 30px;
+  color: var(--ink2);
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease,
+    transform 0.15s ease;
+}
+.cp-format .btn.ic.cp-tb:hover,
+.cp-pop .btn.ic.cp-tb:hover {
+  background: var(--gfill);
+  color: var(--ink);
+}
+/* ligado (negrito, lista…) ou com a janelinha aberta */
+.cp-tb[aria-pressed="true"],
+.cp-tb[data-active],
+.cp-tb[data-state="open"] {
+  background: var(--surface2) !important;
+  color: var(--ink) !important;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.cp-tb-select {
+  display: inline-flex;
+}
+.cp-font-select {
+  width: 124px;
+}
+.cp-size-select {
+  width: 98px;
+}
+.cp-font-select > span:first-child,
+.cp-size-select > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* janelinhas */
+.cp-pop {
+  padding: 12px;
+}
+.cp-pop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.cp-pop-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink3);
+}
+.cp-palette + .cp-palette {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line2);
+}
+.cp-nocolor {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--ink2);
+  box-shadow: inset 0 0 0 1px var(--line);
+  transition: background-color 0.12s ease;
+}
+.cp-nocolor:hover {
+  background: var(--surface2);
+}
+.cp-swatches {
+  display: grid;
+  grid-template-columns: repeat(8, 22px);
+  gap: 7px;
+}
+.cp-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+  transition: transform 0.12s ease;
+}
+.cp-swatch:hover {
+  transform: scale(1.12);
+}
+.cp-swatch[aria-pressed="true"] {
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.12),
+    0 0 0 2px var(--surface),
+    0 0 0 3.5px var(--ink2);
+}
+
+.cp-align-pop {
+  padding: 5px;
+}
+.cp-align-row {
+  display: flex;
+  gap: 2px;
+}
+.cp-align-row .btn.ic.cp-tb {
+  width: 32px;
+  height: 32px;
+  color: var(--ink2);
+}
+
+.cp-menu {
+  padding: 6px;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+}
+.cp-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  color: var(--ink);
+  text-align: left;
+  transition:
+    background-color 0.12s ease,
+    transform 0.14s ease;
+}
+.cp-menu-item svg {
+  color: var(--ink2);
+  flex: none;
+}
+.cp-menu-item:hover,
+.cp-menu-item:focus-visible {
+  background: var(--surface2);
+}
+.cp-menu-item:active {
+  transform: scale(0.99);
+}
+.cp-menu-item[aria-pressed="true"] {
+  font-weight: 600;
+}
+.cp-menu-item[aria-pressed="true"] svg {
+  color: var(--ink);
+}
+.cp-menu-hint {
+  margin-left: auto;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink3);
+}
+.cp-menu-sep {
+  height: 1px;
+  background: var(--line2);
+  margin: 5px 4px;
+}
+
+.cp-emoji-pop {
+  padding: 8px;
+}
+.cp-emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 34px);
+  gap: 2px;
+}
+.cp-emoji {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  font-size: 20px;
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  transition:
+    background-color 0.12s ease,
+    transform 0.12s ease;
+}
+.cp-emoji:hover,
+.cp-emoji:focus-visible {
+  background: var(--surface2);
+  transform: scale(1.1);
+}
+
+.cp-link-pop {
+  width: 320px;
+  padding: 14px;
+}
+.cp-link-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink3);
+  margin: 0 0 6px 2px;
+}
+.cp-link-input + .cp-link-label {
+  margin-top: 12px;
+}
+.cp-link-input {
+  height: 36px;
+  width: 100%;
+  border-radius: 999px;
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--line);
+  background: var(--panel);
+  padding: 0 14px;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--ink);
+  outline: 0;
+  user-select: text;
+  transition: box-shadow 0.15s ease;
+}
+.cp-link-input:focus {
+  box-shadow: inset 0 0 0 1.5px var(--blue);
+}
+.cp-link-input[aria-invalid="true"] {
+  box-shadow: inset 0 0 0 1.5px var(--danger, #c2453d);
+}
+.cp-link-err {
+  font-size: 12.5px;
+  color: var(--danger, #c2453d);
+  margin: 6px 0 0 4px;
+}
+.cp-link-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 14px;
+}
+.cp-link-remove {
+  margin-right: auto;
+}
+
+/* aviso do rascunho */
+.cp-save-error {
+  color: var(--danger, #c2453d);
+  cursor: default;
+  border-radius: 999px;
+}
+.cp-save-error svg {
+  color: var(--danger, #c2453d);
+}
+.saved-note .spinning {
+  display: flex;
+}
+.saved-note .cp-saving {
+  color: var(--ink3);
+}
+.saved-note .cp-saving svg {
+  color: inherit;
+}
+
+/* o que a barra cria dentro do texto */
+.cp-body ol {
+  margin: 8px 0 0 24px;
+}
+.cp-body ul ul,
+.cp-body ol ol,
+.cp-body ul ol,
+.cp-body ol ul {
+  margin-top: 3px;
+}
+.cp-body blockquote {
+  margin: 8px 0 8px 0.8ex;
+  padding-left: 1ex;
+  border-left: 2px solid var(--line);
+  color: var(--ink2);
+}
+.cp-body pre {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface2);
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 13.5px;
+  white-space: pre-wrap;
+}
+.cp-body code {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 0.9em;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--surface2);
+}
+.cp-body pre code {
+  padding: 0;
+  background: none;
+}
+.cp-body hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 14px 0;
+}
+.cp-body a {
+  color: var(--blue);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.cp-body img {
+  max-width: 100%;
+  height: auto;
+}

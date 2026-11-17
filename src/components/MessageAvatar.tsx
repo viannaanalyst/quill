@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Logo } from "./Logo";
 import { usePref } from "../lib/usePref";
 import type { Message } from "../inbox/types";
+import { md5 } from "../lib/md5";
 
 /** Provedores de e-mail pessoal: aí o ícone do domínio não diz quem é a pessoa, então ficam as iniciais. */
 const PERSONAL = new Set([
@@ -18,15 +19,42 @@ export function senderDomain(email: string | undefined): string | null {
   return parts.slice(-keep).join(".");
 }
 
+/** Endereços que já falharam nesta sessão (não tenta de novo a cada lista). */
+const failedUrls = new Set<string>();
+
 /**
- * Avatar do remetente: o logo da empresa (pelo domínio do e-mail), o logo do serviço nos exemplos
- * ou as iniciais coloridas. Dá para desligar os logos em Ajustes → Privacidade.
+ * Fontes da foto/logo, em ordem: Gravatar (foto da pessoa ou da marca), ícone do site pelo Google
+ * (domínio principal e o completo) e o da DuckDuckGo. Para Gmail/Hotmail etc. só o Gravatar.
+ */
+export function avatarSources(email: string | undefined): string[] {
+  const clean = email?.trim().toLowerCase();
+  if (!clean || !clean.includes("@")) return [];
+  const out = [`https://www.gravatar.com/avatar/${md5(clean)}?d=404&s=128`];
+  const main = senderDomain(clean);
+  const full = clean.split("@")[1];
+  if (main) {
+    out.push(`https://www.google.com/s2/favicons?domain=${encodeURIComponent(main)}&sz=128`);
+    if (full !== main) out.push(`https://www.google.com/s2/favicons?domain=${encodeURIComponent(full)}&sz=128`);
+    out.push(`https://icons.duckduckgo.com/ip3/${encodeURIComponent(main)}.ico`);
+  }
+  return out.filter((u) => !failedUrls.has(u));
+}
+
+/**
+ * Avatar do remetente: foto do Gravatar ou logo da empresa (pelo domínio do e-mail), o logo do serviço
+ * nos exemplos ou as iniciais coloridas. Dá para desligar em Ajustes → Privacidade.
  */
 export function MessageAvatar({ message: m, size }: { message: Pick<Message, "avatar"> & { fromEmail?: string }; size?: number }) {
   const [logos] = usePref("senderLogos", true);
-  const [failed, setFailed] = useState<string | null>(null);
+  const [step, setStep] = useState(0);
+  const [email, setEmail] = useState(m.fromEmail);
+  if (email !== m.fromEmail) {
+    setEmail(m.fromEmail);
+    setStep(0);
+  }
   const style = size ? { width: size, height: size, fontSize: Math.max(8, size * 0.34) } : undefined;
-  const domain = logos ? senderDomain(m.fromEmail) : null;
+  const sources = logos && m.avatar.kind !== "logo" ? avatarSources(m.fromEmail) : [];
+  const src = sources[step];
 
   if (m.avatar.kind === "logo") {
     return (
@@ -35,22 +63,25 @@ export function MessageAvatar({ message: m, size }: { message: Pick<Message, "av
       </span>
     );
   }
-  if (domain && failed !== domain) {
-    const px = Math.round((size ?? 40) * 0.62);
+  if (src) {
+    const isPhoto = src.includes("gravatar.com");
+    const px = isPhoto ? (size ?? 40) : Math.round((size ?? 40) * 0.62);
+    const fail = () => {
+      failedUrls.add(src);
+      setStep((n) => n + 1);
+    };
     return (
-      <span className="av logo av-site" style={style} aria-hidden>
+      <span className={`av logo av-site${isPhoto ? " av-photo" : ""}`} style={style} aria-hidden>
         <img
-          src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=128`}
+          src={src}
           alt=""
           width={px}
           height={px}
           referrerPolicy="no-referrer"
           draggable={false}
-          onLoad={(e) => {
-            // o Google devolve um globo genérico de 16px quando não acha o ícone: aí ficam as iniciais
-            if (e.currentTarget.naturalWidth <= 16) setFailed(domain);
-          }}
-          onError={() => setFailed(domain)}
+          // ícone genérico de 16px (o "globo" quando o site não tem ícone): passa para a próxima fonte
+          onLoad={(e) => e.currentTarget.naturalWidth <= 16 && fail()}
+          onError={fail}
         />
       </span>
     );

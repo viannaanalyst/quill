@@ -15,13 +15,14 @@ export function Seg<T extends string | number>({
 }: {
   value: T;
   onChange: (v: T) => void;
-  options: { value: T; label: string }[];
+  options: { value: T; label: string; icon?: ReactNode }[];
   label: string;
 }) {
   return (
-    <SliderGroup className="segmented" role="group" label={label} activeKey={String(value)}>
+    <SliderGroup className="segmented st-seg" role="group" label={label} activeKey={String(value)}>
       {options.map((o) => (
         <button key={String(o.value)} aria-pressed={value === o.value} onClick={() => onChange(o.value)}>
+          {o.icon}
           {o.label}
         </button>
       ))}

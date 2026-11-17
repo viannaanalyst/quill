@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState } from "react";
-import { devParams } from "./lib/platform";
+import { devParams, isTauri } from "./lib/platform";
+import { LockScreen } from "./components/LockScreen";
 import { getPref, setPref } from "./lib/storage";
 import { navigate, type View } from "./state/store";
 import { useMailbox } from "./state/mailbox";
@@ -32,6 +33,8 @@ function initialScreen(): "onboarding" | "app" {
 
 export default function App() {
   const [screen, setScreen] = useState(initialScreen);
+  // Touch ID ligado em Ajustes → Privacidade: o app abre bloqueado (só no app de verdade)
+  const [locked, setLocked] = useState(() => isTauri && getPref("touchId", false) && initialScreen() === "app");
   // "Rever o onboarding" nos Ajustes: mostra mesmo com conta conectada
   const [replay, setReplay] = useState(false);
   const hasAccount = useMailbox((s) => s.connected.length > 0);
@@ -47,6 +50,8 @@ export default function App() {
       setScreen("app");
     }
   }
+
+  if (locked) return <LockScreen onUnlock={() => setLocked(false)} />;
 
   return (
     <Suspense fallback={null}>

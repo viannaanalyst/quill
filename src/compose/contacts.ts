@@ -10,6 +10,8 @@ export interface Contact {
   /** grupo de pessoas (ex.: Diretoria) */
   group?: number;
   recent?: string;
+  /** foto do contato no Google */
+  photo?: string | null;
 }
 
 export const CONTACTS: Contact[] = [

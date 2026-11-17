@@ -1,17 +1,13 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import "./calendar.css";
 import { SliderGroup } from "../components/SliderGroup";
-import { Dot, Select } from "../components/Select";
-import { DatePicker, TimeSelect } from "../components/DatePicker";
 import { TopBar } from "../components/TopBar";
 import { toast } from "../components/Toasts";
 import { EventRsvpButtons, useEventRsvp } from "../components/EventRsvp";
 import { isTauri } from "../lib/platform";
-import { initialsOf } from "../components/MyAvatar";
+import { EventForm, PersonAvatar, QuickCreate, useContactPhotos } from "./EventForm";
 import {
-  Bell,
   CalendarDays,
-  CalendarPlus,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -33,8 +29,8 @@ import { useMailbox } from "../state/mailbox";
 import { navigate, type CalendarMode } from "../state/store";
 import {
   addDays,
-  createEvent,
-  editableCalendars,
+  canEdit,
+  deleteEvent,
   eventsOnDay,
   loadRange,
   now,
@@ -107,7 +103,8 @@ function useHourGrid() {
 function useEscape(onClose: () => void, active: boolean) {
   useEffect(() => {
     if (!active) return;
-    const onKey = (ev: KeyboardEvent) => ev.key === "Escape" && onClose();
+    // um menu aberto ou o formulário de edição já tratou o Esc (defaultPrevented): não fecha o cartão
+    const onKey = (ev: KeyboardEvent) => ev.key === "Escape" && !ev.defaultPrevented && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [active, onClose]);
@@ -469,12 +466,6 @@ function NowLine({ clock }: { clock: number }) {
 }
 
 const TONES = ["peach", "neutral"] as const;
-/** Iniciais do convidado; as minhas vêm do perfil da conta (como no avatar do canto). */
-function useInitials() {
-  const profiles = useMailbox((s) => s.profiles);
-  return (p: Attendee) =>
-    p.isSelf ? initialsOf(p.email || undefined, profiles[p.email]?.name) : initialsOf(p.email || undefined, p.name !== p.email ? p.name : undefined);
-}
 function tone(a: Attendee) {
   if (a.isSelf) return "blue";
   if (a.organizer) return "neutral";
@@ -491,16 +482,146 @@ const STATUS_TEXT: Record<RsvpStatus, string> = {
   needsAction: "Sem resposta",
 };
 
-function Avatars({ people }: { people: Attendee[] }) {
-  const initials = useInitials();
+/** Avatar do convidado: a minha foto vem do perfil da conta; a dos outros, dos contatos. */
+function AttendeeAvatar({ p, photos, size }: { p: Attendee; photos: Map<string, string>; size: number }) {
+  const profiles = useMailbox((s) => s.profiles);
+  const mine = p.isSelf ? profiles[p.email] : undefined;
+  const photo = p.email ? (mine?.picture ?? photos.get(p.email.toLowerCase())) : undefined;
+  return <PersonAvatar name={mine?.name ?? p.name} email={p.email || undefined} photo={photo} size={size} tone={tone(p)} />;
+}
+
+/** Situação de cada convidado: confirmou (✓), recusou (×), talvez, sem resposta, organizador. */
+function AttendeeStatus({ p }: { p: Attendee }) {
+  const ok = p.status === "accepted" && !p.organizer;
+  const no = p.status === "declined" && !p.organizer;
   return (
-    <span className="cal-avatars" aria-hidden>
-      {people.slice(0, 3).map((p) => (
-        <span key={p.email || p.name} className={`av ${tone(p)}`}>
-          {initials(p)}
-        </span>
-      ))}
+    <span className={`cal-person-status${ok ? " ok" : ""}${no ? " no" : ""}`}>
+      {ok && <CircleCheck size={13} aria-hidden />}
+      {no && <X size={13} aria-hidden />}
+      {p.organizer ? "Organizador" : STATUS_TEXT[p.status]}
     </span>
+  );
+}
+
+/** Lista de convidados com a resposta de cada um; no cartão pequeno, mostra os primeiros e "Ver todos". */
+function PeopleList({ people, compact }: { people: Attendee[]; compact?: boolean }) {
+  const photos = useContactPhotos();
+  const [all, setAll] = useState(false);
+  const limit = compact && !all ? 4 : people.length;
+  const listId = useId();
+  if (!compact) {
+    return (
+      <>
+        {people.map((p) => (
+          <div key={p.email || p.name} className="cal-person">
+            <AttendeeAvatar p={p} photos={photos} size={28} />
+            <span className="cal-person-name">{displayName(p)}</span>
+            <AttendeeStatus p={p} />
+          </div>
+        ))}
+      </>
+    );
+  }
+  return (
+    <>
+      <ul className="cal-people" id={listId} aria-label="Convidados">
+        {people.slice(0, limit).map((p) => (
+          <li key={p.email || p.name}>
+            <AttendeeAvatar p={p} photos={photos} size={22} />
+            <span className="cal-person-name">{displayName(p)}</span>
+            <AttendeeStatus p={p} />
+          </li>
+        ))}
+      </ul>
+      {people.length > 4 && (
+        <button type="button" className="cal-people-more" aria-expanded={all} aria-controls={listId} onClick={() => setAll((v) => !v)}>
+          {all ? "Mostrar menos" : `Ver todos (${people.length})`}
+        </button>
+      )}
+    </>
+  );
+}
+
+/* ---------------- editar e apagar ---------------- */
+
+type CardMode = "view" | "edit" | "delete";
+
+/** Modo do cartão (ver, editar, confirmar apagar); ao voltar, o foco volta para o botão que abriu. */
+function useCardMode() {
+  const [mode, setMode] = useState<CardMode>("view");
+  const editRef = useRef<HTMLButtonElement>(null);
+  const deleteRef = useRef<HTMLButtonElement>(null);
+  const last = useRef<CardMode>("view");
+  useEffect(() => {
+    if (mode === "view" && last.current !== "view") (last.current === "edit" ? editRef : deleteRef).current?.focus();
+    last.current = mode;
+  }, [mode]);
+  return { mode, setMode, editRef, deleteRef };
+}
+
+/** Lápis e lixeira; só aparecem quando dá para mudar o evento (sou o organizador e a agenda permite). */
+function EditButtons({ e, card }: { e: AgendaEvent; card: ReturnType<typeof useCardMode> }) {
+  if (!canEdit(e)) return null;
+  return (
+    <>
+      <button ref={card.editRef} type="button" className="btn ic" aria-label="Editar evento" data-tip="Editar" onClick={() => card.setMode("edit")}>
+        <Pencil size={15} aria-hidden />
+      </button>
+      <button
+        ref={card.deleteRef}
+        type="button"
+        className="btn ic"
+        aria-label="Apagar evento"
+        data-tip="Apagar"
+        aria-expanded={card.mode === "delete"}
+        onClick={() => card.setMode(card.mode === "delete" ? "view" : "delete")}
+      >
+        <Trash2 size={15} aria-hidden />
+      </button>
+    </>
+  );
+}
+
+/** Confirmação de apagar, dentro do próprio cartão. */
+function DeleteConfirm({ e, onCancel }: { e: AgendaEvent; onCancel: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const id = useId();
+  const hasGuests = e.attendees.some((a) => !a.isSelf);
+  return (
+    <div
+      className="cal-confirm"
+      role="group"
+      aria-labelledby={id}
+      onKeyDown={(ev) => {
+        if (ev.key === "Escape" && !ev.defaultPrevented) {
+          ev.preventDefault();
+          onCancel();
+        }
+      }}
+    >
+      <p id={id}>Apagar este evento?{hasGuests ? " Os convidados serão avisados." : ""}</p>
+      <div className="cal-confirm-actions">
+        <button type="button" className="btn glass sm" autoFocus onClick={onCancel}>
+          Cancelar
+        </button>
+        <button
+          type="button"
+          className="btn solid sm danger-solid"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            // some da tela na hora; se der erro, volta e o aviso aparece
+            if (!(await deleteEvent(e.key))) {
+              setBusy(false);
+              onCancel();
+            }
+          }}
+        >
+          <Trash2 size={14} aria-hidden />
+          Apagar
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -631,19 +752,16 @@ function MiniMonth({ events, anchor, clock, onPick, highlightWeek }: ViewProps &
 
 function EventDetails({ e, onClose }: { e: AgendaEvent; onClose?: () => void }) {
   const rsvp = useEventRsvp(e.key);
+  const card = useCardMode();
   const pending = isPending(e);
   const org = organizerName(e);
+  if (card.mode === "edit") return <EventForm mode="edit" event={e} onClose={() => card.setMode("view")} />;
   return (
     <>
       <div className="cal-pop-head">
         <CalendarsLabel e={e} suffix={pending ? " · convite" : ""} />
         <span className="cal-pop-actions">
-          <button className="btn ic" aria-label="Editar evento" data-tip="Editar">
-            <Pencil size={15} aria-hidden />
-          </button>
-          <button className="btn ic" aria-label="Apagar evento" data-tip="Apagar">
-            <Trash2 size={15} aria-hidden />
-          </button>
+          <EditButtons e={e} card={card} />
           {onClose && (
             <button className="btn ic" aria-label="Fechar" data-tip="Fechar" onClick={onClose}>
               <X size={15} aria-hidden />
@@ -655,6 +773,7 @@ function EventDetails({ e, onClose }: { e: AgendaEvent; onClose?: () => void }) 
       <div className="cal-pop-when">
         {dayLong(e.start)} · {timeRange(e)}
       </div>
+      {card.mode === "delete" && <DeleteConfirm e={e} onCancel={() => card.setMode("view")} />}
       {e.location && e.location !== "Google Meet" && (
         <div className="cal-pop-row">
           <MapPin size={15} aria-hidden />
@@ -666,9 +785,9 @@ function EventDetails({ e, onClose }: { e: AgendaEvent; onClose?: () => void }) 
         <div className="cal-pop-row">
           <Users size={15} aria-hidden />
           {plural(e.attendees.length, "convidado", "convidados")} · {confirmed(e.attendees)} confirmaram
-          <Avatars people={e.attendees} />
         </div>
       )}
+      {e.attendees.length > 0 && <PeopleList people={e.attendees} compact />}
       {org && (
         <div className="cal-pop-row">
           <User size={15} aria-hidden />
@@ -802,21 +921,23 @@ function DayDetail({ e, clock }: { e: AgendaEvent; clock: number }) {
   const rsvp = useEventRsvp(e.key, () => setChanging(false));
   const startsIn = e.start > clock && sameDay(e.start, clock) ? Math.round((e.start - clock) / 60_000) : null;
   const map = calendarMap(useCalendar((s) => s.calendars));
-  const initials = useInitials();
+  const card = useCardMode();
   const answering = isPending(e) || changing || !!rsvp.answer;
   const showMine = !!e.myStatus || e.attendees.some((a) => a.isSelf);
 
+  if (card.mode === "edit") {
+    return (
+      <div className="cal-detail">
+        <EventForm mode="edit" event={e} onClose={() => card.setMode("view")} />
+      </div>
+    );
+  }
   return (
     <div className="cal-detail" aria-live="polite">
       <div className="cal-pop-head">
         <CalendarsLabel e={e} suffix={e.meetUrl ? " · Google Agenda" : ""} />
         <span className="cal-pop-actions">
-          <button className="btn ic" aria-label="Editar evento" data-tip="Editar">
-            <Pencil size={15} aria-hidden />
-          </button>
-          <button className="btn ic" aria-label="Apagar evento" data-tip="Apagar">
-            <Trash2 size={15} aria-hidden />
-          </button>
+          <EditButtons e={e} card={card} />
           <button className="btn ic" aria-label="Mais ações" data-tip="Mais ações">
             <Ellipsis size={15} aria-hidden />
           </button>
@@ -827,6 +948,7 @@ function DayDetail({ e, clock }: { e: AgendaEvent; clock: number }) {
         {sameDay(e.start, clock) ? "Hoje" : dayLong(e.start)} · {timeRange(e)}
         {e.recurring ? " · se repete" : ""}
       </div>
+      {card.mode === "delete" && <DeleteConfirm e={e} onCancel={() => card.setMode("view")} />}
       {startsIn !== null && startsIn <= 60 && (
         <span className="cal-soon">
           <Clock size={13} aria-hidden />
@@ -853,19 +975,11 @@ function DayDetail({ e, clock }: { e: AgendaEvent; clock: number }) {
       )}
       {e.attendees.length > 0 && (
         <div className="cal-section">
-          <div className="section-label">Participantes · {e.attendees.length}</div>
-          {e.attendees.map((p) => (
-            <div key={p.email || p.name} className="cal-person">
-              <span className={`av ${tone(p)}`} aria-hidden>
-                {initials(p)}
-              </span>
-              <span className="cal-person-name">{displayName(p)}</span>
-              <span className={`cal-person-status${p.status === "accepted" && !p.organizer ? " ok" : ""}`}>
-                {p.status === "accepted" && !p.organizer && <CircleCheck size={13} aria-hidden />}
-                {p.organizer ? "Organizador" : STATUS_TEXT[p.status]}
-              </span>
-            </div>
-          ))}
+          <div className="section-label">
+            Participantes · {e.attendees.length}
+            {confirmed(e.attendees) > 0 ? ` · ${confirmed(e.attendees)} confirmaram` : ""}
+          </div>
+          <PeopleList people={e.attendees} />
         </div>
       )}
       {e.description && (
@@ -1053,7 +1167,8 @@ function MonthView({
             initialTitle={creating.title}
             style={{
               left: `clamp(8px, calc(100% * ${col} / 7 + 100% / 14 - 172px), calc(100% - 352px))`,
-              top: row >= 3 ? `calc(40px + (100% - 40px) * ${row - 3} / 6 + 8px)` : `calc(40px + (100% - 40px) * ${row + 1} / 6 + 8px)`,
+              // nas linhas de baixo o cartão fica acima do dia e cresce para cima (com "Mais opções" aberto)
+              ...(row >= 3 ? { bottom: `calc((100% - 40px) * ${6 - row} / 6 + 8px)` } : { top: `calc(40px + (100% - 40px) * ${row + 1} / 6 + 8px)` }),
             }}
             onClose={onCloseCreate}
           />
@@ -1130,160 +1245,6 @@ function MonthCell({
         </span>
       ))}
       {more > 0 && <span className="cal-chip more">+{more} mais</span>}
-    </div>
-  );
-}
-
-/* ---------------- criação rápida ---------------- */
-
-const pad = (n: number) => String(n).padStart(2, "0");
-const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const hm = (h: number, m = 0) => `${pad(h)}:${pad(m)}`;
-/** "2026-11-25" + "14:30" → Date local */
-function toDate(date: string, time = "00:00") {
-  const [y, mo, d] = date.split("-").map(Number);
-  const [h, mi] = time.split(":").map(Number);
-  return new Date(y, (mo || 1) - 1, d || 1, h || 0, mi || 0);
-}
-
-function QuickCreate({
-  day,
-  initialTitle = "",
-  style,
-  className = "",
-  onClose,
-}: {
-  day: number;
-  initialTitle?: string;
-  style: CSSProperties;
-  className?: string;
-  onClose: () => void;
-}) {
-  const cal = useCalendar((s) => s);
-  const editable = useMemo(() => editableCalendars(cal), [cal.calendars]);
-  const [title, setTitle] = useState(initialTitle);
-  const [date, setDate] = useState(() => ymd(new Date(day)));
-  // hoje: a próxima hora cheia; outros dias: 14h
-  const [[initStart, initEnd]] = useState(() => {
-    if (!sameDay(day, now())) return ["14:00", "15:00"];
-    const h = Math.min(new Date(now()).getHours() + 1, 23);
-    return [hm(h), h === 23 ? "23:59" : hm(h + 1)];
-  });
-  const [startT, setStartT] = useState(initStart);
-  const [endT, setEndT] = useState(initEnd);
-  const [allDay, setAllDay] = useState(false);
-  const [location, setLocation] = useState("");
-  const [calendarKey, setCalendarKey] = useState("");
-  const [saving, setSaving] = useState(false);
-  useEscape(onClose, true);
-
-  const key = editable.some((c) => c.key === calendarKey) ? calendarKey : (editable[0]?.key ?? "");
-  const start = toDate(date, allDay ? "00:00" : startT);
-  const end = toDate(date, allDay ? "00:00" : endT);
-  const badTime = !allDay && end <= start;
-  const canSave = !!title.trim() && !!key && !badTime && !saving;
-
-  const changeStart = (v: string) => {
-    // mantém a duração ao mudar o início
-    const dur = toDate(date, endT).getTime() - toDate(date, startT).getTime();
-    setStartT(v);
-    const nextEnd = new Date(toDate(date, v).getTime() + Math.max(dur, 30 * 60_000));
-    if (sameDay(nextEnd, toDate(date))) setEndT(hm(nextEnd.getHours(), nextEnd.getMinutes()));
-  };
-
-  const save = async () => {
-    if (!canSave) return;
-    setSaving(true);
-    const created = await createEvent({ calendarKey: key, title: title.trim(), start, end, allDay, location: location.trim() || undefined });
-    setSaving(false);
-    if (created) onClose();
-  };
-
-  return (
-    <div className={`cal-pop ${className}`} role="dialog" aria-label="Novo evento" style={style} onClick={(e) => e.stopPropagation()}>
-      <div className="cal-pop-head">
-        <CalendarPlus size={14} aria-hidden />
-        Novo evento
-        <span className="cal-pop-actions">
-          <button className="btn ic" aria-label="Fechar" data-tip="Fechar" onClick={onClose}>
-            <X size={15} aria-hidden />
-          </button>
-        </span>
-      </div>
-      <input
-        className="cal-pop-input"
-        autoFocus
-        value={title}
-        placeholder="Título do evento"
-        aria-label="Título do evento"
-        onChange={(e) => setTitle(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && void save()}
-      />
-      <div className="cal-pop-row">
-        <Clock size={15} aria-hidden />
-        <DatePicker label="Data" value={date} onChange={setDate} />
-        <label className="cal-pop-allday">
-          Dia todo
-          <button className="toggle" role="switch" aria-checked={allDay} aria-label="Dia todo" onClick={() => setAllDay((v) => !v)} />
-        </label>
-      </div>
-      {!allDay && (
-        <div className="cal-pop-row cal-pop-times">
-          <TimeSelect label="Começa às" value={startT} onChange={changeStart} />
-          <span aria-hidden>–</span>
-          <TimeSelect label="Termina às" value={endT} onChange={setEndT} invalid={badTime} />
-          {badTime && (
-            <span id="cal-new-time-err" className="cal-pop-err" role="alert">
-              Termina antes de começar
-            </span>
-          )}
-        </div>
-      )}
-      <div className="cal-pop-row">
-        <CalendarDays size={15} aria-hidden />
-        {editable.length > 0 ? (
-          <Select
-            size="sm"
-            label="Agenda"
-            value={key}
-            onChange={setCalendarKey}
-            options={editable.map((c) => ({ value: c.key, label: c.name, leading: <Dot color={c.color} /> }))}
-          />
-        ) : (
-          <span className="muted">Conecte uma conta Google em Ajustes</span>
-        )}
-      </div>
-      <div className="cal-pop-row">
-        <MapPin size={15} aria-hidden />
-        <input
-          className="cal-pop-field cal-pop-place"
-          value={location}
-          placeholder="Adicionar local"
-          aria-label="Local"
-          onChange={(e) => setLocation(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && void save()}
-        />
-      </div>
-      <div className="cal-pop-row">
-        <Users size={15} aria-hidden />
-        <span className="muted">Convidar pessoas</span>
-      </div>
-      <div className="cal-pop-row">
-        <Video size={15} aria-hidden />
-        <span className="muted">Adicionar Google Meet</span>
-      </div>
-      <div className="cal-pop-row">
-        <Bell size={15} aria-hidden />
-        <span className="muted">Avisar 10 min antes</span>
-      </div>
-      <div className="cal-pop-foot">
-        <a className="btn glass sm" href="https://calendar.google.com/calendar/r/eventedit" target="_blank" rel="noreferrer">
-          Mais opções
-        </a>
-        <button className="btn solid sm" onClick={() => void save()} disabled={!canSave} style={!canSave ? { opacity: 0.5 } : undefined}>
-          {saving ? "Salvando…" : "Salvar"}
-        </button>
-      </div>
     </div>
   );
 }

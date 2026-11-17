@@ -475,3 +475,5 @@
   pointer-events: none;
   animation: q-fade-in 0.15s ease-out both;
 }
+.av.cp-photo { border-radius: 50%; object-fit: cover; flex: none; }
+.cp-att-open { border-radius: 8px; transition: transform 0.14s ease; } .cp-att-open:hover { transform: scale(1.06); }
