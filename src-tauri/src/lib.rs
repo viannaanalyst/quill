@@ -29,7 +29,7 @@ fn err(e: LoginError) -> String {
     }
 }
 
-fn google(state: &State<'_, AppState>) -> Result<&GoogleSession, String> {
+fn google(state: &AppState) -> Result<&GoogleSession, String> {
     state.google.as_ref().ok_or_else(|| "not_configured".to_string())
 }
 
