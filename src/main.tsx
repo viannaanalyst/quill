@@ -7,6 +7,7 @@ import { applyDevTheme, applyPlatformClass, applyTheme, type ThemePref } from ".
 import { getPref } from "./lib/storage";
 import { loadMailbox, startAutoRefresh } from "./state/mailbox";
 import { applyDockIcon } from "./lib/dockIcon";
+import { startUpdateChecks } from "./lib/updater";
 
 applyTheme(getPref<ThemePref>("theme", "system"));
 applyDevTheme();
@@ -17,6 +18,8 @@ void loadMailbox();
 startAutoRefresh(3);
 // ícone do Dock escolhido em Ajustes → Aparência
 void applyDockIcon().catch(() => undefined);
+// versão nova do Quill (GitHub): confere ao abrir e a cada 6 h
+startUpdateChecks();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

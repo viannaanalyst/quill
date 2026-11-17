@@ -236,3 +236,13 @@ Pedido do Gabriel depois de usar o Chat com a conta real, comparando com o Googl
   [ADR-024](02-decisoes-adrs/ADR-024-cofre-unico-nas-chaves.md); referência das Chaves atualizada.
 - 22 testes novos (14 do cofre, 1 das Chaves "de mentira" do `keyring`, 3 da sessão do Google, 4 da do iCloud/IMAP).
   Ainda não testado no Mac.
+
+### Repositório público e atualização automática
+
+- O repositório `viannaanalyst/quill` ficou **público** (pedido do Gabriel), depois de conferir que o histórico não
+  tem senhas nem chaves. O repositório extra `quill-releases`, criado antes, foi arquivado.
+- Atualização automática (ADR-026): o Quill confere as releases do GitHub ao abrir e a cada 6 h e mostra
+  "Quill X disponível · Atualizar"; Ajustes → Geral mostra a versão e "Verificar atualizações". Versão 0.2.0.
+- `scripts/release-mac.sh` publica uma versão nova a partir do Mac. Falta gerar a chave de atualização no Mac
+  (próxima montagem pedida pelo Gabriel).
+- Caixa de entrada: o contador do topo segue a conta escolhida no filtro; a semana do cartão "Hoje" ficou sem bolinhas.

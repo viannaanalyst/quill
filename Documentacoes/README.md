@@ -51,6 +51,7 @@ inchurch-contratos e na techbpo.
 | [022](02-decisoes-adrs/ADR-022-login-google-na-folha-do-macos.md) | Login do Google na janela de login do macOS |
 | [023](02-decisoes-adrs/ADR-023-google-chat-pela-api-so-workspace.md) | Google Chat pela API (só Workspace), atualização por consulta periódica |
 | [024](02-decisoes-adrs/ADR-024-cofre-unico-nas-chaves.md) | Cofre único nas Chaves, lido uma vez por abertura |
+| [026](02-decisoes-adrs/ADR-026-atualizacao-automatica-pelo-github.md) | Atualização automática pelas releases do GitHub |
 
 ## O que das convenções não se aplica ainda
 

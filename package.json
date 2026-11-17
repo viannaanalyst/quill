@@ -1,7 +1,7 @@
 {
   "name": "quill",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -16,6 +16,8 @@
     "@radix-ui/react-select": "^2.4.1",
     "@tauri-apps/api": "^2.12.5",
     "@tauri-apps/plugin-notification": "^2.8.1",
+    "@tauri-apps/plugin-process": "^2.4.0",
+    "@tauri-apps/plugin-updater": "^2.14.1",
     "lucide-react": "^1.74.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"

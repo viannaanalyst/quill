@@ -1,13 +1,15 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permissões mínimas da janela principal: o básico do Tauri e arrastar a janela pelas áreas marcadas com data-tauri-drag-region. Notificações do sistema para e-mails e mensagens do Chat.",
+  "description": "Permissões mínimas da janela principal: o básico do Tauri e arrastar a janela pelas áreas marcadas com data-tauri-drag-region. Notificações do sistema para e-mails e mensagens do Chat. Atualização automática (baixar a versão nova e reabrir o app).",
   "windows": [
     "main"
   ],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
-    "notification:default"
+    "notification:default",
+    "updater:default",
+    "process:allow-restart"
   ]
 }

@@ -1,5 +1,6 @@
 import { isTauri } from "../lib/platform";
 import { playSound, SOUNDS } from "../lib/notify";
+import { appVersion, checkForUpdate, installUpdate, useUpdate } from "../lib/updater";
 import { confirmTouchId, touchIdAvailable } from "../components/LockScreen";
 import { toast } from "../components/Toasts";
 import { useEffect, useState, type ReactNode } from "react";
@@ -42,6 +43,9 @@ export function GeneralSection() {
   const [markRead, setMarkRead] = usePref("markReadOnOpen", true);
   const [confirmDelete, setConfirmDelete] = usePref("confirmDelete", true);
   const [undo, setUndo] = usePref("undoSeconds", 10);
+  const upd = useUpdate();
+  const [version, setVersion] = useState("");
+  useEffect(() => void appVersion().then(setVersion), []);
   return (
     <Panel id="st-general" title="Geral" sub="Como o Quill se comporta no dia a dia.">
       <Rows>
@@ -78,6 +82,30 @@ export function GeneralSection() {
             onChange={() => undefined}
             options={[{ value: "pt-BR", label: "Português (Brasil)" }]}
           />
+        </Row>
+        <Row
+          title={`Versão ${version || "…"}`}
+          sub={
+            upd.phase === "checking"
+              ? "Procurando versão nova…"
+              : upd.phase === "available"
+                ? `Versão ${upd.version} disponível.`
+                : upd.phase === "none"
+                  ? "Você já está na versão mais nova."
+                  : upd.phase === "error"
+                    ? `Não consegui verificar: ${upd.error ?? ""}`
+                    : "O Quill confere sozinho ao abrir e a cada 6 horas."
+          }
+        >
+          {upd.phase === "available" ? (
+            <button className="btn solid sm" onClick={() => void installUpdate()}>
+              Atualizar agora
+            </button>
+          ) : (
+            <button className="btn glass sm" onClick={() => void checkForUpdate(false)} disabled={upd.phase === "checking" || upd.phase === "downloading"}>
+              Verificar atualizações
+            </button>
+          )}
         </Row>
       </Rows>
     </Panel>

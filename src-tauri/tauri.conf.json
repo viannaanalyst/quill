@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Quill",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "app.quill.desktop",
   "build": {
     "frontendDist": "../dist",
@@ -51,6 +51,15 @@
     ],
     "macOS": {
       "minimumSystemVersion": "13.0"
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "PREENCHER_NO_MAC",
+      "endpoints": [
+        "https://github.com/viannaanalyst/quill/releases/latest/download/latest.json"
+      ]
     }
   }
 }

@@ -52,6 +52,7 @@ App de e-mail e calendário, **macOS primeiro**, depois Windows. Começou como u
 - Anexos: envio pelo upload do Gmail (até 25 MB), download para Downloads, "ver sem baixar" com Quick Look (`quill-core/src/files.rs`). Ícone real do tipo de arquivo: `FileIcon`.
 - Agenda e contatos do iCloud: CalDAV/CardDAV em `quill-core/src/{ical,dav,caldav,carddav,dav_client}.rs` (só para `*.icloud.com`, mesma senha de app).
 - iCloud e "Outro e-mail": IMAP/SMTP em `quill-core/src/imap*.rs` (senha de app no cofre único das Chaves); os comandos do `lib.rs` escolhem Google ou IMAP pelo provedor da conta. Microsoft ainda falta (precisa do ID do app registrado no Azure).
+- Atualização automática: `tauri-plugin-updater` lendo as releases do GitHub; publicar com `scripts/release-mac.sh` no Mac (chave em `~/.tauri/quill-updater.key`), ADR-026.
 - Touch ID: `src-tauri/src/touchid.rs` (LocalAuthentication, só compila no Mac).
 - Login do Google no Mac: janela de login do sistema (ASWebAuthenticationSession) em `src-tauri/src/websheet.rs`, volta ainda pelo `127.0.0.1`; cai para o navegador se não abrir (ADR-022).
 - Lógica do login e do Gmail em `src-tauri/crates/quill-core` (testes: `cargo test --features net` dentro dessa pasta; roda até na VPS). Tokens de acesso permanentes e senhas de app ficam num único item das Chaves do sistema (`app.quill.desktop` / `cofre`, lido uma vez por abertura, `quill-core/src/vault.rs`, ADR-024), nunca em arquivo.
@@ -94,7 +95,7 @@ Carregue a skill **antes** de começar o tipo de trabalho correspondente:
 
 ## Git
 
-- Repositório privado `viannaanalyst/quill`, branch `main`. Autor: viannaanalyst <contato@inovawebtech.com.br>.
+- Repositório **público** `viannaanalyst/quill` (desde 2026-11-17, para a atualização automática), branch `main`. Nunca commite segredos. Autor: viannaanalyst <contato@inovawebtech.com.br>.
 - Commit e push só quando o Gabriel pedir ou autorizar.
 - Cópias de trabalho: VPS (`/home/dev/projetos/quill`) e MacBook (`/Users/gabrielvianna/Projetos/quill`). O Mac monta e testa o app; a sincronização é pelo GitHub.
 

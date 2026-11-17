@@ -653,6 +653,9 @@ pub fn run() {
     tauri::Builder::default()
         // avisos do sistema (e-mail novo, mensagem no Chat)
         .plugin(tauri_plugin_notification::init())
+        // atualização automática: baixa as versões publicadas no GitHub (assinadas) e reabre o app
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             let accounts_file = data_dir.join("accounts.json");
