@@ -24,6 +24,7 @@ dist/
 
 # Tauri / Rust
 src-tauri/target/
+**/target/
 src-tauri/gen/schemas/
 
 # credenciais locais do Google (vêm do Infisical)
