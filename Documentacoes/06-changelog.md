@@ -246,3 +246,6 @@ Pedido do Gabriel depois de usar o Chat com a conta real, comparando com o Googl
 - `scripts/release-mac.sh` publica uma versão nova a partir do Mac. Falta gerar a chave de atualização no Mac
   (próxima montagem pedida pelo Gabriel).
 - Caixa de entrada: o contador do topo segue a conta escolhida no filtro; a semana do cartão "Hoje" ficou sem bolinhas.
+- Assinatura fixa no Mac: `bundle.macOS.signingIdentity` do `tauri.conf.json` passou a usar o certificado
+  "Apple Development" do Mac, para o macOS não pedir a senha das Chaves a cada versão nova (guia rápido e ADR-024
+  atualizados). Vale a partir da próxima montagem.

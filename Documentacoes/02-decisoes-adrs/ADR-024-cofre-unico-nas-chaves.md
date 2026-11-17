@@ -34,8 +34,8 @@ updated: 2026-11-17
 - O acesso às Chaves fica atrás da interface `SecretStore`: a versão de verdade (`KeyringStore`, biblioteca `keyring`)
   só existe com a feature `desktop`; os testes usam uma versão na memória.
 - **Assinatura estável:** fica documentada no [guia rápido](../guia-rapido.md#parar-de-pedir-a-senha-das-chaves)
-  (certificado gratuito "Apple Development" do Xcode em `bundle.macOS.signingIdentity`). O `tauri.conf.json` **não**
-  foi mudado: o Gabriel decide.
+  (certificado gratuito "Apple Development" do Xcode em `bundle.macOS.signingIdentity`). No começo o
+  `tauri.conf.json` não foi mudado; depois (2026-11-17) passou a usar o certificado "Apple Development" do Mac.
 
 **Consequências**
 - Positivas:

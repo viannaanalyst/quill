@@ -50,7 +50,8 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "minimumSystemVersion": "13.0"
+      "minimumSystemVersion": "13.0",
+      "signingIdentity": "E6FC8E6CD847D13F66349C8FC4C184C1D1497204"
     },
     "createUpdaterArtifacts": true
   },

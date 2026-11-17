@@ -138,11 +138,12 @@ item novo e apaga os antigos. Nessa vez o Mac ainda pode perguntar **uma vez por
 "Permitir", de novo na hora de apagar o item antigo). Clique em **Permitir Sempre** em todas. Da próxima vez que
 abrir, é uma pergunta só, ou nenhuma.
 
-**Por que volta a cada versão nova:** o app é montado **sem assinatura fixa** (assinatura "ad-hoc"). Para o Mac, cada
+**Por que voltava a cada versão nova:** o app era montado **sem assinatura fixa** (assinatura "ad-hoc"). Para o Mac, cada
 montagem nova é um app diferente, e o "Permitir Sempre" da versão anterior não vale para ela. Com o cofre único, é
 **uma** pergunta por versão nova, não uma por conta.
 
-**Para resolver de vez** (decisão sua; nada disso foi feito ainda):
+**Para resolver de vez** (já feito em 2026-11-17: o certificado "Apple Development" existe no Mac e está no
+`tauri.conf.json`; os passos ficam aqui para outro Mac ou certificado novo):
 1. No Mac, abra o **Xcode → Ajustes → Contas**.
 2. Clique em **+** e entre com o seu Apple ID (não precisa pagar o programa de desenvolvedor).
 3. Escolha a conta → **Gerenciar certificados** → **+** → **Apple Development**.
