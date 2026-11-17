@@ -84,6 +84,11 @@ const PROVIDERS: { id: string; logo: LogoName | null; name: string; sub: string 
 
 export default function Onboarding({ onDone }: { onDone: () => void }) {
   const [step, setStep] = useState(initialStep);
+  // chegou na tela de entrar: já viu a apresentação, então da próxima vez o app abre direto
+  // (mesmo sem conta; a caixa de entrada mostra o botão de conectar). Volta só por Ajustes.
+  useEffect(() => {
+    if (step >= 5 && isTauri) setPref("onboarded", true);
+  }, [step]);
   const [touchId, setTouchId] = useState(() => getPref("touchId", true));
   // Demonstração: a conta da inchurch "termina de conectar" alguns segundos depois de chegar ao passo 6.
   const [waiting, setWaiting] = useState(true);
