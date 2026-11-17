@@ -109,3 +109,5 @@ Baseado no `git log` e nas mensagens dos commits. Horários em Brasília (UTC−
 - Calendário: a data fica entre as setas (‹ período ›) com "Hoje" ao lado; menu "Todas as contas" na lista de agendas
   para mostrar ou esconder as agendas de cada conta conectada (contas sem agenda aparecem como "só e-mail"); saiu o
   texto de rodapé da lista.
+- A saudação aparece em todas as pastas (contando os não lidos da Entrada); saíram as bolinhas coloridas dos eventos no
+  cartão "Hoje".

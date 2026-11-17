@@ -95,6 +95,8 @@ export default function Inbox({ folder: folderParam }: { folder: string }) {
   const readIds = useStore((s) => s.readIds);
   const accounts = useMailbox((s) => s.accounts);
   const messages = useMailbox((s) => folderMessages(s, folder));
+  // a saudação aparece em todas as pastas e conta os não lidos da Entrada
+  const inboxMessages = useMailbox((s) => folderMessages(s, "inbox"));
   const folderStatus = useMailbox((s) => s.folderStatus[folder]);
   const counts = useMailbox((s) => s.counts);
   const [showBanner] = usePref("showBanner", true);
@@ -298,7 +300,7 @@ export default function Inbox({ folder: folderParam }: { folder: string }) {
                     <ConnectGoogleButton />
                   </div>
                 )}
-                {folder === "inbox" && showBanner && (live || !isTauri) && <Banner unread={messages.filter(isUnread).length} accounts={accounts.length} />}
+                {showBanner && (live || !isTauri) && <Banner unread={inboxMessages.filter(isUnread).length} accounts={accounts.length} />}
                 {needsLogin.length > 0 && (
                   <p className="list-empty" role="alert">
                     {needsLogin.join(", ")} precisa entrar de novo. Abra Ajustes → Contas.
@@ -557,7 +559,6 @@ function AgendaRow({ event: e, clock }: { event: AgendaEvent; clock: number }) {
   return (
     <li className={`${soon ? "soon" : ""}${e.myStatus === "declined" ? " inbox-agenda-declined" : ""}`}>
       <span className="agenda-time">{e.allDay ? "dia" : fmtTime(e.start)}</span>
-      <span className="agenda-dot" style={{ background: e.color }} aria-hidden />
       <span className="agenda-body">
         <span className="agenda-title" style={{ display: "block" }}>
           {e.title}
