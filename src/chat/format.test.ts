@@ -68,7 +68,7 @@ test("menções de pessoa e de todos", () => {
 test("listas com hífen, asterisco ou bolinha", () => {
   assert.deepEqual(parseChat("Itens:\n- um\n* *dois*\n• três\nfim"), [
     p(t("Itens:")),
-    { t: "ul", items: [[t("um")], [{ t: "b", c: [t("dois")] }], [t("três")]] },
+    { t: "ul", items: [{ c: [t("um")] }, { c: [{ t: "b", c: [t("dois")] }] }, { c: [t("três")] }] },
     p(t("fim")),
   ]);
 });

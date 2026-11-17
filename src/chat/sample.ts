@@ -1,4 +1,4 @@
-import type { ChatAttachmentDto, ChatMessageDto, ChatPageDto, ChatPersonDto, ChatSpaceDto } from "../lib/api";
+import type { ChatAttachmentDto, ChatMessageDto, ChatPageDto, ChatPersonDto, ChatQuoteDto, ChatSpaceDto } from "../lib/api";
 
 /**
  * Conversas de exemplo da prévia do navegador (iguais ao desenho do Doop, página "Chat").
@@ -6,6 +6,8 @@ import type { ChatAttachmentDto, ChatMessageDto, ChatPageDto, ChatPersonDto, Cha
  */
 
 const day = (h: number, m: number, d = 17) => new Date(2026, 10, d, h, m).getTime();
+/** data de outro mês ou ano (mês começa em 0) */
+const on = (y: number, mo: number, d: number, h: number, m: number) => new Date(y, mo, d, h, m).getTime();
 const iso = (ms: number) => new Date(ms).toISOString();
 
 const P = (id: string, name: string): ChatPersonDto => ({ id: `users/${id}`, name, photo: null, email: null, bot: false });
@@ -18,6 +20,27 @@ const FA = P("6", "Fernanda Alves");
 const CM = P("7", "Carla Mendes");
 const ME = P("9", "Você");
 const BOT: ChatPersonDto = { id: "users/app-lancamentos", name: "Lançamentos", photo: null, email: null, bot: true };
+const GEMINI: ChatPersonDto = { id: "users/app-gemini", name: "Anotações do Gemini", photo: null, email: null, bot: true };
+
+/** Notas de reunião como o Gemini manda: Markdown com `**negrito**`, escapes `\[ \]`, listas e separador. */
+const GEMINI_NOTES = [
+  "📝 **Anotações da reunião: fechamento de outubro**",
+  "",
+  "### Resumo",
+  "\\[Mariana Costa\\] e \\[Rafael Lima\\] conferiram os números de outubro e combinaram as próximas entregas.",
+  "",
+  "*Abertura e Dinâmica Inicial*",
+  "* **Apresentação:** \\[Mariana Costa\\] abriu a reunião e explicou a dinâmica.",
+  "    * Cada pessoa teve 5 minutos para falar.",
+  "* **Prioridades:** a equipe revisou o [painel de outubro](https://painel.financeiro.app/outubro).",
+  "",
+  "**Próximas etapas**",
+  "1. \\[Rafael Lima\\] Gravar o passo a passo do fechamento.",
+  "2. \\[Beatriz Nogueira\\] Ajustar a linha de viagens \\(até as 11h\\).",
+  "",
+  "---",
+  "Revise as anotações do Gemini. Saiba mais em https://support.google.com/meet.",
+].join("\n");
 
 /** Emoji próprio da empresa de exemplo (na API ele vem com um link temporário do Google). */
 const FESTA = `data:image/svg+xml,${encodeURIComponent(
@@ -34,6 +57,7 @@ function msg(space: string, sender: ChatPersonDto, ms: number, text: string, ext
     mine: sender === ME,
     createTime: iso(ms),
     createMs: ms,
+    updateTime: iso(ms),
     thread: `${space}/threads/${n}`,
     threadReply: false,
     attachments: [],
@@ -58,8 +82,23 @@ function financeiro(): ChatMessageDto[] {
     attachments: [att("quadro-reuniao.jpg", "image/svg+xml"), att("passo-a-passo-fechamento.mp4", "video/mp4")],
     reactions: [{ emoji: "❤️", count: 2 }],
   });
+  // dias anteriores: horário com a data ("5 de nov., 11:00") e com o ano quando é de outro ano
+  const ano = msg(FIN, PR, on(2025, 11, 12, 16, 40), "Pessoal, fechamos o ano! Obrigada pelo esforço de todos 🎉", { reactions: [{ emoji: "❤️", count: 4 }] });
+  const reuniao = msg(FIN, MC, day(11, 0, 5), "Reunião de fechamento marcada para o dia 17, às 9h. Quem não puder, me avisa por aqui.");
+  const older = [
+    ano,
+    reuniao,
+    msg(FIN, ME, day(11, 4, 5), "Combinado, estarei lá.", { quoted: { name: reuniao.name, sender: MC, text: reuniao.text } }),
+    // mensagem de voz recebida (ontem) e uma citação dela
+    msg(FIN, BN, day(18, 20, 16), "", { attachments: [att("recado-viagens.m4a", "audio/wav")] }),
+    msg(FIN, BN, day(18, 21, 16), "Mandei um áudio explicando a linha de viagens. Amanhã cedo eu ajusto a planilha e aviso vocês por aqui.", {
+      quoted: { name: reuniao.name, sender: MC, text: reuniao.text },
+    }),
+  ];
   const bot = "💸 *Compra lançada (paga)*\n*Valor:* R$ 52,90\n*Cartão:* final 4410\n*Categoria:* Alimentação\n<https://painel.financeiro.app/lancamentos/8812|Ver no painel>";
   return [
+    ...older,
+    msg(FIN, GEMINI, day(8, 58), GEMINI_NOTES, { formattedText: GEMINI_NOTES }),
     root,
     msg(FIN, MC, day(9, 13), "Quem puder, confere até as 11h 🙏"),
     msg(FIN, RL, day(9, 31), "Aqui bateu certinho com a planilha.", { thread, threadReply: true }),
@@ -88,6 +127,7 @@ function financeiro(): ChatMessageDto[] {
     }),
     msg(FIN, ME, day(10, 12), "", { attachments: [att("audio-treinamento.m4a", "audio/wav")] }),
     msg(FIN, BN, day(10, 24), "Segue o relatório final com as observações da diretoria.", { attachments: [att("Relatório de outubro.pdf", "application/pdf")] }),
+    msg(FIN, MC, day(10, 26), "🎉🙌", { reactions: [{ emoji: "😍", count: 2 }, { emoji: "👏", count: 1 }] }),
   ];
 }
 
@@ -168,7 +208,7 @@ export function samplePage(space: string): ChatPageDto {
 
 /** Reações que "você" já fez nas mensagens de exemplo (o 👍 da Mariana conta você). */
 export function sampleReacted(account: string): Record<string, string[]> {
-  const root = pageOf(FIN)[0];
+  const root = pageOf(FIN).find((m) => m.text.startsWith("Bom dia, pessoal"))!;
   return { [`${account}|${root.name}`]: ["👍"] };
 }
 
@@ -200,8 +240,8 @@ export function sampleMembers(space: string): ChatPersonDto[] {
 }
 
 /** Mensagem "enviada" na prévia. */
-export function sampleSent(space: string, text: string, thread: string | null, attachments: ChatAttachmentDto[]): ChatMessageDto {
-  const m = msg(space, ME, Date.now(), text, { attachments, thread: thread ?? undefined, threadReply: !!thread });
+export function sampleSent(space: string, text: string, thread: string | null, attachments: ChatAttachmentDto[], quoted?: ChatQuoteDto): ChatMessageDto {
+  const m = msg(space, ME, Date.now(), text, { attachments, thread: thread ?? undefined, threadReply: !!thread, quoted: quoted ?? null });
   cache.set(space, [...pageOf(space), m]);
   return m;
 }

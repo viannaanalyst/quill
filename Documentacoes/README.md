@@ -18,7 +18,7 @@ inchurch-contratos e na techbpo.
 | Aprender a usar o dia a dia (ler, responder, agenda, Chat, Touch ID…) | [04-tutorial-uso.md](04-tutorial-uso.md) |
 | Entender para que o app serve, o que já funciona e o que falta | [00-visao-geral.md](00-visao-geral.md) |
 | Mexer no código | [01-arquitetura-tecnica.md](01-arquitetura-tecnica.md) |
-| Saber por que algo foi feito de um jeito | [02-decisoes-adrs/](02-decisoes-adrs/) (24 decisões) |
+| Saber por que algo foi feito de um jeito | [02-decisoes-adrs/](02-decisoes-adrs/) (26 decisões) |
 | Consultar termos, preferências, cores e parâmetros da prévia | [05-referencia.md](05-referencia.md) |
 | Ver o que mudou e quando | [06-changelog.md](06-changelog.md) |
 | Ver o guia de estilo visual | [`docs/design.md`](../docs/design.md) e [`design/telas/`](../design/telas/) |
@@ -52,6 +52,7 @@ inchurch-contratos e na techbpo.
 | [023](02-decisoes-adrs/ADR-023-google-chat-pela-api-so-workspace.md) | Google Chat pela API (só Workspace), atualização por consulta periódica |
 | [024](02-decisoes-adrs/ADR-024-cofre-unico-nas-chaves.md) | Cofre único nas Chaves, lido uma vez por abertura |
 | [026](02-decisoes-adrs/ADR-026-atualizacao-automatica-pelo-github.md) | Atualização automática pelas releases do GitHub |
+| [027](02-decisoes-adrs/ADR-027-excluir-para-sempre-com-acesso-completo-ao-gmail.md) | "Excluir para sempre" com o acesso completo ao Gmail |
 
 ## O que das convenções não se aplica ainda
 

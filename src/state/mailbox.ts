@@ -3,11 +3,12 @@ import { api, friendlyError, NEEDS_LOGIN, type AccountInfo, type AttachmentInfo,
 import { isTauri } from "../lib/platform";
 import { getPref } from "../lib/storage";
 import { isAutomatedSender, notify } from "../lib/notify";
-import { ACCOUNTS, MESSAGES } from "../inbox/sampleData";
+import { ACCOUNTS, MESSAGES, TRASH_SAMPLE } from "../inbox/sampleData";
 import type { Account, Message } from "../inbox/types";
 import type { LogoName } from "../components/Logo";
 import { toast } from "../components/Toasts";
 import { getStore } from "./store";
+import { deletedText, emptiedText, groupByAccount, trashAccounts } from "./deleteForever";
 
 /**
  * Fonte dos e-mails das telas. Com conta conectada (app), usa o Gmail de verdade, caixa por caixa;
@@ -51,7 +52,7 @@ const TONES = ["peach", "blue", "neutral"] as const;
 let state: MailboxState = {
   connected: [],
   accounts: isTauri ? [] : ACCOUNTS,
-  folders: isTauri ? {} : { inbox: MESSAGES },
+  folders: isTauri ? {} : { inbox: MESSAGES, trash: TRASH_SAMPLE },
   folderStatus: {},
   counts: isTauri ? {} : { inbox: 48, drafts: 2, spam: 3 },
   profiles: {},
@@ -441,5 +442,67 @@ export async function messageAction(id: string, action: MessageAction) {
   } catch (e) {
     set({ folders: before });
     toast(`Não deu certo: ${friendlyError(e)}`, "error");
+  }
+}
+
+/**
+ * Exclui para sempre (Lixeira ou Spam): some da lista na hora e volta se o servidor recusar.
+ * Devolve true quando deu certo. Quem chama já pediu a confirmação.
+ */
+export async function deleteForever(ids: string[]): Promise<boolean> {
+  const items = ids.map((id) => findMessage(id)).filter((m): m is Message => !!m);
+  if (items.length === 0) return false;
+  const before = state.folders;
+  items.forEach((m) => removeEverywhere(m.id));
+  const groups = groupByAccount(items);
+  if (groups.size === 0) {
+    toast(deletedText(items.length));
+    return true;
+  }
+  const entries = [...groups];
+  const results = await Promise.allSettled(entries.map(([email, list]) => api.deleteForever(email, list)));
+  const failed = results.flatMap((r, i) => (r.status === "rejected" ? [{ email: entries[i][0], error: r.reason }] : []));
+  void loadCounts();
+  if (failed.length === 0) {
+    toast(deletedText(items.length));
+    return true;
+  }
+  // devolve só os e-mails das contas que falharam (as outras já apagaram de vez)
+  const failedEmails = new Set(failed.map((f) => f.email));
+  const all = new Set(items.map((m) => m.id));
+  const keep = new Set(items.filter((m) => m.accountEmail && failedEmails.has(m.accountEmail)).map((m) => m.id));
+  set({
+    folders: Object.fromEntries(
+      Object.entries(before).map(([k, list]) => [k, list?.filter((x) => keep.has(x.id) || !all.has(x.id))]),
+    ) as MailboxState["folders"],
+  });
+  toast(`Não deu certo: ${friendlyError(failed[0].error)}`, "error");
+  return false;
+}
+
+/**
+ * Esvazia a Lixeira de todas as contas conectadas (ou só da conta `filter`).
+ * Quem chama já pediu a confirmação.
+ */
+export async function emptyTrash(filter: string = "all"): Promise<void> {
+  const inTrash = (m: Message) => filter === "all" || m.account === filter;
+  const before = state.folders;
+  const trash = before.trash ?? [];
+  const gone = new Set(trash.filter(inTrash).map((m) => m.id));
+  set({ folders: Object.fromEntries(Object.entries(before).map(([k, list]) => [k, list?.filter((x) => !gone.has(x.id))])) as MailboxState["folders"] });
+  if (!isTauri) {
+    toast(emptiedText(gone.size));
+    return;
+  }
+  const emails = trashAccounts(state.connected.map((a) => a.email), filter);
+  const results = await Promise.allSettled(emails.map((e) => api.trashEmpty(e)));
+  const total = results.reduce((sum, r) => sum + (r.status === "fulfilled" ? r.value : 0), 0);
+  const failed = results.flatMap((r) => (r.status === "rejected" ? [r.reason] : []));
+  void loadFolder("trash");
+  void loadCounts();
+  if (failed.length === 0) toast(emptiedText(total));
+  else {
+    if (total === 0) set({ folders: before });
+    toast(`${total > 0 ? `${emptiedText(total)}. ` : ""}Não deu certo em ${failed.length === 1 ? "uma conta" : `${failed.length} contas`}: ${friendlyError(failed[0])}`, "error");
   }
 }

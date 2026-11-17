@@ -96,6 +96,40 @@ export const MESSAGES: Message[] = [
   },
 ];
 
+/** Lixeira da prévia (para conferir "Esvaziar lixeira" e "Excluir para sempre"). */
+export const TRASH_SAMPLE: Message[] = [
+  {
+    id: "t1",
+    account: "pessoal",
+    from: "Loja Aurora",
+    avatar: { kind: "initials", initials: "LA", tone: "peach" },
+    subject: "Últimas horas: 30% em toda a loja",
+    preview: "A promoção de fim de semana termina hoje à meia-noite. Aproveite o frete grátis nas compras acima de R$ 150.",
+    date: "Ontem",
+    unread: false,
+  },
+  {
+    id: "t2",
+    account: "inchurch",
+    from: "Notificações do Sistema",
+    avatar: { kind: "initials", initials: "NS", tone: "blue" },
+    subject: "Relatório semanal de acessos",
+    preview: "Seu relatório automático está pronto. Nenhum alerta novo nesta semana.",
+    date: "15 nov",
+    unread: false,
+  },
+  {
+    id: "t3",
+    account: "moradah",
+    from: "Clube de Leitura",
+    avatar: { kind: "initials", initials: "CL", tone: "neutral" },
+    subject: "Convite: encontro de dezembro",
+    preview: "O próximo encontro será no dia 6. Responda até sexta para garantir sua vaga.",
+    date: "12 nov",
+    unread: true,
+  },
+];
+
 export const TODAY_LABEL = "Terça-feira, 17 de novembro";
 
 export const WEEK = [

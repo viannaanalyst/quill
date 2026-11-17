@@ -103,6 +103,21 @@ impl ImapSession {
         self.client.act(&cfg, &pw, id, action).await
     }
 
+    /// Apaga de vez os e-mails escolhidos da Lixeira ou do Spam.
+    pub async fn delete_forever(&self, email: &str, ids: &[String]) -> Result<(), ImapError> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        let (cfg, pw) = self.creds(email)?;
+        self.client.delete_many(&cfg, &pw, ids).await
+    }
+
+    /// Esvazia a Lixeira; devolve quantos e-mails saíram.
+    pub async fn empty_trash(&self, email: &str) -> Result<usize, ImapError> {
+        let (cfg, pw) = self.creds(email)?;
+        self.client.empty_trash(&cfg, &pw).await
+    }
+
     pub async fn mark_read(&self, email: &str, id: &str) -> Result<(), ImapError> {
         self.act(email, id, "read").await
     }

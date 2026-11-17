@@ -566,6 +566,17 @@
   flex-wrap: wrap;
   animation: q-pop-in 0.18s var(--ease-out-soft) both;
 }
+/* "Excluir para sempre" e "Esvaziar lixeira": texto vermelho, sem perder o vidro do botão */
+.btn.inbox-danger {
+  color: var(--danger, #c2453d);
+}
+.inbox-empty-trash {
+  flex: none;
+}
+.inbox-empty-trash:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
 .inbox-bulk-count {
   font-weight: 600;
   color: var(--ink);

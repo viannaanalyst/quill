@@ -2,7 +2,7 @@ import { useEffect, useId, useLayoutEffect, useMemo, useReducer, useRef, useStat
 import "./compose.css";
 import { TopBar } from "../components/TopBar";
 import { Logo } from "../components/Logo";
-import { CircleCheck, Clock, LoaderCircle, Paperclip, Pencil, SendHorizontal, Trash2, TriangleAlert, Users, X } from "../components/icons";
+import { ArrowLeft, CircleCheck, Clock, LoaderCircle, Paperclip, Pencil, SendHorizontal, Trash2, TriangleAlert, Users, X } from "../components/icons";
 import { ACCOUNTS, ACCOUNT_BY_ID } from "../inbox/sampleData";
 import type { Message } from "../inbox/types";
 import { backToFolder, navigate, type ComposeDraft } from "../state/store";
@@ -22,6 +22,7 @@ import { previewAttachment } from "../components/AttachmentPreview";
 import { FILE_LABEL, fileSize, fileType, mimeFor } from "../lib/files";
 import { api, friendlyError, type OutgoingMessage } from "../lib/api";
 import { RichToolbar } from "./RichToolbar";
+import { clearReplyDraft, hasText, setReplyDraft } from "../state/replyDrafts";
 
 const EMAIL_RE = /^[^\s@<>(),;:]+@[^\s@<>(),;:]+\.[^\s@<>(),;:]+$/;
 const TONES = ["peach", "blue", "neutral"] as const;
@@ -408,7 +409,9 @@ export default function Compose({ draft }: { draft?: ComposeDraft }) {
   const [sigMode] = usePref<string>(`account:${sender?.email ?? ""}:signature`, "account");
   const accountSig = sigMode === "none" ? "" : sigText;
   const signatureText = live ? accountSig : SIGNATURES[signature];
-  const done = backToFolder;
+  // aberto pela resposta rápida: fechar, enviar ou descartar volta para o e-mail
+  const returnTo = draft?.returnTo;
+  const done = () => (returnTo ? navigate({ name: "read", id: returnTo }) : backToFolder());
 
   // a conta escolhida sumiu (ou ainda não tinha carregado): usa a primeira
   if (live && senders.length > 0 && !senders.some((a) => a.id === from)) setFrom(senders[0].id);
@@ -542,6 +545,28 @@ export default function Compose({ draft }: { draft?: ComposeDraft }) {
     while (inflight.current) await inflight.current.catch(() => undefined);
   };
 
+  /** Volta para o e-mail com a resposta aberta como estava (texto, anexos e o rascunho do Gmail). */
+  const backToEmail = () => {
+    if (!returnTo) return;
+    closed.current = true;
+    window.clearTimeout(saveTimer.current);
+    const html = bodyRef.current?.innerHTML ?? htmlRef.current;
+    const entry = {
+      html,
+      files: files.filter((f) => f.data).map((f) => ({ name: f.name, mimeType: f.mime, data: f.data!, size: f.bytes })),
+      draftId: draftId.current ?? undefined,
+      dirty: dirty.current,
+    };
+    if (hasText(html) || entry.files.length || entry.draftId) setReplyDraft(returnTo, entry);
+    else clearReplyDraft(returnTo);
+    navigate({ name: "read", id: returnTo });
+    // salvamento em andamento: o id do rascunho chega depois e passa para a resposta rápida
+    if (inflight.current)
+      void settle().then(() => {
+        if (draftId.current) entry.draftId = draftId.current;
+      });
+  };
+
   const discard = async () => {
     closed.current = true;
     window.clearTimeout(saveTimer.current);
@@ -607,11 +632,17 @@ export default function Compose({ draft }: { draft?: ComposeDraft }) {
     <>
       <TopBar
         leading={
-          <button className="btn glass ic" aria-label="Fechar" data-tip="Fechar" onClick={done} style={{ marginRight: 6 }}>
-            <X size={17} aria-hidden />
-          </button>
+          returnTo ? (
+            <button className="btn glass ic" aria-label="Voltar ao e-mail" data-tip="Voltar ao e-mail" data-tip-pos="right" onClick={backToEmail} style={{ marginRight: 6 }}>
+              <ArrowLeft size={17} aria-hidden />
+            </button>
+          ) : (
+            <button className="btn glass ic" aria-label="Fechar" data-tip="Fechar" onClick={done} style={{ marginRight: 6 }}>
+              <X size={17} aria-hidden />
+            </button>
+          )
         }
-        title={draft?.threadId ? "Responder" : "Nova mensagem"}
+        title={draft?.threadId || returnTo ? "Responder" : "Nova mensagem"}
         sub={subject || "Sem assunto"}
       />
       <div className="cp">

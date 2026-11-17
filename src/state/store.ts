@@ -16,6 +16,8 @@ export interface ComposeDraft {
   bcc?: { name: string; email: string }[];
   /** anexos já lidos (ao desfazer um envio) */
   attachments?: { name: string; mimeType: string; data: string; size: number }[];
+  /** veio da resposta rápida deste e-mail: mostra "Voltar ao e-mail" no lugar do Fechar */
+  returnTo?: string;
 }
 
 /** Telas do app. */

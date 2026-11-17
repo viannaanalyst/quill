@@ -110,6 +110,8 @@ export interface ChatMessageDto {
   mine: boolean;
   createTime: string;
   createMs: number;
+  /** última mudança (ou a criação): a API pede essa hora para citar a mensagem */
+  updateTime?: string;
   thread?: string | null;
   threadReply: boolean;
   attachments: ChatAttachmentDto[];
@@ -159,6 +161,11 @@ export interface ChatSpaceDto {
   memberCount?: number | null;
   /** link para abrir no Google Chat */
   uri?: string | null;
+}
+/** Mensagem que a nova vai citar: o nome e a hora da última mudança dela. */
+export interface ChatQuoteRef {
+  name: string;
+  lastUpdateTime: string;
 }
 /** Arquivo já enviado ao Chat (attachments:upload), para pôr na mensagem. */
 export interface ChatAttachmentRef {
@@ -217,6 +224,10 @@ export const api = {
   /** conteúdo de um rascunho a partir do id da mensagem (lista Rascunhos) */
   draftGet: (email: string, messageId: string) => call<DraftContent>("draft_get", { email, messageId }),
   action: (email: string, id: string, action: MessageAction) => call<void>("message_action", { email, id, action }),
+  /** exclui para sempre (Lixeira ou Spam), sem volta; devolve quantos saíram */
+  deleteForever: (email: string, ids: string[]) => call<number>("messages_delete_forever", { email, ids }),
+  /** esvazia a Lixeira da conta; devolve quantos e-mails saíram */
+  trashEmpty: (email: string) => call<number>("trash_empty", { email }),
   /** palpite de servidores IMAP/SMTP para um e-mail (domínio conhecido, MX ou imap./smtp.<domínio>) */
   imapGuess: (email: string, provider: "icloud" | "imap") => call<ImapGuess>("imap_guess", { email, provider }),
   /** testa IMAP e SMTP e, se der certo, guarda a senha nas Chaves do sistema e conecta a conta */
@@ -227,8 +238,9 @@ export const api = {
   chatMessages: (email: string, space: string, pageToken?: string | null) => call<ChatPageDto>("chat_messages", { email, space, pageToken: pageToken ?? null }),
   /** pessoas da conversa (a própria conta por último, como "Você") */
   chatMembers: (email: string, space: string) => call<ChatPersonDto[]>("chat_members", { email, space }),
-  chatSend: (email: string, space: string, text: string, thread?: string | null, attachments?: ChatAttachmentRef[]) =>
-    call<ChatMessageDto>("chat_send", { email, space, text, thread: thread ?? null, attachments: attachments ?? null }),
+  /** envia; com `quote`, a mensagem sai citando outra da mesma conversa */
+  chatSend: (email: string, space: string, text: string, thread?: string | null, attachments?: ChatAttachmentRef[], quote?: ChatQuoteRef | null) =>
+    call<ChatMessageDto>("chat_send", { email, space, text, thread: thread ?? null, attachments: attachments ?? null, quote: quote ?? null }),
   /** reage com um emoji; false quando a conta já tinha reagido com ele */
   chatReact: (email: string, message: string, emoji: string) => call<boolean>("chat_react", { email, message, emoji }),
   /** tira a própria reação com aquele emoji */

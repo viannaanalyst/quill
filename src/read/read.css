@@ -184,59 +184,160 @@
 }
 
 /* resposta rápida */
-.rd-reply {
-  margin: 0 16px 14px;
+/* resposta rápida: fechada (três botões) ou aberta logo abaixo da mensagem, rolando junto */
+.rd-replybar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 26px 26px 78px;
+}
+.rd-r {
+  margin: 4px 26px 26px 78px;
   border: 1px solid var(--line);
   border-radius: 18px;
   background: var(--panel);
-  flex: none;
+  box-shadow: 0 10px 28px -18px rgba(0, 0, 0, 0.35);
+  animation: rd-r-in 0.22s cubic-bezier(0.2, 0, 0, 1);
+  scroll-margin-bottom: 16px;
 }
-.rd-reply:focus-within {
+@keyframes rd-r-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rd-r {
+    animation: none;
+  }
+}
+.rd-r:focus-within {
   border-color: color-mix(in srgb, var(--blue) 60%, var(--line));
 }
-.rd-reply-to {
+.rd-r-to {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 14px;
+  padding: 8px 8px 8px 14px;
   border-bottom: 1px solid var(--line2);
   font-size: 13px;
   color: var(--ink3);
 }
-
-
-
-.rd-reply-mode {
+.rd-r-mode {
+  color: var(--ink2);
+}
+.rd-r-x {
   margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.rd-reply textarea {
-  display: block;
-  width: 100%;
-  border: 0;
-  outline: 0;
-  resize: none;
-  background: transparent;
-  font: inherit;
-  font-size: 14.5px;
-  color: var(--ink);
-  padding: 12px 16px 6px;
-  min-height: 48px;
-  user-select: text;
-}
-.rd-reply textarea::placeholder {
+  width: 30px;
+  height: 30px;
   color: var(--ink3);
 }
-
-
-
-.rd-reply .format-bar {
-  padding: 4px 10px 10px;
+.rd-r-x:hover {
+  color: var(--ink);
+  background: var(--gfill);
 }
-
-
+.rd-r-body {
+  min-height: 96px;
+  max-height: 46vh;
+  overflow-y: auto;
+  padding: 12px 16px 8px;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--ink);
+  outline: none;
+  user-select: text;
+  cursor: text;
+  overflow-wrap: anywhere;
+}
+.rd-r-body[data-empty]::before {
+  content: attr(data-placeholder);
+  color: var(--ink3);
+  pointer-events: none;
+  position: absolute;
+}
+.rd-r-body ul,
+.rd-r-body ol {
+  margin: 6px 0 0 22px;
+}
+.rd-r-body blockquote {
+  margin: 0 0 0 0.8ex;
+  border-left: 1px solid var(--line);
+  padding-left: 1ex;
+}
+.rd-r-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 14px 8px;
+  list-style: none;
+}
+.rd-r-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 280px;
+  padding: 5px 4px 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  font-size: 12.5px;
+}
+.rd-r-file-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.rd-r-file-size {
+  color: var(--ink3);
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.rd-r-file .btn.ic {
+  width: 24px;
+  height: 24px;
+  flex: none;
+}
+.rd-r > .cp-format {
+  border-top: 1px solid var(--line2);
+  padding: 6px 10px;
+  min-height: 0;
+}
+.rd-r-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 10px 10px;
+}
+.rd-r-actions > .btn.solid {
+  margin-right: 8px;
+}
+.rd-r-actions .cp-format-compact {
+  padding: 0;
+  min-height: 0;
+  flex-wrap: nowrap;
+}
+.rd-r-actions .vsep {
+  height: 18px;
+  margin: 0 4px;
+}
+.rd-r-tool {
+  width: 30px;
+  height: 30px;
+  color: var(--ink2);
+}
+.rd-r-tool:hover,
+.rd-r-tool[aria-pressed="true"] {
+  background: var(--gfill);
+  color: var(--ink);
+}
+.rd-r-tool[aria-pressed="true"] {
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.rd-r-full {
+  margin-left: auto;
+}
 
 /* coluna da direita */
 .rd-side {
@@ -434,4 +535,9 @@
   text-decoration: underline;
   text-underline-offset: 2px;
   overflow-wrap: anywhere;
+}
+
+/* "Excluir para sempre" (e-mail na Lixeira): ícone vermelho */
+.btn.rd-danger {
+  color: var(--danger, #c2453d);
 }

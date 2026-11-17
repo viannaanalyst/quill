@@ -11,6 +11,8 @@ import {
   NOT_CONFIGURED,
   type ChatAttachmentRef,
   type ChatMessageDto,
+  type ChatQuoteDto,
+  type ChatQuoteRef,
   type ChatPersonDto,
   type ChatSpaceDto,
 } from "../lib/api";
@@ -47,6 +49,20 @@ export interface PendingFile {
 }
 
 /** Mensagem que ainda está saindo (aparece na hora, com "enviando" ou erro). */
+/** Mensagem que vai ser citada: o que a API pede e o cartão que aparece enquanto envia. */
+export interface QuoteDraft {
+  ref: ChatQuoteRef;
+  preview: ChatQuoteDto;
+}
+
+/** Cartão de citação a partir de uma mensagem carregada. */
+export function quoteOf(m: ChatMessageDto): QuoteDraft {
+  return {
+    ref: { name: m.name, lastUpdateTime: m.updateTime || m.createTime },
+    preview: { name: m.name, sender: m.mine ? { ...m.sender, name: "Você" } : m.sender, text: m.text || (m.attachments[0] ? `Anexo: ${m.attachments[0].name}` : "") },
+  };
+}
+
 export interface Outgoing {
   id: string;
   account: string;
@@ -54,6 +70,8 @@ export interface Outgoing {
   text: string;
   textSent?: boolean;
   thread?: string | null;
+  /** mensagem citada: vai junto com o texto (ou com o primeiro arquivo) */
+  quote?: QuoteDraft | null;
   files: PendingFile[];
   status: "sending" | "error";
   error?: string;
@@ -389,8 +407,11 @@ async function run(id: string) {
     }
     const cur = () => state.outgoing.find((x) => x.id === id)!;
     const send = async (text: string, refs: ChatAttachmentRef[], file?: PendingFile): Promise<ChatMessageDto> => {
-      if (isTauri) return api.chatSend(o.account, o.space, text, o.thread, refs);
-      return (await loadSample()).sampleSent(o.space, text, o.thread ?? null, file ? [{ name: file.name, contentType: file.type, resourceName: `local:${file.id}` }] : []);
+      // a citação vai na mensagem que leva o texto (ou no primeiro arquivo, quando não há texto)
+      const quote = !cur().textSent ? o.quote : null;
+      if (isTauri) return api.chatSend(o.account, o.space, text, o.thread, refs, quote?.ref);
+      const local = file ? [{ name: file.name, contentType: file.type, resourceName: `local:${file.id}` }] : [];
+      return (await loadSample()).sampleSent(o.space, text, o.thread ?? null, local, quote?.preview);
     };
     const files = cur().files.filter((f) => !f.sent);
     if (files.length === 0 && !cur().textSent) {
@@ -415,10 +436,10 @@ async function run(id: string) {
 }
 
 /** Envia texto e/ou arquivos na conversa; aparece na hora, com "enviando" e, se falhar, "Tentar de novo". */
-export function sendChat(space: string, text: string, files: PendingFile[], thread?: string | null) {
+export function sendChat(space: string, text: string, files: PendingFile[], thread?: string | null, quote?: QuoteDraft | null) {
   const account = state.account;
   if (!account || (!text.trim() && files.length === 0)) return;
-  const o: Outgoing = { id: uid(), account, space, text: text.trim(), thread: thread ?? null, files, status: "sending", createMs: Date.now() };
+  const o: Outgoing = { id: uid(), account, space, text: text.trim(), thread: thread ?? null, quote: quote ?? null, files, status: "sending", createMs: Date.now() };
   set({ outgoing: [...state.outgoing, o] });
   void run(o.id);
 }

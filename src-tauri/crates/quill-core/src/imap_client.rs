@@ -491,10 +491,14 @@ impl ImapClient {
         Ok(draft_from_raw(&self.raw(cfg, password, id).await?, id))
     }
 
-    /// archive, unarchive, spam, notspam, star, unstar, read, unread, trash, untrash.
+    /// archive, unarchive, spam, notspam, star, unstar, read, unread, trash, untrash e delete (de vez, só na Lixeira ou no Spam).
     pub async fn act(&self, cfg: &ImapConfig, password: &str, id: &str, action: &str) -> Result<(), ImapError> {
         let (folder, uid) = parse_id(id)?;
         let kind = match action {
+            "delete" => {
+                check_deletable(folder)?;
+                Act::Delete
+            }
             "star" => Act::Flag("\\Flagged", true),
             "unstar" => Act::Flag("\\Flagged", false),
             "read" => Act::Flag("\\Seen", true),
@@ -506,6 +510,26 @@ impl ImapClient {
             other => return Err(ImapError::Invalid(format!("Ação desconhecida: {other}"))),
         };
         self.run(cfg, password, ActOp { email: cfg.email.clone(), folder: folder.to_string(), uid, kind }).await
+    }
+
+    /// Apaga de vez vários e-mails da Lixeira ou do Spam: um STORE + EXPUNGE por pasta.
+    pub async fn delete_many(&self, cfg: &ImapConfig, password: &str, ids: &[String]) -> Result<(), ImapError> {
+        let mut by_folder: std::collections::BTreeMap<String, Vec<u32>> = std::collections::BTreeMap::new();
+        for id in ids {
+            let (folder, uid) = parse_id(id)?;
+            check_deletable(folder)?;
+            by_folder.entry(folder.to_string()).or_default().push(uid);
+        }
+        if by_folder.is_empty() {
+            return Ok(());
+        }
+        let groups: Vec<(String, Vec<u32>)> = by_folder.into_iter().collect();
+        self.run(cfg, password, DeleteManyOp { email: cfg.email.clone(), groups }).await
+    }
+
+    /// Esvazia a Lixeira: apaga de vez tudo o que estiver lá. Devolve quantos e-mails saíram.
+    pub async fn empty_trash(&self, cfg: &ImapConfig, password: &str) -> Result<usize, ImapError> {
+        self.run(cfg, password, EmptyTrashOp { email: cfg.email.clone() }).await
     }
 
     /// Monta o e-mail com Date e Message-ID e o nome da conta quando a tela não mandar.
@@ -740,13 +764,29 @@ impl AsyncConnOp<Vec<u8>> for RawOp {
 enum Act {
     Flag(&'static str, bool),
     Move(&'static str),
+    /// apagar de vez (só na Lixeira ou no Spam)
+    Delete,
+}
+
+/// Só a Lixeira e o Spam aceitam "excluir para sempre" (protege contra apagar a Entrada por engano).
+fn check_deletable(folder: &str) -> Result<(), ImapError> {
+    if folder == "trash" || folder == "spam" {
+        Ok(())
+    } else {
+        Err(ImapError::Invalid("Só dá para excluir para sempre o que está na Lixeira ou no Spam.".into()))
+    }
 }
 
 /// Apaga de vez um e-mail da pasta selecionada (só o uid dado, se o servidor tiver UIDPLUS).
 async fn expunge_uid(c: &mut Conn, uid: u32) -> Result<(), OpErr> {
-    let _: Vec<_> = c.session.uid_store(uid.to_string(), "+FLAGS.SILENT (\\Deleted)").await?.try_collect().await?;
+    expunge_set(c, &uid.to_string()).await
+}
+
+/// Marca `\Deleted` nos uids ("3,7,9") e apaga de vez (UID EXPUNGE com UIDPLUS; senão EXPUNGE da pasta).
+async fn expunge_set(c: &mut Conn, set: &str) -> Result<(), OpErr> {
+    let _: Vec<_> = c.session.uid_store(set, "+FLAGS.SILENT (\\Deleted)").await?.try_collect().await?;
     if c.uidplus {
-        let _: Vec<_> = c.session.uid_expunge(uid.to_string()).await?.try_collect().await?;
+        let _: Vec<_> = c.session.uid_expunge(set).await?.try_collect().await?;
     } else {
         let _: Vec<_> = c.session.expunge().await?.try_collect().await?;
     }
@@ -784,6 +824,10 @@ impl AsyncConnOp<()> for ActOp {
                         c.session.uid_copy(self.uid.to_string(), &dest).await?;
                         expunge_uid(c, self.uid).await?;
                     }
+                }
+                Act::Delete => {
+                    select_folder(client, &self.email, c, &self.folder).await?;
+                    expunge_uid(c, self.uid).await?;
                 }
             }
             Ok(())
@@ -849,6 +893,44 @@ impl AsyncConnOp<()> for DeleteOp {
         Box::pin(async move {
             select_folder(client, &self.email, c, &self.folder).await?;
             expunge_uid(c, self.uid).await
+        })
+    }
+}
+
+struct DeleteManyOp {
+    email: String,
+    groups: Vec<(String, Vec<u32>)>,
+}
+
+impl AsyncConnOp<()> for DeleteManyOp {
+    fn call<'a>(&'a mut self, client: &'a ImapClient, c: &'a mut Conn) -> Pin<Box<dyn Future<Output = Result<(), OpErr>> + Send + 'a>> {
+        Box::pin(async move {
+            for (folder, uids) in &self.groups {
+                select_folder(client, &self.email, c, folder).await?;
+                expunge_set(c, &uid_set(uids)).await?;
+            }
+            Ok(())
+        })
+    }
+}
+
+struct EmptyTrashOp {
+    email: String,
+}
+
+impl AsyncConnOp<usize> for EmptyTrashOp {
+    fn call<'a>(&'a mut self, client: &'a ImapClient, c: &'a mut Conn) -> Pin<Box<dyn Future<Output = Result<usize, OpErr>> + Send + 'a>> {
+        Box::pin(async move {
+            // sem pasta Lixeira, não há nada para esvaziar
+            let Some(mailbox) = client.mailbox_for(&self.email, c, "trash", false).await? else { return Ok(0) };
+            c.session.select(&mailbox).await?;
+            let mut uids: Vec<u32> = c.session.uid_search("ALL").await?.into_iter().collect();
+            if uids.is_empty() {
+                return Ok(0);
+            }
+            uids.sort_unstable();
+            expunge_set(c, &uid_set(&uids)).await?;
+            Ok(uids.len())
         })
     }
 }
@@ -1097,6 +1179,52 @@ mod tests {
         assert_eq!(commands(&log, "UID COPY"), vec!["UID COPY 41 \"Junk\""]);
         assert_eq!(commands(&log, "UID STORE"), vec!["UID STORE 41 +FLAGS.SILENT (\\Deleted)"]);
         assert_eq!(commands(&log, "UID EXPUNGE"), vec!["UID EXPUNGE 41"]);
+    }
+
+    #[tokio::test]
+    async fn delete_marks_deleted_and_expunges_in_trash() {
+        let (port, log) = fake_imap(handler("MOVE UIDPLUS", |_| None)).await;
+        ImapClient::plain_for_tests().act(&cfg(port), "certa", "trash:7", "delete").await.unwrap();
+        assert_eq!(commands(&log, "SELECT").last().unwrap(), "SELECT \"Deleted Messages\"");
+        assert_eq!(commands(&log, "UID STORE"), vec!["UID STORE 7 +FLAGS.SILENT (\\Deleted)"]);
+        assert_eq!(commands(&log, "UID EXPUNGE"), vec!["UID EXPUNGE 7"]);
+        assert!(commands(&log, "UID MOVE").is_empty());
+    }
+
+    #[tokio::test]
+    async fn delete_many_groups_by_folder_in_one_command_each() {
+        let (port, log) = fake_imap(handler("MOVE UIDPLUS", |_| None)).await;
+        let ids = vec!["trash:7".to_string(), "trash:9".into(), "spam:3".into()];
+        ImapClient::plain_for_tests().delete_many(&cfg(port), "certa", &ids).await.unwrap();
+        assert_eq!(
+            commands(&log, "UID STORE"),
+            vec!["UID STORE 3 +FLAGS.SILENT (\\Deleted)", "UID STORE 7,9 +FLAGS.SILENT (\\Deleted)"]
+        );
+        assert_eq!(commands(&log, "UID EXPUNGE"), vec!["UID EXPUNGE 3", "UID EXPUNGE 7,9"]);
+    }
+
+    #[tokio::test]
+    async fn delete_many_rejects_bad_ids_before_connecting() {
+        let ids = vec!["trash:7".to_string(), "lixo".into()];
+        assert!(ImapClient::plain_for_tests().delete_many(&cfg(9), "certa", &ids).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn empty_trash_deletes_everything_in_trash_only() {
+        let (port, log) = fake_imap(handler("MOVE", |rest| rest.starts_with("UID SEARCH").then(|| ("* SEARCH 4 8\r\n".into(), "OK")))).await;
+        let n = ImapClient::plain_for_tests().empty_trash(&cfg(port), "certa").await.unwrap();
+        assert_eq!(n, 2);
+        assert_eq!(commands(&log, "SELECT").last().unwrap(), "SELECT \"Deleted Messages\"");
+        assert_eq!(commands(&log, "UID STORE"), vec!["UID STORE 4,8 +FLAGS.SILENT (\\Deleted)"]);
+        // sem UIDPLUS, EXPUNGE comum (a pasta é a Lixeira, então tudo que estiver marcado sai)
+        assert_eq!(commands(&log, "EXPUNGE"), vec!["EXPUNGE"]);
+    }
+
+    #[tokio::test]
+    async fn empty_trash_with_nothing_inside_changes_nothing() {
+        let (port, log) = fake_imap(handler("MOVE", |rest| rest.starts_with("UID SEARCH").then(|| ("* SEARCH\r\n".into(), "OK")))).await;
+        assert_eq!(ImapClient::plain_for_tests().empty_trash(&cfg(port), "certa").await.unwrap(), 0);
+        assert!(commands(&log, "UID STORE").is_empty());
     }
 
     #[tokio::test]

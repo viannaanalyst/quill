@@ -1,9 +1,10 @@
 import * as Popover from "@radix-ui/react-popover";
-import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type SyntheticEvent } from "react";
 import SmilePlus from "lucide-react/icons/smile-plus";
 import EllipsisVertical from "lucide-react/icons/ellipsis-vertical";
 import Copy from "lucide-react/icons/copy";
 import MessageSquareReply from "lucide-react/icons/message-square-reply";
+import TextQuote from "lucide-react/icons/text-quote";
 import { api, friendlyError, type ChatAttachmentDto, type ChatMessageDto, type ChatQuoteDto } from "../lib/api";
 import { isTauri } from "../lib/platform";
 import { FILE_LABEL, fileSize, fileType } from "../lib/files";
@@ -15,8 +16,10 @@ import { askConfirm } from "../components/ConfirmHost";
 import { Check, Download, ExternalLink, Eye, Hash, LoaderCircle, Maximize2, Pause, Pencil, Play, Reply, RotateCcw, Trash2, Users, Video, X } from "../components/icons";
 import { EMOJIS, emojiName } from "../lib/emojis";
 import { deleteMessage, discardOutgoing, editMessage, quickReactions, retryOutgoing, toggleReaction, useChat, type Outgoing, type PendingFile } from "../state/chat";
+import { stampLabel } from "./time";
 import type { ChatPersonDto, ChatSpaceDto } from "../lib/api";
 import { ChatBlocks, ChatText, openLink } from "./chatText";
+import { NotoEmoji, useHoverPlay } from "./Emoji";
 import { emojiOnly, parseChat, plainChat } from "./format";
 import { blobToBase64, clock, kindOf, loadAttachment, waveOf } from "./media";
 
@@ -92,14 +95,7 @@ export function SpaceIcon({ s, size = 40 }: { s: ChatSpaceDto; size?: number }) 
 /* ---------- datas ---------- */
 const sameDay = (a: number, b: number) => new Date(a).toDateString() === new Date(b).toDateString();
 export const hhmm = (ms: number) => new Date(ms).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-/** Horário da mensagem: "agora" e "5 min" até 1 hora; depois o horário (14:35). */
-export function relTime(ms: number, now: number) {
-  const d = now - ms;
-  if (d >= 0 && d < 60_000) return "agora";
-  if (d >= 0 && d < 3_600_000) return `${Math.floor(d / 60_000)} min`;
-  return hhmm(ms);
-}
-/** Data e hora completas (dica ao passar o mouse na mensagem). */
+/** Data e hora completas (só para o leitor de tela, na barra de ações da mensagem). */
 export const fullDate = (ms: number) => new Date(ms).toLocaleString("pt-BR", { dateStyle: "full", timeStyle: "short" });
 function dayLabel(ms: number, now: number) {
   if (sameDay(ms, now)) return "Hoje";
@@ -227,14 +223,22 @@ function VideoTile({ account, a }: { account: string; a: ChatAttachmentDto }) {
   );
 }
 
-/** Player compacto: play/pausa, ondinha (clicável para pular) e duração. */
-export function AudioPlayer({ src, seed, mine, onError }: { src: string | null; seed: string; mine?: boolean; onError?: string | null }) {
+const SPEEDS = [1, 1.5, 2] as const;
+const speedLabel = (r: number) => `${String(r).replace(".", ",")}x`;
+
+/**
+ * Mensagem de voz, como no Google Chat: play/pausa redondo, ondinha que vai enchendo enquanto toca
+ * (clicar ou as setas pulam), tempo e velocidade 1x/1,5x/2x. O <audio> fica escondido (sem os controles do sistema).
+ */
+export function AudioPlayer({ src, seed, mine, onError, speed = true }: { src: string | null; seed: string; mine?: boolean; onError?: string | null; speed?: boolean }) {
   const audio = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [dur, setDur] = useState(0);
   const [pos, setPos] = useState(0);
+  const [rate, setRate] = useState<number>(1);
   const bars = useMemo(() => waveOf(seed), [seed]);
-  const played = dur > 0 ? Math.round((pos / dur) * bars.length) : 0;
+  const frac = dur > 0 ? Math.min(1, pos / dur) : 0;
+  const played = Math.floor(frac * bars.length);
 
   const fixDuration = (el: HTMLAudioElement) => {
     // áudio gravado em webm vem sem duração: pula para o fim uma vez para o navegador descobrir
@@ -253,15 +257,24 @@ export function AudioPlayer({ src, seed, mine, onError }: { src: string | null; 
     el.currentTime = Math.max(0, Math.min(dur, frac * dur));
     setPos(el.currentTime);
   };
+  const nextRate = () => {
+    const r = SPEEDS[(SPEEDS.indexOf(rate as (typeof SPEEDS)[number]) + 1) % SPEEDS.length];
+    setRate(r);
+    if (audio.current) audio.current.playbackRate = r;
+  };
+  const started = playing || pos > 0;
 
   return (
-    <div className={`chat-aud${mine ? " is-mine" : ""}`}>
+    <div className={`chat-aud${mine ? " is-mine" : ""}${playing ? " is-playing" : ""}`}>
       {src && (
         <audio
           ref={audio}
           src={src}
           preload="metadata"
-          onLoadedMetadata={(e) => fixDuration(e.currentTarget)}
+          onLoadedMetadata={(e) => {
+            e.currentTarget.playbackRate = rate;
+            fixDuration(e.currentTarget);
+          }}
           onTimeUpdate={(e) => setPos(e.currentTarget.currentTime)}
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}
@@ -276,6 +289,7 @@ export function AudioPlayer({ src, seed, mine, onError }: { src: string | null; 
         className="btn solid ic chat-aud-btn"
         disabled={!src}
         aria-label={playing ? "Pausar áudio" : "Ouvir áudio"}
+        data-tip={playing ? "Pausar" : "Ouvir"}
         onClick={() => {
           const el = audio.current;
           if (!el) return;
@@ -299,15 +313,33 @@ export function AudioPlayer({ src, seed, mine, onError }: { src: string | null; 
           seek((e.clientX - r.left) / r.width);
         }}
         onKeyDown={(e) => {
-          if (e.key === "ArrowRight") seek((pos + 5) / (dur || 1));
-          if (e.key === "ArrowLeft") seek((pos - 5) / (dur || 1));
+          const to = e.key === "ArrowRight" ? pos + 5 : e.key === "ArrowLeft" ? pos - 5 : e.key === "Home" ? 0 : e.key === "End" ? dur : null;
+          if (to == null) return;
+          e.preventDefault();
+          seek(to / (dur || 1));
         }}
       >
         {bars.map((h, i) => (
-          <i key={i} className={i < played ? "is-p" : undefined} style={{ height: h }} />
+          <i key={i} className={i < played ? "is-p" : i === played && started ? "is-now" : undefined} style={{ height: h }} />
         ))}
       </div>
-      <span className="chat-adur">{onError ? "Não abriu" : playing || pos > 0 ? clock(pos) : clock(dur)}</span>
+      <span className="chat-adur">
+        {onError ? (
+          "Não abriu"
+        ) : started ? (
+          <>
+            {clock(pos)}
+            <span className="chat-adur-of"> / {clock(dur)}</span>
+          </>
+        ) : (
+          clock(dur)
+        )}
+      </span>
+      {speed && !onError && (
+        <button type="button" className="chat-aud-rate" disabled={!src} aria-label={`Velocidade: ${speedLabel(rate)}. Mudar`} data-tip="Velocidade" onClick={nextRate}>
+          {speedLabel(rate)}
+        </button>
+      )}
     </div>
   );
 }
@@ -403,6 +435,8 @@ interface ListContext {
   onEdit: (name: string | null) => void;
   /** responder no fio: abre as respostas e foca a caixa de escrever */
   reply: (m: ChatMessageDto) => void;
+  /** citar na resposta: o cartão aparece na caixa de escrever */
+  quote: (m: ChatMessageDto) => void;
   openThreads: Set<string>;
   toggleThread: (thread: string) => void;
   /** rola até a mensagem citada (abre o fio se ela for uma resposta) */
@@ -440,26 +474,53 @@ function Reactions({ space, m }: { space: string; m: ChatMessageDto }) {
           );
         }
         const isMine = mine.includes(r.emoji);
-        return (
-          <button
-            key={r.emoji}
-            type="button"
-            className={`chat-rx${isMine ? " is-mine" : ""}`}
-            aria-pressed={isMine}
-            aria-label={`${nameOfEmoji(r.emoji)}: ${r.count} ${r.count === 1 ? "reação" : "reações"}${isMine ? ", uma é sua" : ""}`}
-            data-tip={isMine ? "Tirar sua reação" : `Reagir com ${r.emoji}`}
-            onClick={() => void toggleReaction(space, m, r.emoji)}
-          >
-            <span className="chat-rx-e chat-emo" aria-hidden>
-              {r.emoji}
-            </span>
-            <span className="chat-rx-n" aria-hidden>
-              {r.count}
-            </span>
-          </button>
-        );
+        return <ReactionChip key={r.emoji} space={space} m={m} emoji={r.emoji} count={r.count} isMine={isMine} />;
       })}
     </div>
+  );
+}
+
+/** Chip de uma reação: emoji do Google parado, animando com o mouse em cima. */
+function ReactionChip({ space, m, emoji, count, isMine }: { space: string; m: ChatMessageDto; emoji: string; count: number; isMine: boolean }) {
+  const [playing, hover] = useHoverPlay();
+  return (
+    <button
+      type="button"
+      className={`chat-rx${isMine ? " is-mine" : ""}`}
+      aria-pressed={isMine}
+      aria-label={`${nameOfEmoji(emoji)}: ${count} ${count === 1 ? "reação" : "reações"}${isMine ? ", uma é sua" : ""}`}
+      data-tip={isMine ? "Tirar sua reação" : `Reagir com ${emoji}`}
+      onClick={() => void toggleReaction(space, m, emoji)}
+      {...hover}
+    >
+      <span className="chat-rx-e" aria-hidden>
+        <NotoEmoji emoji={emoji} animate="hover" playing={playing} />
+      </span>
+      <span className="chat-rx-n" aria-hidden>
+        {count}
+      </span>
+    </button>
+  );
+}
+
+/** Reação rápida da barra da mensagem (emoji do Google, anima com o mouse em cima). */
+function QuickEmoji({ emoji, on, tabIndex, onFocus, onClick }: { emoji: string; on: boolean; tabIndex: number; onFocus: () => void; onClick: () => void }) {
+  const [playing, hover] = useHoverPlay();
+  return (
+    <button
+      type="button"
+      data-bar
+      tabIndex={tabIndex}
+      className={`chat-bar-btn chat-bar-emo${on ? " is-mine" : ""}`}
+      aria-pressed={on}
+      aria-label={`${on ? "Tirar reação" : "Reagir com"} ${nameOfEmoji(emoji)}`}
+      data-tip={on ? "Tirar sua reação" : nameOfEmoji(emoji)}
+      onFocus={onFocus}
+      onClick={onClick}
+      {...hover}
+    >
+      <NotoEmoji emoji={emoji} animate="hover" playing={playing} />
+    </button>
   );
 }
 
@@ -511,31 +572,14 @@ function MessageBar({ m }: { m: ChatMessageDto }) {
   let n = quick.length;
   const pickerAt = n++;
   const replyAt = m.thread ? n++ : -1;
+  const quoteAt = n++;
   const menuAt = n;
 
   return (
     <div ref={bar} className={`chat-bar${picker || menu ? " is-open" : ""}`} role="toolbar" aria-label={`Ações da ${who}, ${fullDate(m.createMs)}`} onKeyDown={onKeyDown}>
-      {quick.map((e, i) => {
-        const on = mine.includes(e);
-        return (
-          <button
-            key={e}
-            type="button"
-            data-bar
-            tabIndex={tab(i)}
-            className={`chat-bar-btn chat-bar-emo${on ? " is-mine" : ""}`}
-            aria-pressed={on}
-            aria-label={`${on ? "Tirar reação" : "Reagir com"} ${nameOfEmoji(e)}`}
-            data-tip={on ? "Tirar sua reação" : nameOfEmoji(e)}
-            onFocus={() => setActive(i)}
-            onClick={() => react(e)}
-          >
-            <span className="chat-emo" aria-hidden>
-              {e}
-            </span>
-          </button>
-        );
-      })}
+      {quick.map((e, i) => (
+        <QuickEmoji key={e} emoji={e} on={mine.includes(e)} tabIndex={tab(i)} onFocus={() => setActive(i)} onClick={() => react(e)} />
+      ))}
       <Popover.Root open={picker} onOpenChange={setPicker}>
         <Popover.Trigger asChild>
           <button type="button" data-bar tabIndex={tab(pickerAt)} className="chat-bar-btn" aria-label="Adicionar reação" data-tip="Adicionar reação" onFocus={() => setActive(pickerAt)}>
@@ -543,7 +587,7 @@ function MessageBar({ m }: { m: ChatMessageDto }) {
           </button>
         </Popover.Trigger>
         <Popover.Portal>
-          <Popover.Content className="qp-content chat-rx-pop" side="top" align="end" sideOffset={8} collisionPadding={12}>
+          <Popover.Content className="qp-content chat-rx-pop" side="top" align="start" sideOffset={8} collisionPadding={12}>
             <div className="chat-rx-grid" role="group" aria-label="Escolha um emoji">
               {EMOJIS.map(([e, name]) => {
                 const on = mine.includes(e);
@@ -574,6 +618,9 @@ function MessageBar({ m }: { m: ChatMessageDto }) {
           <MessageSquareReply size={16} aria-hidden />
         </button>
       )}
+      <button type="button" data-bar tabIndex={tab(quoteAt)} className="chat-bar-btn" aria-label="Citar na resposta" data-tip="Citar na resposta" onFocus={() => setActive(quoteAt)} onClick={() => ctx.quote(m)}>
+        <TextQuote size={16} aria-hidden />
+      </button>
       <Popover.Root open={menu} onOpenChange={setMenu}>
         <Popover.Trigger asChild>
           <button type="button" data-bar tabIndex={tab(menuAt)} className="chat-bar-btn" aria-label="Mais ações da mensagem" data-tip="Mais" onFocus={() => setActive(menuAt)}>
@@ -690,6 +737,16 @@ function EditBox({ space, m, onDone }: { space: string; m: ChatMessageDto; onDon
   );
 }
 
+/** Miolo do cartão de citação: nome em negrito pequeno e o começo do texto (até 2 linhas, com reticências). */
+export function QuoteBody({ name, text }: { name: string; text: string }) {
+  return (
+    <>
+      <span className="chat-qn">{name}</span>
+      {text && <span className="chat-qt">{text}</span>}
+    </>
+  );
+}
+
 /** Cartão da mensagem citada: barrinha, nome e começo do texto. Clicar leva até ela (se estiver carregada). */
 function Quote({ q, nameOf }: { q: ChatQuoteDto; nameOf: (id: string) => string | null | undefined }) {
   const ctx = useList();
@@ -697,12 +754,7 @@ function Quote({ q, nameOf }: { q: ChatQuoteDto; nameOf: (id: string) => string 
   const name = loaded?.mine ? "Você" : (q.sender?.name ?? loaded?.sender.name ?? "Mensagem citada");
   const raw = q.text || (loaded ? loaded.formattedText || loaded.text : "");
   const text = (raw ? plainChat(raw, nameOf) : "") || (loaded?.attachments[0] ? `Anexo: ${loaded.attachments[0].name}` : "");
-  const body = (
-    <>
-      <span className="chat-qn">{name}</span>
-      {text && <span className="chat-qt">{text}</span>}
-    </>
-  );
+  const body = <QuoteBody name={name} text={text} />;
   if (!loaded) return <div className="chat-quote">{body}</div>;
   return (
     <button type="button" className="chat-quote" aria-label={`Ir para a mensagem citada de ${name}: ${text.slice(0, 80)}`} onClick={() => ctx.jumpTo(q.name)}>
@@ -711,12 +763,12 @@ function Quote({ q, nameOf }: { q: ChatQuoteDto; nameOf: (id: string) => string 
   );
 }
 
-/** Horário ao lado do nome: relativo quando é recente; a dica mostra data e hora completas. */
-function Stamp({ ms, tipLeft }: { ms: number; tipLeft?: boolean }) {
+/** Horário ao lado do nome, como no Google Chat: "11:00" hoje, "5 de nov., 11:00" em outro dia (sem dica). */
+function Stamp({ ms }: { ms: number }) {
   const { now } = useList();
   return (
-    <time className="chat-mtm" dateTime={new Date(ms).toISOString()} data-tip={fullDate(ms)} data-tip-pos={tipLeft ? "left" : undefined}>
-      {relTime(ms, now)}
+    <time className="chat-mtm" dateTime={new Date(ms).toISOString()}>
+      {stampLabel(ms, now)}
     </time>
   );
 }
@@ -743,7 +795,6 @@ function MessageBody({ m, pos }: { m: ChatMessageDto; pos: Pos }) {
     <div
       className={`chat-msg is-${pos}${gone ? " chat-gone" : ""}${isEditing ? " is-editing" : ""}`}
       data-msg={m.name}
-      data-when={isEditing ? undefined : fullDate(m.createMs)}
       aria-hidden={gone || undefined}
     >
       {m.deleted ? (
@@ -754,7 +805,7 @@ function MessageBody({ m, pos }: { m: ChatMessageDto; pos: Pos }) {
         (source || m.quoted) && (
           <div className={`chat-bub ${m.mine ? "is-mine" : "is-other"}${jumbo ? " is-jumbo" : ""}`}>
             {m.quoted && <Quote q={m.quoted} nameOf={nameOf} />}
-            <ChatBlocks blocks={blocks} ctx={{ nameOf, myId: ctx.myId }} />
+            <ChatBlocks blocks={blocks} ctx={{ nameOf, myId: ctx.myId, jumbo }} />
             {edited}
           </div>
         )
@@ -874,6 +925,11 @@ function OutgoingItem({ o }: { o: Outgoing }) {
       </div>
       {o.text && !o.textSent && (
         <div className="chat-bub is-mine is-pending">
+          {o.quote && (
+            <div className="chat-quote">
+              <QuoteBody name={o.quote.preview.sender?.name ?? "Mensagem citada"} text={plainChat(o.quote.preview.text)} />
+            </div>
+          )}
           <ChatText text={o.text} />
         </div>
       )}
@@ -907,6 +963,7 @@ export function MessageList({
   olderLoading,
   onOlder,
   onReply,
+  onQuote,
   filter,
   onClearFilter,
 }: {
@@ -920,6 +977,7 @@ export function MessageList({
   olderLoading: boolean;
   onOlder: () => void;
   onReply: (m: ChatMessageDto) => void;
+  onQuote: (m: ChatMessageDto) => void;
   filter: string;
   onClearFilter: () => void;
 }) {
@@ -986,6 +1044,7 @@ export function MessageList({
         if (m.thread && replies.has(m.thread)) openThread(m.thread);
         onReply(m);
       },
+      quote: onQuote,
       jumpTo: (name) => {
         const target = byName.get(name);
         if (target?.threadReply && target.thread) openThread(target.thread);
@@ -1001,7 +1060,89 @@ export function MessageList({
         });
       },
     };
-  }, [account, space, now, uri, byName, people, myId, editing, openThreads, replies, onReply]);
+  }, [account, space, now, uri, byName, people, myId, editing, openThreads, replies, onReply, onQuote]);
+
+  /**
+   * Dica (data-tip) dos botões da lista no lado que cabe: a lista rola e corta o que passa da borda,
+   * então a posição é escolhida quando o mouse (ou o Tab) chega no botão.
+   */
+  const placeTip = (e: SyntheticEvent) => {
+    const el = (e.target as Element).closest?.<HTMLElement>("[data-tip]");
+    const list = box.current;
+    if (!el || !list?.contains(el)) return;
+    // área visível: a lista e qualquer moldura que corte por dentro dela (ex.: a do vídeo)
+    let b = { left: -Infinity, top: -Infinity, right: Infinity, bottom: Infinity };
+    for (let a = el.parentElement; a; a = a.parentElement) {
+      const o = getComputedStyle(a);
+      if (/(auto|scroll|hidden|clip)/.test(o.overflowX + o.overflowY)) {
+        const ar = a.getBoundingClientRect();
+        b = { left: Math.max(b.left, ar.left), top: Math.max(b.top, ar.top), right: Math.min(b.right, ar.right), bottom: Math.min(b.bottom, ar.bottom) };
+      }
+      if (a === list) break;
+    }
+    const r = el.getBoundingClientRect();
+    const cs = getComputedStyle(el, "::after");
+    const w = parseFloat(cs.width) + parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+    const need = parseFloat(cs.height) + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + 12;
+    const mid = r.left + r.width / 2;
+    let pos: string | null = null;
+    if (mid + w / 2 > b.right - 12) pos = "left";
+    else if (mid - w / 2 < b.left + 4) pos = "right";
+    else if (b.bottom - r.bottom < need && r.top - b.top >= need) pos = "top";
+    if (pos) el.dataset.tipPos = pos;
+    else delete el.dataset.tipPos;
+  };
+
+  /**
+   * Barra de ações no começo da mensagem, como no Google Chat: flutua sobre a borda de cima, alinhada ao
+   * início do balão. Na primeira mensagem do grupo ela vai para a linha do nome, logo depois do horário
+   * (nas suas, antes de "Você"), para não cobrir o nome. Medido quando o mouse (ou o Tab) chega na mensagem.
+   */
+  const lastBar = useRef<HTMLElement | null>(null);
+  const placeBar = (e: SyntheticEvent) => {
+    const msg = (e.target as Element).closest?.<HTMLElement>(".chat-msg");
+    const list = box.current;
+    if (!msg || !list || (e.type !== "focus" && lastBar.current === msg)) return;
+    lastBar.current = msg;
+    const bar = msg.querySelector<HTMLElement>(":scope > .chat-bar");
+    const content = msg.firstElementChild as HTMLElement | null;
+    if (!bar || !content || content === bar) return;
+    const mr = msg.getBoundingClientRect();
+    const cr = content.getBoundingClientRect();
+    const lr = list.getBoundingClientRect();
+    const bw = bar.offsetWidth;
+    const bh = bar.offsetHeight;
+    const mine = !!msg.closest(".chat-mine");
+    // o que fica logo acima: a linha do nome (outros), "Você · hora" (suas) ou a etiqueta "Resposta na conversa"
+    const prev = msg.previousElementSibling;
+    const item = msg.parentElement;
+    const above = prev?.matches(".chat-mh, .chat-replytag")
+      ? prev
+      : item?.matches(".chat-item, .chat-mine-item") && item.previousElementSibling?.matches(".chat-mh, .chat-mmeta")
+        ? item.previousElementSibling
+        : null;
+    let x = cr.left - mr.left + 6;
+    let y = -Math.round(bh / 2) - 2;
+    if (above) {
+      const range = document.createRange();
+      range.selectNodeContents(above);
+      const ar = range.getBoundingClientRect();
+      const onHeader = () => (y = Math.round(ar.top - mr.top + ar.height / 2 - bh / 2));
+      if (!mine) {
+        // o nome fica no começo: a barra vai logo depois do horário
+        x = ar.right - mr.left + 10;
+        onHeader();
+      } else if (cr.left + 6 + bw + 10 > ar.left) {
+        // "Você · hora" fica à direita: só quando o balão é curto a barra vai para antes dele
+        x = ar.left - mr.left - bw - 10;
+        onHeader();
+      }
+    }
+    // sem passar das bordas da lista (ela rola e cortaria a barra)
+    x = Math.max(lr.left + 8 - mr.left, Math.min(x, lr.right - 14 - bw - mr.left));
+    msg.style.setProperty("--chat-bar-x", `${Math.round(x)}px`);
+    msg.style.setProperty("--chat-bar-y", `${y}px`);
+  };
 
   const row = (m: ChatMessageDto, pos: Pos, cls?: string) => (
     <div key={m.name} className={cls ?? "chat-item"}>
@@ -1024,6 +1165,14 @@ export function MessageList({
         onScroll={(e) => {
           const el = e.currentTarget;
           atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+        }}
+        onPointerOver={(e) => {
+          placeBar(e);
+          placeTip(e);
+        }}
+        onFocus={(e) => {
+          placeBar(e);
+          placeTip(e);
         }}
         aria-live="polite"
         aria-relevant="additions"
@@ -1061,7 +1210,7 @@ export function MessageList({
           ) : it.mine ? (
             <div className="chat-mine" key={it.key}>
               <div className="chat-mmeta">
-                Você · <Stamp ms={it.first.createMs} tipLeft /> <Check size={14} aria-label="Enviada" />
+                Você · <Stamp ms={it.first.createMs} /> <Check size={14} aria-label="Enviada" />
               </div>
               {it.list.map((m, i) => row(m, posOf(i, it.list.length), "chat-mine-item"))}
             </div>

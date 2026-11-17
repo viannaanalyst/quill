@@ -12,10 +12,11 @@ const AppShell = lazy(() => import("./shell/AppShell"));
 // Prévia: ?preload=onboarding carrega o onboarding junto, para pegar estilos que vazam entre telas.
 if (devParams.get("preload") === "onboarding") void import("./onboarding/Onboarding");
 
-// Prévia: ?screen=inbox|read|compose|day|week|month|chat|settings abre direto numa tela
+// Prévia: ?screen=inbox|trash|read|compose|day|week|month|chat|settings abre direto numa tela
 // (no Chat: &chat=none sem conta Workspace, &chat=rec gravando áudio, &chat=att enviando anexos).
 const DEV_VIEWS: Record<string, View> = {
   inbox: { name: "inbox", folder: "inbox" },
+  trash: { name: "inbox", folder: "trash" },
   read: { name: "read", id: "m1" },
   compose: { name: "compose" },
   day: { name: "calendar", mode: "day" },

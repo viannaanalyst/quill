@@ -1,5 +1,5 @@
 import * as Popover from "@radix-ui/react-popover";
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import "./chat.css";
 import { TopBar } from "../components/TopBar";
 import { Select, Dot } from "../components/Select";
@@ -334,6 +334,16 @@ function Conversation({ s, account }: { s: ChatSpaceDto; account: string }) {
   const pinned = useChat((st) => isPinned(st, s.name));
   const outgoing = useMemo(() => allOutgoing.filter((o) => o.space === s.name && o.account === account), [allOutgoing, s.name, account]);
   const [replyTo, setReplyTo] = useState<ChatMessageDto | null>(null);
+  const [quoting, setQuoting] = useState<ChatMessageDto | null>(null);
+  // responder no fio e citar juntos só quando é o mesmo fio (a API recusa citar de outro fio)
+  const reply = useCallback((m: ChatMessageDto) => {
+    setReplyTo(m);
+    setQuoting((q) => (q && q.thread !== m.thread ? null : q));
+  }, []);
+  const quote = useCallback((m: ChatMessageDto) => {
+    setQuoting(m);
+    setReplyTo((r) => (r && r.thread !== m.thread ? null : r));
+  }, []);
   const [searching, setSearching] = useState(false);
   const [filter, setFilter] = useState("");
   const [dragging, setDragging] = useState(false);
@@ -342,6 +352,7 @@ function Conversation({ s, account }: { s: ChatSpaceDto; account: string }) {
 
   useEffect(() => {
     setReplyTo(null);
+    setQuoting(null);
     setFilter("");
     setSearching(false);
     void loadMessages(s.name);
@@ -475,12 +486,21 @@ function Conversation({ s, account }: { s: ChatSpaceDto; account: string }) {
           hasOlder={hasOlder}
           olderLoading={olderLoading}
           onOlder={() => void loadOlder(s.name)}
-          onReply={setReplyTo}
+          onReply={reply}
+          onQuote={quote}
           filter={filter}
           onClearFilter={() => setFilter("")}
         />
       )}
-      <Composer account={account} space={s.name} replyTo={replyTo} onClearReply={() => setReplyTo(null)} dropped={dropped} />
+      <Composer
+        account={account}
+        space={s.name}
+        replyTo={replyTo}
+        onClearReply={() => setReplyTo(null)}
+        quoting={quoting}
+        onClearQuote={() => setQuoting(null)}
+        dropped={dropped}
+      />
       {dragging && (
         <div className="chat-drop" aria-hidden>
           <Paperclip size={22} />

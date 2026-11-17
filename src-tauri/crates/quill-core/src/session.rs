@@ -273,6 +273,23 @@ impl GoogleSession {
         self.client.mark_read(&token, id).await
     }
 
+    /// Apaga de vez os e-mails escolhidos (sem volta).
+    pub async fn delete_forever(&self, email: &str, ids: &[String]) -> Result<(), LoginError> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        let token = self.access_token(email).await?;
+        self.client.batch_delete(&token, ids).await
+    }
+
+    /// Esvazia a Lixeira da conta; devolve quantos e-mails saíram.
+    pub async fn empty_trash(&self, email: &str) -> Result<usize, LoginError> {
+        let token = self.access_token(email).await?;
+        let ids = self.client.trash_ids(&token).await?;
+        self.client.batch_delete(&token, &ids).await?;
+        Ok(ids.len())
+    }
+
     /// Tira a conta do Quill neste computador (nada é apagado no Google).
     pub fn remove(&self, email: &str) -> Result<(), LoginError> {
         // se as Chaves recusarem, a conta sai da lista do mesmo jeito (como antes)

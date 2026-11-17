@@ -88,8 +88,15 @@ Limitações: e-mails formatados aparecem sempre em fundo branco, mesmo no modo 
 
 ### Responder, responder a todos e encaminhar
 1. Abra o e-mail.
-2. Clique em **Responder**, **Responder a todos** ou **Encaminhar**.
-3. A resposta fica na mesma conversa.
+2. Clique em **Responder**, **Responder a todos** ou **Encaminhar** (no fim do e-mail ou na barra de cima).
+3. A caixa de resposta abre logo abaixo da mensagem. Ao lado do **Enviar** ficam negrito, itálico, sublinhado,
+   marcadores, link e emoji; o botão **Aa** mostra a barra inteira (fonte, tamanho, cores, alinhamento). O clipe anexa
+   arquivos. ⌘↵ também envia.
+4. Precisa de Cc ou de mais espaço? Clique em **Editor completo**. A seta **Voltar ao e-mail**, no canto de cima,
+   volta para o e-mail com a resposta como estava.
+5. Saiu do e-mail sem enviar? A resposta fica guardada (e salva em Rascunhos) e reabre quando você voltar. A lixeira
+   da caixa descarta.
+6. A resposta fica na mesma conversa.
 
 ### Escrever um e-mail novo
 1. Clique em **Escrever** (ou ⌘N, ou C).
@@ -118,15 +125,30 @@ Limitações: se o app for fechado durante a espera, o e-mail não sai.
 ### Ações em massa
 **Quando usar:** limpar vários e-mails de uma vez.
 1. Passe o mouse no avatar de um e-mail e marque a caixinha que aparece ao lado. Marque outros.
-2. A barra de ações em massa aparece com o que faz sentido na pasta: arquivar, lixeira, spam, não é spam, mover para
-   a Entrada, marcar como lido ou não lido.
+2. A barra de ações em massa aparece com o que faz sentido na pasta: arquivar, lixeira, spam, não é spam, tirar da
+   lixeira, excluir para sempre, marcar como lido ou não lido.
 3. **Limpar seleção** desmarca tudo.
 
 Se **Ajustes → Geral → Confirmar antes de apagar** estiver ligado, o Quill pergunta antes de mandar para a Lixeira.
 
 ### Tirar da Lixeira ou do Spam
 1. Abra a pasta **Lixeira** (ou **Spam**).
-2. Selecione o e-mail e use **Mover para a Entrada** (ou **Não é spam**).
+2. Selecione o e-mail e use **Tirar da lixeira** (ou **Não é spam**). Ele volta para a Entrada.
+3. Lendo um e-mail da Lixeira, o botão **Tirar da lixeira** fica na barra de cima.
+
+### Excluir para sempre e esvaziar a Lixeira
+**Quando usar:** apagar de vez o que está na Lixeira ou no Spam. **Não tem volta**, nem pelo Gmail.
+1. Na pasta **Lixeira** ou **Spam**, selecione os e-mails e clique em **Excluir para sempre** (vermelho).
+2. Lendo um e-mail da Lixeira, o botão da lixeira vira **Excluir para sempre**.
+3. Para apagar tudo, use **Esvaziar lixeira** no topo da pasta Lixeira. Com **Todas** escolhido nas contas, esvazia a
+   Lixeira de todas as contas conectadas; com uma conta escolhida, só a dela. Entra também o que ainda não apareceu na
+   lista.
+4. O Quill sempre pede confirmação e, no fim, avisa quantos e-mails saíram.
+
+**Problemas comuns:**
+- "Para excluir para sempre, entre de novo com esta conta": a conta Google entrou antes desta função existir e o
+  Google pede uma permissão a mais. Em **Ajustes → Contas**, clique em **Desconectar** e conecte a conta de novo
+  (aceite todas as permissões). Só precisa fazer isso uma vez por conta.
 
 ### Anexos
 - **Enviar:** no Escrever, clique em **Anexar** ou arraste arquivos para a janela. Limite de 25 MB no total (limite do
@@ -188,26 +210,35 @@ Como as mensagens aparecem:
 - As dos outros ficam em balões cinza à esquerda; as suas, em azul-claro à direita. Mensagens seguidas da mesma pessoa
   ficam empilhadas.
 - Negrito, itálico, tachado, código, links, listas, menções (@nome), emojis coloridos e os emojis próprios da empresa
-  aparecem como no Google Chat. Mensagem só com 1 a 3 emojis aparece grande.
-- Quando alguém cita outra mensagem, aparece o cartão com a barrinha azul, o nome e o começo do texto; clicar nele leva
-  até a mensagem citada (se ela já estiver carregada).
-- O horário ao lado do nome é "agora" ou "5 min" na primeira hora e depois a hora (14:35). Parando o mouse sobre
-  qualquer mensagem, aparece a data e a hora completas. Nas suas, a hora fica acima do grupo.
+  aparecem como no Google Chat. Mensagens em Markdown (como as notas de reunião do Gemini, com `**negrito**`, títulos
+  `#`, listas numeradas e com recuo, citação `>` e linha `---`) também aparecem formatadas, sem asteriscos nem barras
+  invertidas sobrando.
+- Mensagem só com 1 a 3 emojis aparece grande e **animada**, com os emojis do Google. Nos chips de reação e nas 3
+  reações rápidas, o emoji fica parado e anima quando o mouse passa por cima. Sem internet (ou com "Reduzir
+  movimento" ligado no Mac), aparecem o emoji normal ou o desenho parado.
+- Quando alguém cita outra mensagem, aparece o cartão com a barrinha azul, o nome em negrito e o começo do texto (até
+  2 linhas); clicar nele leva até a mensagem citada e a destaca por um instante (se ela já estiver carregada).
+- O horário ao lado do nome segue o Google Chat: hoje só a hora (11:00), outro dia com a data (5 de nov., 11:00) e,
+  se for de outro ano, com o ano (12 de dez. de 2025, 16:40). Nas suas, o horário fica acima do grupo.
 
 Anexos e áudio:
 - **Enviar arquivo:** clipe, arrastar para a conversa ou colar uma imagem (até 200 MB por arquivo). O arquivo começa a
   subir na hora, com barra de progresso; dá para escrever uma mensagem junto e clicar na miniatura para ver antes.
 - **Gravar áudio:** clique no microfone (ou segure e solte). Aparecem o tempo e a ondinha; a lixeira descarta, o botão
   de pausa para e deixa ouvir antes, e o avião envia. Na primeira vez o Mac pede permissão do microfone.
-- **Receber:** imagem abre grande ao clicar; vídeo toca no lugar (o botão do canto amplia); áudio toca na própria
-  mensagem; PDF e outros arquivos têm **Ver** e **Baixar** (vai para Downloads); arquivo do Google Drive abre no
+- **Receber:** imagem abre grande ao clicar; vídeo toca no lugar (o botão do canto amplia); mensagem de voz toca no
+  próprio cartão (play/pausa, a ondinha vai enchendo e clicar nela pula para aquele ponto; o botão **1x** troca a
+  velocidade para 1,5x e 2x); PDF e outros arquivos têm **Ver** e **Baixar** (vai para Downloads); arquivo do Google Drive abre no
   navegador.
 
 Barra da mensagem (reações, responder, editar e apagar):
-- Passe o mouse em qualquer mensagem: aparece uma barrinha no canto de cima do balão, como no Google Chat. Nela:
+- Passe o mouse em qualquer mensagem: aparece uma barrinha no começo do balão, em cima, como no Google Chat (na
+  primeira mensagem de cada pessoa ela fica ao lado do nome e do horário, sem cobrir o nome). Nela:
   - **3 reações rápidas:** no começo ✅ 🫡 🤣; com o tempo, viram as 3 que você mais usa (guardado neste computador);
   - **Adicionar reação** (carinha com +): abre a grade com todos os emojis;
   - **Responder no fio:** abre as respostas e põe o cursor na caixa para responder naquele fio;
+  - **Citar na resposta:** o cartão da mensagem aparece em cima da caixa de escrever (o **X** cancela) e a sua
+    mensagem sai citando a outra;
   - **⋮**: **Editar** e **Apagar** (só nas suas), **Copiar texto** e **Abrir no Google Chat**.
 - As reações aparecem embaixo da mensagem com a contagem (😀 3); a sua fica em azul. Clicar num chip reage com o
   mesmo emoji; clicar no seu (azul) tira a sua reação. Emoji próprio da empresa aparece com a imagem, mas só dá para

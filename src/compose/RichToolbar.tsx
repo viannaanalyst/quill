@@ -1,5 +1,5 @@
 import * as Popover from "@radix-ui/react-popover";
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ComponentType, type FormEvent, type ReactNode, type RefObject } from "react";
+import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ComponentType, type FormEvent, type ReactNode, type RefObject } from "react";
 import "./richToolbar.css";
 import { Select } from "../components/Select";
 import {
@@ -32,6 +32,9 @@ import { escapeHtml, normalizeUrl, sanitizeHtml } from "./richText";
 import { EMOJIS } from "../lib/emojis";
 
 type Align = "left" | "center" | "right" | "full";
+
+/** Barra no pé da caixa (resposta rápida): dicas e janelinhas abrem para cima. */
+const BarPlace = createContext<{ up: boolean }>({ up: false });
 type Icon = ComponentType<{ size?: number; "aria-hidden"?: boolean }>;
 
 interface FmtState {
@@ -171,12 +174,14 @@ function ToolButton({
   pressed?: boolean;
   onClick: () => void;
 }) {
+  const { up } = useContext(BarPlace);
   return (
     <button
       type="button"
       className="btn ic cp-tb"
       aria-label={label}
       data-tip={tip ?? label}
+      data-tip-pos={up ? "top" : undefined}
       aria-pressed={pressed}
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
@@ -213,6 +218,7 @@ function ToolPopover({
   align?: "start" | "center" | "end";
 }) {
   const byPointer = useRef(false);
+  const { up } = useContext(BarPlace);
   return (
     <Popover.Root open={open} onOpenChange={onOpenChange}>
       <Popover.Trigger asChild>
@@ -221,6 +227,7 @@ function ToolPopover({
           className="btn ic cp-tb"
           aria-label={label}
           data-tip={tip ?? label}
+          data-tip-pos={up ? "top" : undefined}
           data-active={pressed ? "" : undefined}
           onPointerDown={() => (byPointer.current = true)}
           onKeyDown={() => (byPointer.current = false)}
@@ -232,7 +239,7 @@ function ToolPopover({
       <Popover.Portal>
         <Popover.Content
           className={`qp-content cp-pop ${className ?? ""}`}
-          side="bottom"
+          side={up ? "top" : "bottom"}
           align={align}
           sideOffset={8}
           collisionPadding={12}
@@ -310,8 +317,14 @@ export function RichToolbar({
   editorRef,
   onImages,
   onEdited,
+  compact = false,
+  up = false,
 }: {
   editorRef: RefObject<HTMLDivElement | null>;
+  /** só o básico (negrito, itálico, sublinhado, listas, link e emoji), para a resposta rápida */
+  compact?: boolean;
+  /** dicas e janelinhas abrem para cima (barra perto do pé da janela) */
+  up?: boolean;
   /** imagens coladas no texto (viram anexo) */
   onImages: (files: File[]) => void;
   /** mudança feita fora do evento input (ex.: tirar a cor) */
@@ -700,64 +713,7 @@ export function RichToolbar({
   const alignIcon = ALIGNS.find((a) => a.value === fmt.align)!.icon;
   const togglePop = (name: NonNullable<typeof pop>) => (v: boolean) => setPop(v ? name : null);
 
-  return (
-    <div ref={barRef} className="format-bar cp-format" role="toolbar" aria-label="Formatação do texto" data-narrow={narrow}>
-      {narrow < 2 && (
-        <>
-          <ToolButton label="Desfazer" tip={`Desfazer ${MOD}Z`} icon={Undo2} onClick={() => exec("undo")} />
-          <ToolButton label="Refazer" tip={`Refazer ${SHIFT}${MOD}Z`} icon={Redo2} onClick={() => exec("redo")} />
-          <span className="vsep" aria-hidden />
-        </>
-      )}
-      <span className="cp-tb-select" onFocus={onSelectFocus}>
-        <Select
-          className="cp-font-select"
-          size="sm"
-          label="Fonte"
-          value={fmt.font}
-          onChange={(v) => fromSelect(() => exec("fontName", FONTS.find((f) => f.value === v)!.css))}
-          options={FONTS.map(({ value, label }) => ({ value, label }))}
-        />
-      </span>
-      <span className="cp-tb-select" onFocus={onSelectFocus}>
-        <Select className="cp-size-select" size="sm" label="Tamanho do texto" value={fmt.size} onChange={(v) => fromSelect(() => exec("fontSize", v))} options={SIZES} />
-      </span>
-      <span className="vsep" aria-hidden />
-      <ToolButton label="Negrito" tip={`Negrito ${MOD}B`} icon={Bold} pressed={fmt.bold} onClick={() => exec("bold")} />
-      <ToolButton label="Itálico" tip={`Itálico ${MOD}I`} icon={Italic} pressed={fmt.italic} onClick={() => exec("italic")} />
-      <ToolButton label="Sublinhado" tip={`Sublinhado ${MOD}U`} icon={Underline} pressed={fmt.underline} onClick={() => exec("underline")} />
-      {narrow < 1 && <ToolButton label="Tachado" tip={`Tachado ${SHIFT}${MOD}X`} icon={Strikethrough} pressed={fmt.strike} onClick={() => exec("strikeThrough")} />}
-      <ToolPopover label="Cor do texto e destaque" tip="Cores" icon={Baseline} open={pop === "color"} onOpenChange={togglePop("color")} onClosed={backToText} className="cp-color-pop">
-        <Palette title="Cor do texto" current={colors.fore} onPick={(c) => pickColor("fore", c)} />
-        <Palette title="Destaque" current={colors.back} onPick={(c) => pickColor("back", c)} />
-      </ToolPopover>
-      <span className="vsep" aria-hidden />
-      <ToolPopover label="Alinhamento" icon={alignIcon} open={pop === "align"} onOpenChange={togglePop("align")} onClosed={backToText} className="cp-align-pop">
-        <div className="cp-align-row" role="group" aria-label="Alinhamento">
-          {ALIGNS.map((a) => (
-            <ToolButton
-              key={a.value}
-              label={a.label}
-              icon={a.icon}
-              pressed={fmt.align === a.value}
-              onClick={() => {
-                setPop(null);
-                exec(a.cmd);
-              }}
-            />
-          ))}
-        </div>
-      </ToolPopover>
-      <ToolButton label="Lista numerada" tip={`Lista numerada ${SHIFT}${MOD}7`} icon={ListOrdered} pressed={fmt.ol} onClick={() => exec("insertOrderedList")} />
-      <ToolButton label="Lista com marcadores" tip={`Marcadores ${SHIFT}${MOD}8`} icon={List} pressed={fmt.ul} onClick={() => exec("insertUnorderedList")} />
-      {narrow < 1 && (
-        <>
-          <ToolButton label="Diminuir recuo" icon={IndentDecrease} onClick={() => exec("outdent")} />
-          <ToolButton label="Aumentar recuo" icon={IndentIncrease} onClick={() => exec("indent")} />
-        </>
-      )}
-      <span className="vsep" aria-hidden />
-
+  const linkPop = (
       <Popover.Root open={pop === "link"} onOpenChange={(v) => (v ? openLink() : setPop(null))}>
         <Popover.Trigger asChild>
           <button
@@ -765,6 +721,7 @@ export function RichToolbar({
             className="btn ic cp-tb"
             aria-label="Link"
             data-tip={`Link ${MOD}K`}
+            data-tip-pos={up ? "top" : undefined}
             data-active={fmt.link ? "" : undefined}
             onMouseDown={(e) => e.preventDefault()}
           >
@@ -774,7 +731,7 @@ export function RichToolbar({
         <Popover.Portal>
           <Popover.Content
             className="qp-content cp-pop cp-link-pop"
-            side="bottom"
+            side={up ? "top" : "bottom"}
             align="start"
             sideOffset={8}
             collisionPadding={12}
@@ -839,7 +796,8 @@ export function RichToolbar({
           </Popover.Content>
         </Popover.Portal>
       </Popover.Root>
-
+  );
+  const emojiPop = (
       <ToolPopover label="Emoji" icon={Smile} open={pop === "emoji"} onOpenChange={togglePop("emoji")} onClosed={backToText} className="cp-emoji-pop">
         <div className="cp-emoji-grid" role="group" aria-label="Emojis">
           {EMOJIS.map(([e, name]) => (
@@ -849,6 +807,84 @@ export function RichToolbar({
           ))}
         </div>
       </ToolPopover>
+  );
+
+  if (compact) {
+    return (
+      <BarPlace.Provider value={{ up }}>
+        <div ref={barRef} className="format-bar cp-format cp-format-compact" role="toolbar" aria-label="Formatação do texto">
+          <ToolButton label="Negrito" tip={`Negrito ${MOD}B`} icon={Bold} pressed={fmt.bold} onClick={() => exec("bold")} />
+          <ToolButton label="Itálico" tip={`Itálico ${MOD}I`} icon={Italic} pressed={fmt.italic} onClick={() => exec("italic")} />
+          <ToolButton label="Sublinhado" tip={`Sublinhado ${MOD}U`} icon={Underline} pressed={fmt.underline} onClick={() => exec("underline")} />
+          <ToolButton label="Lista com marcadores" tip={`Marcadores ${SHIFT}${MOD}8`} icon={List} pressed={fmt.ul} onClick={() => exec("insertUnorderedList")} />
+          {linkPop}
+          {emojiPop}
+        </div>
+      </BarPlace.Provider>
+    );
+  }
+
+  return (
+    <BarPlace.Provider value={{ up }}>
+    <div ref={barRef} className="format-bar cp-format" role="toolbar" aria-label="Formatação do texto" data-narrow={narrow}>
+      {narrow < 2 && (
+        <>
+          <ToolButton label="Desfazer" tip={`Desfazer ${MOD}Z`} icon={Undo2} onClick={() => exec("undo")} />
+          <ToolButton label="Refazer" tip={`Refazer ${SHIFT}${MOD}Z`} icon={Redo2} onClick={() => exec("redo")} />
+          <span className="vsep" aria-hidden />
+        </>
+      )}
+      <span className="cp-tb-select" onFocus={onSelectFocus}>
+        <Select
+          className="cp-font-select"
+          size="sm"
+          label="Fonte"
+          value={fmt.font}
+          onChange={(v) => fromSelect(() => exec("fontName", FONTS.find((f) => f.value === v)!.css))}
+          options={FONTS.map(({ value, label }) => ({ value, label }))}
+        />
+      </span>
+      <span className="cp-tb-select" onFocus={onSelectFocus}>
+        <Select className="cp-size-select" size="sm" label="Tamanho do texto" value={fmt.size} onChange={(v) => fromSelect(() => exec("fontSize", v))} options={SIZES} />
+      </span>
+      <span className="vsep" aria-hidden />
+      <ToolButton label="Negrito" tip={`Negrito ${MOD}B`} icon={Bold} pressed={fmt.bold} onClick={() => exec("bold")} />
+      <ToolButton label="Itálico" tip={`Itálico ${MOD}I`} icon={Italic} pressed={fmt.italic} onClick={() => exec("italic")} />
+      <ToolButton label="Sublinhado" tip={`Sublinhado ${MOD}U`} icon={Underline} pressed={fmt.underline} onClick={() => exec("underline")} />
+      {narrow < 1 && <ToolButton label="Tachado" tip={`Tachado ${SHIFT}${MOD}X`} icon={Strikethrough} pressed={fmt.strike} onClick={() => exec("strikeThrough")} />}
+      <ToolPopover label="Cor do texto e destaque" tip="Cores" icon={Baseline} open={pop === "color"} onOpenChange={togglePop("color")} onClosed={backToText} className="cp-color-pop">
+        <Palette title="Cor do texto" current={colors.fore} onPick={(c) => pickColor("fore", c)} />
+        <Palette title="Destaque" current={colors.back} onPick={(c) => pickColor("back", c)} />
+      </ToolPopover>
+      <span className="vsep" aria-hidden />
+      <ToolPopover label="Alinhamento" icon={alignIcon} open={pop === "align"} onOpenChange={togglePop("align")} onClosed={backToText} className="cp-align-pop">
+        <div className="cp-align-row" role="group" aria-label="Alinhamento">
+          {ALIGNS.map((a) => (
+            <ToolButton
+              key={a.value}
+              label={a.label}
+              icon={a.icon}
+              pressed={fmt.align === a.value}
+              onClick={() => {
+                setPop(null);
+                exec(a.cmd);
+              }}
+            />
+          ))}
+        </div>
+      </ToolPopover>
+      <ToolButton label="Lista numerada" tip={`Lista numerada ${SHIFT}${MOD}7`} icon={ListOrdered} pressed={fmt.ol} onClick={() => exec("insertOrderedList")} />
+      <ToolButton label="Lista com marcadores" tip={`Marcadores ${SHIFT}${MOD}8`} icon={List} pressed={fmt.ul} onClick={() => exec("insertUnorderedList")} />
+      {narrow < 1 && (
+        <>
+          <ToolButton label="Diminuir recuo" icon={IndentDecrease} onClick={() => exec("outdent")} />
+          <ToolButton label="Aumentar recuo" icon={IndentIncrease} onClick={() => exec("indent")} />
+        </>
+      )}
+      <span className="vsep" aria-hidden />
+
+      {linkPop}
+      {emojiPop}
 
       <ToolPopover label="Mais opções de formatação" tip="Mais" icon={Ellipsis} open={pop === "more"} onOpenChange={togglePop("more")} onClosed={backToText} className="cp-menu" align="end">
         <MenuItem icon={TextQuote} label="Citação" pressed={fmt.quote} onClick={toggleQuote} />
@@ -918,5 +954,6 @@ export function RichToolbar({
         <MenuItem icon={RemoveFormatting} label="Limpar formatação" onClick={clearFormatting} />
       </ToolPopover>
     </div>
+    </BarPlace.Provider>
   );
 }

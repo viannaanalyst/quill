@@ -273,6 +273,29 @@ async fn message_action(state: State<'_, AppState>, email: String, id: String, a
     google(&state)?.act(&email, &id, &action).await.map_err(err)
 }
 
+/// Exclui para sempre os e-mails escolhidos (Lixeira ou Spam), sem volta: batchDelete no Gmail, marca Deleted + EXPUNGE no IMAP.
+#[tauri::command]
+async fn messages_delete_forever(state: State<'_, AppState>, email: String, ids: Vec<String>) -> Result<usize, String> {
+    if ids.len() > 10_000 {
+        return Err("Escolha no máximo 10.000 e-mails de uma vez.".into());
+    }
+    if state.imap.is_imap(&email) {
+        state.imap.delete_forever(&email, &ids).await.map_err(imap_err)?;
+    } else {
+        google(&state)?.delete_forever(&email, &ids).await.map_err(err)?;
+    }
+    Ok(ids.len())
+}
+
+/// Esvazia a Lixeira da conta (apaga tudo de vez); devolve quantos e-mails saíram.
+#[tauri::command]
+async fn trash_empty(state: State<'_, AppState>, email: String) -> Result<usize, String> {
+    if state.imap.is_imap(&email) {
+        return state.imap.empty_trash(&email).await.map_err(imap_err);
+    }
+    google(&state)?.empty_trash(&email).await.map_err(err)
+}
+
 /// Agendas e eventos de uma conta entre duas datas (RFC 3339): Google, ou iCloud pelo CalDAV.
 /// Contas "Outro e-mail" não têm agenda (devolve vazio).
 #[tauri::command]
@@ -468,6 +491,7 @@ async fn chat_send(
     text: String,
     thread: Option<String>,
     attachments: Option<Vec<quill_core::chat::AttachmentRef>>,
+    quote: Option<quill_core::chat::QuoteRef>,
 ) -> Result<quill_core::chat::ChatMessage, String> {
     let attachments = attachments.unwrap_or_default();
     if text.trim().is_empty() && attachments.is_empty() {
@@ -477,7 +501,7 @@ async fn chat_send(
         return Err("Mensagem longa demais: o Google Chat aceita até 4.096 caracteres.".into());
     }
     let (chat, token) = chat_ctx(&state, &email).await?;
-    chat.send(&email, &token, &space, &text, thread.as_deref(), &attachments).await.map_err(chat_err)
+    chat.send(&email, &token, &space, &text, thread.as_deref(), &attachments, quote.as_ref()).await.map_err(chat_err)
 }
 
 /// Conteúdo de um anexo do Chat em base64 (miniatura, player, prévia), até 50 MB.
@@ -690,6 +714,8 @@ pub fn run() {
             message_mark_read,
             message_send,
             message_action,
+            messages_delete_forever,
+            trash_empty,
             draft_save,
             draft_delete,
             draft_get,

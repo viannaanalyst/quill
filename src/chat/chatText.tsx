@@ -2,7 +2,8 @@ import { useMemo, type ReactNode } from "react";
 import { api } from "../lib/api";
 import { isTauri } from "../lib/platform";
 import { toast } from "../components/Toasts";
-import { parseChat, type Block, type CustomEmojiRef, type Inline } from "./format";
+import { NotoEmoji } from "./Emoji";
+import { parseChat, type Block, type CustomEmojiRef, type Inline, type ListBlock } from "./format";
 
 /**
  * Texto de uma mensagem do Chat montado com elementos React a partir da árvore de `format.ts`
@@ -22,6 +23,8 @@ export interface TextContext {
   nameOf?: (id: string) => string | null | undefined;
   /** id da própria conta: a menção a você fica destacada */
   myId?: string | null;
+  /** mensagem só de emoji: emojis grandes e animados (no meio do texto, continuam texto) */
+  jumbo?: boolean;
 }
 
 function inlines(list: Inline[], ctx: TextContext, key: string): ReactNode[] {
@@ -41,6 +44,7 @@ function inlines(list: Inline[], ctx: TextContext, key: string): ReactNode[] {
       case "code":
         return <code key={k}>{n.v}</code>;
       case "emoji":
+        if (ctx.jumbo) return <NotoEmoji key={k} emoji={n.v} animate="always" />;
         return (
           <span key={k} className="chat-emo">
             {n.v}
@@ -76,27 +80,52 @@ function inlines(list: Inline[], ctx: TextContext, key: string): ReactNode[] {
   });
 }
 
-/** Blocos já interpretados (parágrafos, listas e blocos de código). */
+function List({ l, ctx, k }: { l: ListBlock; ctx: TextContext; k: string }) {
+  const items = l.items.map((it, j) => (
+    <li key={j}>
+      {inlines(it.c, ctx, `${k}.${j}`)}
+      {it.sub && <List l={it.sub} ctx={ctx} k={`${k}.${j}s`} />}
+    </li>
+  ));
+  return l.t === "ol" ? (
+    <ol className="chat-ul chat-ol" start={l.start === 1 ? undefined : l.start}>
+      {items}
+    </ol>
+  ) : (
+    <ul className="chat-ul">{items}</ul>
+  );
+}
+
+/** Blocos já interpretados (parágrafos, listas, citações, separadores e blocos de código). */
 export function ChatBlocks({ blocks, ctx = {} }: { blocks: Block[]; ctx?: TextContext }) {
   return (
     <>
-      {blocks.map((b, i) =>
-        b.t === "pre" ? (
-          <pre key={i} className="chat-pre">
-            <code>{b.v}</code>
-          </pre>
-        ) : b.t === "ul" ? (
-          <ul key={i} className="chat-ul">
-            {b.items.map((it, j) => (
-              <li key={j}>{inlines(it, ctx, `${i}.${j}`)}</li>
-            ))}
-          </ul>
-        ) : (
-          <p key={i} className="chat-p">
-            {inlines(b.c, ctx, String(i))}
-          </p>
-        ),
-      )}
+      {blocks.map((b, i) => {
+        switch (b.t) {
+          case "pre":
+            return (
+              <pre key={i} className="chat-pre">
+                <code>{b.v}</code>
+              </pre>
+            );
+          case "hr":
+            return <hr key={i} className="chat-hr" />;
+          case "quote":
+            return (
+              <blockquote key={i} className="chat-bq">
+                <ChatBlocks blocks={b.c} ctx={ctx} />
+              </blockquote>
+            );
+          case "p":
+            return (
+              <p key={i} className="chat-p">
+                {inlines(b.c, ctx, String(i))}
+              </p>
+            );
+          default:
+            return <List key={i} l={b} ctx={ctx} k={String(i)} />;
+        }
+      })}
     </>
   );
 }

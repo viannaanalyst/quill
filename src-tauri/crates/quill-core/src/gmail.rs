@@ -627,9 +627,48 @@ pub fn parse_message_list(json: &str) -> Result<Vec<String>, String> {
     Ok(list.messages.into_iter().map(|m| m.id).collect())
 }
 
+/// Uma página da lista de e-mails: os ids e o marcador da próxima página (se houver).
+pub fn parse_message_page(json: &str) -> Result<(Vec<String>, Option<String>), String> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Page {
+        #[serde(default)]
+        next_page_token: Option<String>,
+    }
+    let ids = parse_message_list(json)?;
+    let page: Page = serde_json::from_str(json).map_err(|e| e.to_string())?;
+    Ok((ids, page.next_page_token))
+}
+
+/// Id de e-mail do Gmail: só letras e números (protege o caminho do pedido).
+pub fn check_id(id: &str) -> Result<(), String> {
+    if !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric()) {
+        Ok(())
+    } else {
+        Err("e-mail inválido".into())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn message_page_reads_ids_and_next_token() {
+        let (ids, next) = parse_message_page(r#"{"messages":[{"id":"a","threadId":"t"}],"nextPageToken":"p2"}"#).unwrap();
+        assert_eq!((ids, next.as_deref()), (vec!["a".to_string()], Some("p2")));
+        let (ids, next) = parse_message_page(r#"{"resultSizeEstimate":0}"#).unwrap();
+        assert!(ids.is_empty() && next.is_none());
+    }
+
+    #[test]
+    fn message_ids_must_be_plain_letters_and_numbers() {
+        assert!(check_id("18c2f0a9b7d1e3f4").is_ok());
+        assert!(check_id("m1000").is_ok());
+        assert!(check_id("").is_err());
+        assert!(check_id("../drafts").is_err());
+        assert!(check_id("a?b").is_err());
+    }
 
     #[test]
     fn from_header_with_quoted_name() {

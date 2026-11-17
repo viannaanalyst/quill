@@ -86,8 +86,9 @@ src/
   compose/                  Escrever, barra de formatação, sugestões de destinatário
   calendar/                 dia, semana, mês e formulário de evento (prefixo cal-)
   chat/                     Google Chat: lista, conversa, caixa de escrever, gravação, anexos (prefixo chat-);
-                            format.ts interpreta a marcação do Chat (sem React, testado no Node) e
-                            chatText.tsx a monta com elementos React; reactions.ts escolhe as reações rápidas
+                            format.ts interpreta a marcação do Chat e o Markdown (sem React, testado no
+                            Node) e chatText.tsx a monta com elementos React; reactions.ts escolhe as
+                            reações rápidas; noto.ts + Emoji.tsx mostram os emojis animados do Google
   settings/                 Ajustes e suas seções (prefixo st-)
   components/               peças comuns: Select, DatePicker, SliderGroup, Toasts, CommandPalette,
                             AccountMenu, ImapConnect, LockScreen, MessageAvatar, FileIcon, PhotoCropper…

@@ -136,6 +136,7 @@ impl ChatService {
             formatted_text: m.formatted_text,
             create_time: m.create_time,
             create_ms: m.create_ms,
+            update_time: m.update_time,
             thread: m.thread,
             thread_reply: m.thread_reply,
             attachments: m.attachments,
@@ -302,8 +303,9 @@ impl ChatService {
         text: &str,
         thread: Option<&str>,
         attachments: &[AttachmentRef],
+        quote: Option<&crate::chat::QuoteRef>,
     ) -> Result<ChatMessage, LoginError> {
-        let raw = self.client.chat_send(token, space, text, thread, attachments).await?;
+        let raw = self.client.chat_send(token, space, text, thread, attachments, quote).await?;
         let me = self.me(account, token).await;
         self.resolve(token, people_in(&raw)).await;
         let mut m = self.message(raw, me.as_deref());
@@ -568,7 +570,7 @@ mod tests {
             ("/x/people/people:batchGet", r#"{"responses":[{"person":{"resourceName":"people/1","names":[{"displayName":"Gabriel"}]}}]}"#),
         ])
         .await;
-        let m = service(&base).send("eu@empresa.com", "ya29", "spaces/B", "Fechado", None, &[]).await.unwrap();
+        let m = service(&base).send("eu@empresa.com", "ya29", "spaces/B", "Fechado", None, &[], None).await.unwrap();
         assert!(m.mine);
         assert_eq!(m.text, "Fechado");
         assert_eq!(m.create_ms, 1_794_918_600_000);
@@ -641,7 +643,7 @@ mod tests {
         send(&svc.spaces("a", "t"));
         send(&svc.messages("a", "t", "spaces/B", None));
         send(&svc.members("a", "t", "spaces/B"));
-        send(&svc.send("a", "t", "spaces/B", "oi", None, &[]));
+        send(&svc.send("a", "t", "spaces/B", "oi", None, &[], None));
         send(&svc.media("t", "abc", 10));
         send(&svc.react("t", "spaces/B/messages/1", "👍"));
         send(&svc.unreact("a", "t", "spaces/B/messages/1", "👍"));

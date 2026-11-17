@@ -150,6 +150,8 @@ pub struct RawMessage {
     pub sender_display_name: Option<String>,
     pub create_time: String,
     pub create_ms: i64,
+    /// última mudança (`lastUpdateTime`, ou a criação quando nunca mudou): a API pede para citar
+    pub update_time: String,
     pub text: String,
     pub formatted_text: Option<String>,
     /// `spaces/<id>/threads/<id>`
@@ -181,6 +183,8 @@ pub struct ChatMessage {
     pub mine: bool,
     pub create_time: String,
     pub create_ms: i64,
+    /// última mudança (para citar esta mensagem)
+    pub update_time: String,
     pub thread: Option<String>,
     pub thread_reply: bool,
     pub attachments: Vec<ChatAttachment>,
@@ -604,6 +608,7 @@ fn raw_message(m: MsgJson) -> RawMessage {
         sender_display_name: sender.display_name.filter(|n| !n.trim().is_empty()),
         sender_id: sender.name,
         create_ms,
+        update_time: m.last_update_time.clone().filter(|t| !t.is_empty()).unwrap_or_else(|| m.create_time.clone()),
         create_time: m.create_time,
         text: if deleted { String::new() } else { m.text },
         formatted_text: if deleted { None } else { m.formatted_text.filter(|t| !t.is_empty()) },
@@ -650,12 +655,33 @@ pub fn parse_message(json: &str) -> Result<RawMessage, String> {
     serde_json::from_str::<MsgJson>(json).map(raw_message).map_err(|e| e.to_string())
 }
 
+/// Mensagem que a nova vai citar (`quotedMessageMetadata`): o nome e a hora da última mudança dela.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuoteRef {
+    pub name: String,
+    pub last_update_time: String,
+}
+
+/// Só dá para citar uma mensagem da mesma conversa (a API recusa as outras).
+pub fn quote_allowed(space: &str, q: &QuoteRef) -> Result<(), String> {
+    if valid_message_name(&q.name) && q.name.starts_with(&format!("{space}/messages/")) && !q.last_update_time.trim().is_empty() {
+        Ok(())
+    } else {
+        Err("mensagem citada inválida".into())
+    }
+}
+
 /// Corpo e parâmetros de `spaces.messages.create`. Com `thread`, responde naquela conversa
-/// (ou abre uma nova se ela não existir mais). Anexos já enviados vão em `attachment`.
-pub fn send_request(text: &str, thread: Option<&str>, attachments: &[AttachmentRef]) -> (String, String) {
+/// (ou abre uma nova se ela não existir mais). Anexos já enviados vão em `attachment`;
+/// com `quote`, a mensagem sai citando outra (o cartão com a barrinha no Google Chat).
+pub fn send_request(text: &str, thread: Option<&str>, attachments: &[AttachmentRef], quote: Option<&QuoteRef>) -> (String, String) {
     let mut body = serde_json::Map::new();
     if !text.is_empty() || attachments.is_empty() {
         body.insert("text".into(), text.into());
+    }
+    if let Some(q) = quote {
+        body.insert("quotedMessageMetadata".into(), serde_json::json!({ "name": q.name, "lastUpdateTime": q.last_update_time }));
     }
     if let Some(t) = thread {
         body.insert("thread".into(), serde_json::json!({ "name": t }));
@@ -1078,10 +1104,10 @@ mod tests {
 
     #[test]
     fn monta_envio_simples_e_resposta_na_conversa() {
-        let (body, query) = send_request("oi \"você\"", None, &[]);
+        let (body, query) = send_request("oi \"você\"", None, &[], None);
         assert_eq!(serde_json::from_str::<serde_json::Value>(&body).unwrap(), serde_json::json!({"text":"oi \"você\""}));
         assert_eq!(query, "");
-        let (body, query) = send_request("ok", Some("spaces/A/threads/T1"), &[]);
+        let (body, query) = send_request("ok", Some("spaces/A/threads/T1"), &[], None);
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&body).unwrap(),
             serde_json::json!({"text":"ok","thread":{"name":"spaces/A/threads/T1"}})
@@ -1223,13 +1249,13 @@ mod tests {
     #[test]
     fn envio_com_anexo_ja_enviado() {
         let r = AttachmentRef { resource_name: None, attachment_upload_token: Some("tok1".into()) };
-        let (body, _) = send_request("", None, &[r]);
+        let (body, _) = send_request("", None, &[r], None);
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&body).unwrap(),
             serde_json::json!({"attachment":[{"attachmentDataRef":{"attachmentUploadToken":"tok1"}}]})
         );
         let r = AttachmentRef { resource_name: Some("res".into()), attachment_upload_token: Some("tok".into()) };
-        let (body, _) = send_request("veja", None, &[r]);
+        let (body, _) = send_request("veja", None, &[r], None);
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&body).unwrap(),
             serde_json::json!({"text":"veja","attachment":[{"attachmentDataRef":{"resourceName":"res","attachmentUploadToken":"tok"}}]})
@@ -1286,6 +1312,32 @@ mod tests {
         assert!(m.edited);
         assert!(list[1].reactions.is_empty());
         assert!(!list[1].edited);
+    }
+
+    #[test]
+    fn guarda_a_hora_da_ultima_mudanca_para_citar() {
+        let json = r#"{"messages":[
+          {"name":"spaces/A/messages/1","sender":{"name":"users/2"},"createTime":"2026-11-17T12:00:00Z",
+           "lastUpdateTime":"2026-11-17T12:05:00Z","text":"corrigido"},
+          {"name":"spaces/A/messages/2","sender":{"name":"users/2"},"createTime":"2026-11-17T12:01:00Z","text":"sem edição"}
+        ]}"#;
+        let (list, _) = parse_messages(json).unwrap();
+        assert_eq!(list[0].update_time, "2026-11-17T12:05:00Z");
+        assert_eq!(list[1].update_time, "2026-11-17T12:01:00Z", "sem edição usa a hora em que foi criada");
+    }
+
+    #[test]
+    fn monta_envio_citando_outra_mensagem() {
+        let q = QuoteRef { name: "spaces/A/messages/2".into(), last_update_time: "2026-11-17T12:05:00Z".into() };
+        let (body, query) = send_request("concordo", None, &[], Some(&q));
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&body).unwrap(),
+            serde_json::json!({"text":"concordo","quotedMessageMetadata":{"name":"spaces/A/messages/2","lastUpdateTime":"2026-11-17T12:05:00Z"}})
+        );
+        assert_eq!(query, "");
+        let bad = QuoteRef { name: "spaces/B/messages/2".into(), last_update_time: "x".into() };
+        assert!(quote_allowed("spaces/A", &bad).is_err(), "só cita mensagem da mesma conversa");
+        assert!(quote_allowed("spaces/A", &q).is_ok());
     }
 
     #[test]

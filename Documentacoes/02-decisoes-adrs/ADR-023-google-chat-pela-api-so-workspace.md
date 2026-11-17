@@ -122,3 +122,37 @@ mensagem não aparecia e os botões da mensagem eram diferentes da barrinha do G
 **Consequências**
 - Se o Google não mandar a cópia da citada e ela for antiga (não carregada), o cartão mostra só "Mensagem citada".
 - O link temporário do emoji da empresa pode expirar; a próxima atualização da conversa traz um novo.
+
+## Acréscimo (2026-11-17): Markdown no texto, emojis animados e dicas que não cortam
+
+**Contexto**
+Notas de reunião do Gemini apareciam com asteriscos (`*Abertura e Dinâmica Inicial*` em negrito, mas com os `*` à
+vista) e com barras invertidas (`\[Richard Reis\]`): o texto vem em Markdown (`**negrito**`, escapes), e o Quill só
+entendia a marcação do Google Chat. O Gabriel também pediu os emojis animados do Google Chat e reclamou de dicas
+cortadas embaixo na caixa de escrever.
+
+**Decisão**
+- **Os dois mundos no mesmo interpretador** (`src/chat/format.ts`): a marcação do Google Chat continua igual e o
+  Markdown entra junto (`**`/`__` negrito, `~~` tachado, `[texto](url)`, títulos `#`–`######` como linha em negrito,
+  listas `1.`/`1)`/`-`/`*`/`+`/`•` aninhadas pelo recuo, citação `>` e linha `---`). Escape `\` + pontuação mostra só
+  o caractere. Marca dupla sem par fica inteira como texto (nunca sobra um `*` virando negrito); asterisco solto
+  (`5 * 3`) é texto. Dentro de código nada é interpretado. Link do Markdown só `http(s)`/`mailto`.
+- **Título como linha em negrito dentro do parágrafo** (e não um bloco à parte), para a linha em branco antes dele
+  continuar aparecendo.
+- **Emojis animados do Google** (Noto Animated Emoji, licença livre), carregados de `fonts.gstatic.com`:
+  `…/<código>/512.webp` (animado, só parte dos emojis tem) e `…/<código>/emoji.svg` (parado, todos têm). O código é
+  o hexadecimal minúsculo, com `_` entre os pedaços, sem `fe0f` e com pelo menos 4 dígitos (`0031_20e3`), conferido
+  nos endereços reais. Só na mensagem com 1 a 3 emojis (grande e animado) e nos chips e reações rápidas (parado,
+  animando com o mouse em cima). No meio do texto o emoji continua texto. `loading="lazy"`; o que falha uma vez não é
+  pedido de novo até reabrir; sem os dois arquivos volta o caractere; com "Reduzir movimento", nunca anima. A CSP já
+  permitia imagens `https:`.
+- **Dicas na tela do Chat:** os botões da caixa de escrever abrem a dica para cima (`top`, e `top-start`/`top-end` só
+  dentro de `.chat-cmp`, para os botões das pontas); na lista de mensagens, a dica escolhe o lado que cabe quando o
+  mouse ou o Tab chega no botão (a lista rola e corta o que passa da borda, inclusive a moldura do vídeo).
+
+**Consequências**
+- O Google fica sabendo que alguém abriu aquele emoji (o pedido sai do computador, sem `Referer`). É o mesmo serviço
+  de onde já vêm as fotos e anexos do Chat.
+- Uma linha de texto comum que comece com `1. `, `> ` ou `# ` passa a virar lista, citação ou título, como no Markdown.
+- Os arquivos animados têm de 90 a 380 KB cada; por isso só carregam nos emojis grandes e ao passar o mouse.
+

@@ -8,6 +8,7 @@ import { InviteGate, RsvpButtons } from "../components/Rsvp";
 import { EventRsvpButtons, useEventRsvp } from "../components/EventRsvp";
 import {
   Archive,
+  ArchiveRestore,
   CalendarDays,
   CircleCheck,
   Clock,
@@ -31,16 +32,17 @@ import {
   Video,
 } from "../components/icons";
 import type { Account, AccountId, Message } from "./types";
-import { bulkAction, folderMessages, loadFolder, markReadRemote, refreshMailbox, useMailbox, type FolderId } from "../state/mailbox";
+import { bulkAction, deleteForever, emptyTrash, folderMessages, loadFolder, markReadRemote, refreshMailbox, useMailbox, type FolderId } from "../state/mailbox";
 import { SliderGroup } from "../components/SliderGroup";
 import { usePref } from "../lib/usePref";
-import { AccountPhoto, AVATAR_PREF } from "../components/MyAvatar";
+import { AccountPhoto } from "../components/MyAvatar";
 import { ConnectGoogleButton } from "../components/ConnectGoogle";
 import { Banner } from "./Banner";
 import { isTauri } from "../lib/platform";
 import { markRead, markUnread, navigate, useStore } from "../state/store";
 import { getPref } from "../lib/storage";
 import { askConfirm } from "../components/ConfirmHost";
+import { deleteForeverConfirm } from "../state/deleteForever";
 import type { MessageAction } from "../lib/api";
 import { api, friendlyError } from "../lib/api";
 import { toast } from "../components/Toasts";
@@ -59,8 +61,11 @@ export const FOLDERS: { id: FolderId; label: string; icon: typeof InboxIcon }[] 
   { id: "spam", label: "Spam", icon: OctagonAlert },
 ];
 
+/** Ação em massa: as do servidor, mais "delete" (excluir para sempre, só na Lixeira e no Spam). */
+type BulkAction = MessageAction | "delete";
+
 /** Ações em massa de cada caixa (marcar lido/não lido entra em todas, menos Rascunhos). */
-const BULK: Record<FolderId, { action: MessageAction; label: string; icon: typeof InboxIcon }[]> = {
+const BULK: Record<FolderId, { action: BulkAction; label: string; icon: typeof InboxIcon; danger?: boolean }[]> = {
   inbox: [
     { action: "archive", label: "Arquivar", icon: Archive },
     { action: "trash", label: "Lixeira", icon: Trash2 },
@@ -80,9 +85,14 @@ const BULK: Record<FolderId, { action: MessageAction; label: string; icon: typeo
   spam: [
     { action: "notspam", label: "Não é spam", icon: InboxIcon },
     { action: "trash", label: "Lixeira", icon: Trash2 },
+    { action: "delete", label: "Excluir para sempre", icon: Trash2, danger: true },
   ],
-  trash: [{ action: "untrash", label: "Mover para a Entrada", icon: InboxIcon }],
+  trash: [
+    { action: "untrash", label: "Tirar da lixeira", icon: ArchiveRestore },
+    { action: "delete", label: "Excluir para sempre", icon: Trash2, danger: true },
+  ],
 };
+
 
 export default function Inbox({ folder: folderParam }: { folder: string }) {
   const folder = (FOLDERS.some((f) => f.id === folderParam) ? folderParam : folderParam === "trash" ? "trash" : "inbox") as FolderId;
@@ -145,8 +155,16 @@ export default function Inbox({ folder: folderParam }: { folder: string }) {
       else next.add(id);
       return next;
     });
-  const runBulk = (action: MessageAction) => {
+  const runBulk = (action: BulkAction) => {
     const ids = selectedVisible.map((m) => m.id);
+    if (action === "delete") {
+      void askConfirm(deleteForeverConfirm(ids.length)).then((ok) => {
+        if (!ok) return;
+        setSelected(new Set());
+        void deleteForever(ids);
+      });
+      return;
+    }
     if (action === "trash" && getPref("confirmDelete", true)) {
       void askConfirm({
         title: ids.length === 1 ? "Mover para a Lixeira?" : `Mover ${ids.length} e-mails para a Lixeira?`,
@@ -162,6 +180,18 @@ export default function Inbox({ folder: folderParam }: { folder: string }) {
     if (action === "unread") ids.forEach(markUnread);
     setSelected(new Set());
     void bulkAction(ids, action);
+  };
+  // "Esvaziar lixeira": todas as contas, ou só a escolhida nas pílulas
+  const trashScope = filter === "all" ? messages : messages.filter((m) => m.account === filter);
+  const askEmptyTrash = () => {
+    const who = filter === "all" ? (accounts.length > 1 ? "de todas as contas" : "") : `de ${accountById.get(filter)?.name ?? filter}`;
+    void askConfirm({
+      title: `Esvaziar a Lixeira${who ? ` ${who}` : ""}?`,
+      text: "Tudo o que está na Lixeira some de vez, inclusive o que ainda não apareceu na lista. Não dá para desfazer nem recuperar depois.",
+      action: "Esvaziar lixeira",
+    }).then((ok) => {
+      if (ok) void emptyTrash(filter);
+    });
   };
   const loadingList = live && (folderStatus === "loading" || (status === "loading" && messages.length === 0));
   const showsRecipient = folder === "sent" || folder === "drafts";
@@ -261,7 +291,7 @@ export default function Inbox({ folder: folderParam }: { folder: string }) {
                       {selectedVisible.length} {selectedVisible.length === 1 ? "selecionado" : "selecionados"}
                     </span>
                     {bulkActions.map((b) => (
-                      <button key={b.action} className="btn glass sm" onClick={() => runBulk(b.action)}>
+                      <button key={b.action} className={`btn glass sm${b.danger ? " inbox-danger" : ""}`} onClick={() => runBulk(b.action)}>
                         <b.icon size={15} aria-hidden />
                         {b.label}
                       </button>
@@ -285,6 +315,12 @@ export default function Inbox({ folder: folderParam }: { folder: string }) {
                       <button aria-pressed={!unreadOnly} onClick={() => setUnreadOnly(false)}>Todas</button>
                       <button aria-pressed={unreadOnly} onClick={() => setUnreadOnly(true)}>Não lidas</button>
                     </SliderGroup>
+                    {folder === "trash" && (live || !isTauri) && (
+                      <button className="btn glass sm inbox-danger inbox-empty-trash" onClick={askEmptyTrash} disabled={trashScope.length === 0}>
+                        <Trash2 size={15} aria-hidden />
+                        Esvaziar lixeira
+                      </button>
+                    )}
                   </>
                 )}
               </div>
@@ -352,8 +388,6 @@ export default function Inbox({ folder: folderParam }: { folder: string }) {
 /** Filtro por conta: pílulas compactas com o destaque que desliza (some quando há uma conta só). */
 function AccountsBar({ accounts, filter, onChange }: { accounts: Account[]; filter: Filter; onChange: (f: Filter) => void }) {
   const profiles = useMailbox((s) => s.profiles);
-  const firstEmail = useMailbox((s) => s.connected[0]?.email);
-  const [customPhoto] = usePref<string | null>(AVATAR_PREF, null);
   const total = accounts.reduce((sum, a) => sum + a.unread, 0);
   return (
     <SliderGroup activeKey={filter} className="inbox-accounts" role="group" label="Contas">
@@ -364,9 +398,9 @@ function AccountsBar({ accounts, filter, onChange }: { accounts: Account[]; filt
       </button>
       {accounts.map((a) => (
         <button key={a.id} className="inbox-acc" aria-pressed={filter === a.id} onClick={() => onChange(a.id)} data-tip={a.id}>
-          {/* foto da conta (Google ou a escolhida no Quill); sem foto, o logo do serviço */}
-          <span className={`inbox-acc-logo${profiles[a.id]?.picture || a.id === firstEmail ? " has-photo" : ""}`}>
-            {profiles[a.id]?.picture || (a.id === firstEmail && customPhoto) ? (
+          {/* foto do Google de cada conta; sem foto, o logo do serviço */}
+          <span className={`inbox-acc-logo${profiles[a.id]?.picture ? " has-photo" : ""}`}>
+            {profiles[a.id]?.picture ? (
               <AccountPhoto email={a.id} size={22} />
             ) : (
               <Logo name={a.logo} size={13} />

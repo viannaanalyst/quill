@@ -1,14 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import "./read.css";
 import { TopBar } from "../components/TopBar";
 import { InviteGate, RsvpButtons } from "../components/Rsvp";
 import {
   Archive,
+  ArchiveRestore,
   ArrowLeft,
   CalendarDays,
   ChevronDown,
   ChevronUp,
-  CircleCheck,
   Download,
   Ellipsis,
   Folder,
@@ -20,10 +20,7 @@ import {
   Paperclip,
   Reply,
   ReplyAll,
-  LoaderCircle,
-  Maximize2,
   Search,
-  SendHorizontal,
   Star,
   Tag,
   Trash2,
@@ -31,12 +28,11 @@ import {
 } from "../components/icons";
 import { MessageAvatar } from "../components/MessageAvatar";
 import type { Account, Message } from "../inbox/types";
-import { getMailbox, listContaining, loadBody, markReadRemote, messageAction, useMailbox } from "../state/mailbox";
-import { queueSend } from "../state/outbox";
+import { deleteForever, listContaining, loadBody, markReadRemote, messageAction, useMailbox } from "../state/mailbox";
 import { backToFolder, getStore, markRead, markUnread, navigate } from "../state/store";
 import { getPref } from "../lib/storage";
 import { isTauri } from "../lib/platform";
-import { escapeHtml, signatureHtml, textToHtml } from "../lib/signature";
+import { escapeHtml, textToHtml } from "../lib/signature";
 import { api, friendlyError, type AttachmentInfo } from "../lib/api";
 import { toast } from "../components/Toasts";
 import { THREADS, type Attachment, type Thread } from "./threads";
@@ -45,6 +41,9 @@ import { previewAttachment } from "../components/AttachmentPreview";
 import { askConfirm } from "../components/ConfirmHost";
 import { EmailFrame } from "./EmailFrame";
 import { FILE_LABEL, fileSize, fileType } from "../lib/files";
+import { InlineReply, withPrefix, type ReplyMode } from "./InlineReply";
+import { getReplyDraft } from "../state/replyDrafts";
+import { deleteForeverConfirm } from "../state/deleteForever";
 
 /** Conversa de um e-mail: a de exemplo completa ou uma versão simples montada a partir da prévia. */
 function threadFor(m: Message, account: Account | undefined, body: string | undefined, atts: AttachmentInfo[] | undefined, html: string | null | undefined): Thread {
@@ -158,7 +157,6 @@ export default function ReadView({ id }: { id: string }) {
   return <ReadMessage key={id} m={m} t={threadFor(m, account, body, atts, html)} inlineLoaders={inlineFor(m, atts)} account={account} index={index} messages={messages} />;
 }
 
-const withPrefix = (prefix: string, subject: string) => (subject.toLowerCase().startsWith(prefix.toLowerCase()) ? subject : `${prefix} ${subject}`);
 
 
 /** Carregadores das imagens embutidas (cid → data URL) de um e-mail real. */
@@ -194,15 +192,13 @@ function ReadMessage({
   messages: Message[];
   inlineLoaders?: Record<string, () => Promise<string>>;
 }) {
-  const firstName = m.from.split(" ")[0];
-
   const [openEarlier, setOpenEarlier] = useState<Set<number>>(() => new Set());
   const [starred, setStarred] = useState(!!m.starred);
-  const [reply, setReply] = useState("");
-  const [sent, setSent] = useState(false);
-  const sending = false;
-  const replyRef = useRef<HTMLTextAreaElement>(null);
+  // resposta rápida: fechada até clicar em Responder (abre sozinha se havia uma em andamento)
+  const [replyMode, setReplyMode] = useState<ReplyMode | null>(() => (getReplyDraft(m.id) ? "reply" : null));
+  const [replyFocus, setReplyFocus] = useState(0);
   const inSpam = getStore().lastFolder === "spam";
+  const inTrash = getStore().lastFolder === "trash";
 
   const back = backToFolder;
   /** depois de arquivar/apagar: abre o próximo da lista ou volta */
@@ -225,49 +221,57 @@ function ReadMessage({
       else next.add(i);
       return next;
     });
-  const focusReply = () => replyRef.current?.focus();
-  const fromName = m.accountEmail ? getMailbox().profiles[m.accountEmail]?.name : null;
-  const send = async () => {
-    if (!reply.trim() || sending) return;
-    if (!m.accountEmail || !m.fromEmail) {
-      setReply("");
-      setSent(true);
-      return;
-    }
-    const html = `<div>${textToHtml(reply.trim())}</div>`;
-    queueSend(
-      {
-        from: m.accountEmail,
-        fromName,
-        to: [m.fromEmail],
-        cc: [],
-        bcc: [],
-        subject: withPrefix("Re:", m.subject),
-        html: `${html}${signatureHtml(m.accountEmail)}`,
-      },
-      m.threadId,
-      { from: m.accountEmail, to: [{ name: m.from, email: m.fromEmail }], subject: withPrefix("Re:", m.subject), body: html, threadId: m.threadId },
-    );
-    setReply("");
-    setSent(true);
+  const openReply = (mode: ReplyMode = "reply") => {
+    setReplyMode(mode);
+    setReplyFocus((n) => n + 1);
   };
   const quoted = () =>
     `<br><br><div>---------- Mensagem encaminhada ----------<br>De: ${escapeHtml(m.from)} &lt;${escapeHtml(t.email)}&gt;<br>Data: ${escapeHtml(t.date)}<br>Assunto: ${escapeHtml(m.subject)}<br><br>${t.body.map(textToHtml).join("<br><br>")}</div>`;
   const forward = () => navigate({ name: "compose", draft: { from: m.accountEmail, subject: withPrefix("Fwd:", m.subject), body: quoted() } });
   const writeTo = () => navigate({ name: "compose", draft: { from: m.accountEmail, to: [{ name: m.from, email: t.email }] } });
-  const fullReply = () =>
-    navigate({
-      name: "compose",
-      draft: {
-        from: m.accountEmail,
-        to: [{ name: m.from, email: t.email }],
-        subject: withPrefix("Re:", m.subject),
-        body: reply.trim() ? `<div>${textToHtml(reply.trim())}</div>` : "",
-        threadId: m.threadId,
-      },
-    });
-
-  const actions: { icon: typeof Archive; label: string; onClick?: () => void }[] = [
+  const trashAction = inTrash
+    ? {
+        icon: Trash2,
+        label: "Excluir para sempre",
+        danger: true,
+        onClick: () => {
+          void askConfirm(deleteForeverConfirm(1)).then(async (ok) => {
+            if (!ok) return;
+            const next = messages[index + 1] ?? messages[index - 1];
+            if (await deleteForever([m.id])) {
+              if (next && next.id !== m.id) navigate({ name: "read", id: next.id });
+              else back();
+            }
+          });
+        },
+      }
+    : {
+        icon: Trash2,
+        label: "Lixeira",
+        onClick: () => {
+          const go = () => {
+            void messageAction(m.id, "trash");
+            leave();
+          };
+          if (!getPref("confirmDelete", true)) return go();
+          void askConfirm({ title: "Mover para a Lixeira?", text: "Dá para tirar de lá depois, pela pasta Lixeira.", action: "Mover para a Lixeira" }).then(
+            (ok) => ok && go(),
+          );
+        },
+      };
+  const actions: { icon: typeof Archive; label: string; danger?: boolean; onClick?: () => void }[] = [
+    ...(inTrash
+      ? [
+          {
+            icon: ArchiveRestore,
+            label: "Tirar da lixeira",
+            onClick: () => {
+              void messageAction(m.id, "untrash");
+              leave();
+            },
+          },
+        ]
+      : []),
     {
       icon: Archive,
       label: "Arquivar",
@@ -276,20 +280,7 @@ function ReadMessage({
         leave();
       },
     },
-    {
-      icon: Trash2,
-      label: "Lixeira",
-      onClick: () => {
-        const go = () => {
-          void messageAction(m.id, "trash");
-          leave();
-        };
-        if (!getPref("confirmDelete", true)) return go();
-        void askConfirm({ title: "Mover para a Lixeira?", text: "Dá para tirar de lá depois, pela pasta Lixeira.", action: "Mover para a Lixeira" }).then(
-          (ok) => ok && go(),
-        );
-      },
-    },
+    trashAction,
     {
       icon: OctagonAlert,
       label: inSpam ? "Não é spam" : "Spam",
@@ -323,11 +314,11 @@ function ReadMessage({
 
       <div className="rd" key={m.id}>
         <div className="toolbar">
-          <button className="btn solid lg" onClick={focusReply}>
+          <button className="btn solid lg" onClick={() => openReply("reply")}>
             <Reply size={17} aria-hidden />
             Responder
           </button>
-          <button className="btn glass lg" onClick={focusReply}>
+          <button className="btn glass lg" onClick={() => openReply("replyAll")}>
             <ReplyAll size={17} aria-hidden />
             Responder a todos
           </button>
@@ -337,7 +328,7 @@ function ReadMessage({
           </button>
           <span className="vsep" aria-hidden />
           {actions.map((a) => (
-            <button key={a.label} className="btn glass ic" aria-label={a.label} data-tip={a.label} onClick={a.onClick}>
+            <button key={a.label} className={`btn glass ic${a.danger ? " rd-danger" : ""}`} aria-label={a.label} data-tip={a.label} onClick={a.onClick}>
               <a.icon size={17} aria-hidden />
             </button>
           ))}
@@ -424,7 +415,7 @@ function ReadMessage({
                     </div>
                     <div className="rd-msg-actions">
                       <span style={{ marginRight: 6 }}>{t.date}</span>
-                      <button className="btn ic" aria-label="Responder" data-tip="Responder" onClick={focusReply}>
+                      <button className="btn ic" aria-label="Responder" data-tip="Responder" onClick={() => openReply("reply")}>
                         <Reply size={17} aria-hidden />
                       </button>
                       <button className="btn ic" aria-label="Mais ações" data-tip="Mais ações">
@@ -463,49 +454,25 @@ function ReadMessage({
                     </div>
                   )}
                 </div>
-              </div>
 
-              <div className="rd-reply">
-                <div className="rd-reply-to">
-                  Para
-                  <span className="person-chip">
-                    <MessageAvatar message={m} size={20} />
-                    {m.from}
-                  </span>
-                  <span className="rd-reply-mode">
-                    <Reply size={14} aria-hidden />
-                    Responder
-                  </span>
-                </div>
-                <textarea
-                  ref={replyRef}
-                  rows={2}
-                  placeholder={`Responder para ${firstName}…`}
-                  value={reply}
-                  onChange={(e) => {
-                    setReply(e.target.value);
-                    setSent(false);
-                  }}
-                  aria-label={`Responder para ${m.from}`}
-                />
-                <div className="format-bar">
-                  <button className="btn glass sm" onClick={fullReply} data-tip="Abrir no editor completo (formatação e Cc)">
-                    <Maximize2 size={14} aria-hidden />
-                    Editor completo
-                  </button>
-                  <span className="saved-note" role="status">
-                    {sent ? (
-                      <>
-                        <CircleCheck size={13} aria-hidden />
-                        {m.accountEmail ? "Resposta a caminho (dá para desfazer embaixo)" : "Resposta enviada (exemplo)"}
-                      </>
-                    ) : null}
-                  </span>
-                  <button className="btn solid" onClick={() => void send()} disabled={!reply.trim() || sending} style={!reply.trim() ? { opacity: 0.5 } : undefined}>
-                    {sending ? <LoaderCircle size={15} className="spinning" aria-hidden /> : <SendHorizontal size={15} aria-hidden />}
-                    {sending ? "Enviando…" : "Enviar"}
-                  </button>
-                </div>
+                {replyMode ? (
+                  <InlineReply key={m.id} m={m} senderEmail={t.email} mode={replyMode} focusTick={replyFocus} onClose={() => setReplyMode(null)} />
+                ) : (
+                  <div className="rd-replybar">
+                    <button className="btn glass" onClick={() => openReply("reply")}>
+                      <Reply size={16} aria-hidden />
+                      Responder
+                    </button>
+                    <button className="btn glass" onClick={() => openReply("replyAll")}>
+                      <ReplyAll size={16} aria-hidden />
+                      Responder a todos
+                    </button>
+                    <button className="btn glass" onClick={forward}>
+                      <Forward size={16} aria-hidden />
+                      Encaminhar
+                    </button>
+                  </div>
+                )}
               </div>
             </article>
           </div>

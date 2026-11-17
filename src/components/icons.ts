@@ -91,3 +91,5 @@ export { default as Pause } from "lucide-react/icons/pause";
 export { default as Hash } from "lucide-react/icons/hash";
 export { default as Pin } from "lucide-react/icons/pin";
 export { default as Building2 } from "lucide-react/icons/building-2";
+export { default as ALargeSmall } from "lucide-react/icons/a-large-small";
+export { default as ArchiveRestore } from "lucide-react/icons/archive-restore";

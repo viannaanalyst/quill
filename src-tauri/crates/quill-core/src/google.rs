@@ -8,11 +8,13 @@ use tokio::net::TcpListener;
 use crate::oauth::{self, AuthError};
 
 /// Escopos pedidos: ler/organizar e enviar e-mail, e a agenda.
-pub const SCOPES: [&str; 12] = [
+pub const SCOPES: [&str; 13] = [
     "openid",
     "email",
     "profile",
     "https://www.googleapis.com/auth/gmail.modify",
+    // acesso completo ao Gmail: o único que deixa "Excluir para sempre" (batchDelete), ADR-027
+    "https://mail.google.com/",
     "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/calendar",
     // sugestões de destinatário como no Gmail (contatos e "Outros contatos"), só leitura
@@ -39,7 +41,13 @@ pub enum LoginError {
     NeedsLogin,
     /// a pessoa cancelou o login no Quill
     Cancelled,
+    /// falta uma permissão no acesso já dado (a conta precisa entrar de novo para concedê-la)
+    Permission(String),
 }
+
+/// Mensagem quando o acesso antigo não tem o escopo de excluir para sempre.
+pub const DELETE_NEEDS_PERMISSION: &str =
+    "Para excluir para sempre, entre de novo com esta conta (o Google pede uma permissão a mais)";
 
 impl std::fmt::Display for LoginError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -52,6 +60,7 @@ impl std::fmt::Display for LoginError {
             LoginError::Vault(e) => write!(f, "Não consegui usar as Chaves do sistema: {e}"),
             LoginError::NeedsLogin => write!(f, "Essa conta precisa entrar de novo."),
             LoginError::Cancelled => write!(f, "Login cancelado."),
+            LoginError::Permission(m) => write!(f, "{m}"),
         }
     }
 }
@@ -417,12 +426,16 @@ impl GoogleClient {
         text: &str,
         thread: Option<&str>,
         attachments: &[crate::chat::AttachmentRef],
+        quote: Option<&crate::chat::QuoteRef>,
     ) -> Result<crate::chat::RawMessage, LoginError> {
         Self::check_space(space)?;
         if thread.is_some_and(|t| !t.starts_with(&format!("{space}/threads/"))) {
             return Err(LoginError::Google("conversa inválida".into()));
         }
-        let (body, query) = crate::chat::send_request(text, thread, attachments);
+        if let Some(q) = quote {
+            crate::chat::quote_allowed(space, q).map_err(LoginError::Google)?;
+        }
+        let (body, query) = crate::chat::send_request(text, thread, attachments, quote);
         let url = if query.is_empty() { format!("{}/{space}/messages", self.chat_api) } else { format!("{}/{space}/messages?{query}", self.chat_api) };
         let resp = self.request(reqwest::Method::POST, url, token, Some(body)).await?;
         crate::chat::parse_message(&resp).map_err(LoginError::Google)
@@ -723,6 +736,62 @@ impl GoogleClient {
     /// Tira da Lixeira (volta para onde estava).
     pub async fn untrash(&self, token: &str, id: &str) -> Result<(), LoginError> {
         self.post_ok(token, &format!("/messages/{id}/untrash"), String::new()).await
+    }
+
+    /// Troca o 403 de "escopo insuficiente" por um pedido claro para entrar de novo.
+    fn delete_error(e: LoginError) -> LoginError {
+        match e {
+            LoginError::Google(m)
+                if m.starts_with("403") && (m.contains("ACCESS_TOKEN_SCOPE_INSUFFICIENT") || m.to_ascii_lowercase().contains("insufficient")) =>
+            {
+                LoginError::Permission(DELETE_NEEDS_PERMISSION.into())
+            }
+            other => other,
+        }
+    }
+
+    /// Apaga um e-mail de vez (sem passar pela Lixeira). Precisa do escopo https://mail.google.com/.
+    pub async fn delete_message(&self, token: &str, id: &str) -> Result<(), LoginError> {
+        crate::gmail::check_id(id).map_err(LoginError::Google)?;
+        self.request(reqwest::Method::DELETE, format!("{}/messages/{id}", self.api), token, None)
+            .await
+            .map(|_| ())
+            .map_err(Self::delete_error)
+    }
+
+    /// Apaga vários e-mails de vez, em grupos de até 1000 (limite do batchDelete).
+    pub async fn batch_delete(&self, token: &str, ids: &[String]) -> Result<(), LoginError> {
+        for id in ids {
+            crate::gmail::check_id(id).map_err(LoginError::Google)?;
+        }
+        for chunk in ids.chunks(1000) {
+            let body = serde_json::json!({ "ids": chunk }).to_string();
+            self.request(reqwest::Method::POST, format!("{}/messages/batchDelete", self.api), token, Some(body))
+                .await
+                .map_err(Self::delete_error)?;
+        }
+        Ok(())
+    }
+
+    /// Ids de tudo o que está na Lixeira (segue todas as páginas, até 100 mil e-mails).
+    pub async fn trash_ids(&self, token: &str) -> Result<Vec<String>, LoginError> {
+        let mut out = Vec::new();
+        let mut page: Option<String> = None;
+        for _ in 0..200 {
+            let mut path = "/messages?labelIds=TRASH&includeSpamTrash=true&maxResults=500".to_string();
+            if let Some(p) = &page {
+                let p: String = url::form_urlencoded::byte_serialize(p.as_bytes()).collect();
+                path.push_str(&format!("&pageToken={p}"));
+            }
+            let body = self.get(token, &path).await?;
+            let (ids, next) = crate::gmail::parse_message_page(&body).map_err(LoginError::Google)?;
+            out.extend(ids);
+            match next {
+                Some(n) if !n.is_empty() => page = Some(n),
+                _ => break,
+            }
+        }
+        Ok(out)
     }
 
     pub async fn mark_read(&self, token: &str, id: &str) -> Result<(), LoginError> {
@@ -1071,6 +1140,64 @@ mod tests {
         assert!(srv.await.unwrap()[0].starts_with("POST /gmail/calendar/calendars/primary/events"));
     }
 
+    #[test]
+    fn scopes_include_full_gmail_access_for_permanent_delete() {
+        assert!(SCOPES.contains(&"https://mail.google.com/"));
+    }
+
+    #[tokio::test]
+    async fn delete_removes_for_good() {
+        let (base, srv) = fake_google_with(vec![(204, "")]).await;
+        client(&base).delete_message("ya29", "a").await.unwrap();
+        assert!(srv.await.unwrap()[0].starts_with("DELETE /gmail/messages/a "));
+    }
+
+    #[tokio::test]
+    async fn batch_delete_sends_ids_in_groups_of_1000() {
+        let (base, srv) = fake_google_with(vec![(204, ""), (204, "")]).await;
+        let ids: Vec<String> = (0..1001).map(|i| format!("m{i}")).collect();
+        client(&base).batch_delete("ya29", &ids).await.unwrap();
+        let reqs = srv.await.unwrap();
+        assert!(reqs[0].starts_with("POST /gmail/messages/batchDelete"));
+        assert!(reqs[0].contains(r#""m0""#) && reqs[0].contains(r#""m999""#) && !reqs[0].contains(r#""m1000""#));
+        assert!(reqs[1].starts_with("POST /gmail/messages/batchDelete"));
+        assert!(reqs[1].contains(r#"{"ids":["m1000"]}"#));
+    }
+
+    #[tokio::test]
+    async fn batch_delete_with_nothing_does_not_call_google() {
+        client("http://127.0.0.1:9").batch_delete("ya29", &[]).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn delete_without_full_permission_asks_to_sign_in_again() {
+        let insufficient = r#"{"error":{"code":403,"message":"Request had insufficient authentication scopes.","status":"PERMISSION_DENIED","details":[{"reason":"ACCESS_TOKEN_SCOPE_INSUFFICIENT"}]}}"#;
+        let (base, _srv) = fake_google_with(vec![(403, insufficient), (403, insufficient)]).await;
+        let c = client(&base);
+        let e = c.delete_message("ya29", "a").await.unwrap_err();
+        assert_eq!(e, LoginError::Permission(DELETE_NEEDS_PERMISSION.into()));
+        assert_eq!(
+            e.to_string(),
+            "Para excluir para sempre, entre de novo com esta conta (o Google pede uma permissão a mais)"
+        );
+        let e = c.batch_delete("ya29", &["a".into()]).await.unwrap_err();
+        assert_eq!(e, LoginError::Permission(DELETE_NEEDS_PERMISSION.into()));
+    }
+
+    #[tokio::test]
+    async fn trash_ids_follow_all_pages() {
+        let (base, srv) = fake_google(vec![
+            r#"{"messages":[{"id":"a","threadId":"t"},{"id":"b","threadId":"t"}],"nextPageToken":"p2"}"#,
+            r#"{"messages":[{"id":"c","threadId":"u"}]}"#,
+        ])
+        .await;
+        let ids = client(&base).trash_ids("ya29").await.unwrap();
+        assert_eq!(ids, vec!["a", "b", "c"]);
+        let reqs = srv.await.unwrap();
+        assert!(reqs[0].starts_with("GET /gmail/messages?labelIds=TRASH&includeSpamTrash=true&maxResults=500 "));
+        assert!(reqs[1].starts_with("GET /gmail/messages?labelIds=TRASH&includeSpamTrash=true&maxResults=500&pageToken=p2 "));
+    }
+
     #[tokio::test]
     async fn untrash_brings_back_from_trash() {
         let (base, srv) = fake_google(vec![r#"{"id":"a"}"#]).await;
@@ -1185,7 +1312,7 @@ mod tests {
         let c = client("http://127.0.0.1:9");
         assert!(c.chat_messages("ya29", "spaces/../x", None, 50).await.is_err());
         assert!(c.chat_members("ya29", "users/1").await.is_err());
-        assert!(c.chat_send("ya29", "spaces/a/b", "oi", None, &[]).await.is_err());
+        assert!(c.chat_send("ya29", "spaces/a/b", "oi", None, &[], None).await.is_err());
     }
 
     #[tokio::test]
@@ -1194,7 +1321,7 @@ mod tests {
             r#"{"name":"spaces/B/messages/9","sender":{"name":"users/me1"},"createTime":"2026-11-17T12:00:00Z","text":"ok","thread":{"name":"spaces/B/threads/T"}}"#,
         ])
         .await;
-        let m = client(&base).chat_send("ya29", "spaces/B", "ok", Some("spaces/B/threads/T"), &[]).await.unwrap();
+        let m = client(&base).chat_send("ya29", "spaces/B", "ok", Some("spaces/B/threads/T"), &[], None).await.unwrap();
         assert_eq!(m.name, "spaces/B/messages/9");
         let req = &srv.await.unwrap()[0];
         assert!(req.starts_with("POST /gmail/chat/spaces/B/messages?messageReplyOption=REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD"));

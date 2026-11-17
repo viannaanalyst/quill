@@ -16,15 +16,15 @@ export function initialsOf(email: string | undefined, name?: string | null) {
   return (local.slice(0, 2) || "?").toUpperCase();
 }
 
-/** Foto de uma conta: a escolhida no Quill (só a principal), a do Google ou as iniciais. */
+/**
+ * Foto de uma conta: a do Google (ou as iniciais, se não houver). A foto escolhida no Quill só aparece
+ * com `main` (avatar do cabeçalho e do menu da conta); nas listas de contas cada uma mostra a sua.
+ */
 export function AccountPhoto({ email, size = 34, main = false, className = "" }: { email?: string; size?: number; main?: boolean; className?: string }) {
   const [custom] = usePref<string | null>(AVATAR_PREF, null);
   const profile = useMailbox((s) => (email ? s.profiles[email] : undefined));
   const [broken, setBroken] = useState<string | null>(null);
-  // a foto escolhida no Quill vale para a conta principal (a primeira conectada) em todo lugar
-  const firstEmail = useMailbox((s) => s.connected[0]?.email);
-  const isMain = main || (!!email && email === firstEmail);
-  const src = (isMain && custom) || profile?.picture || null;
+  const src = (main && custom) || profile?.picture || null;
   const style = { width: size, height: size, fontSize: Math.round(size * 0.36) };
 
   if (src && broken !== src) {

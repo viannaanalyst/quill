@@ -7,8 +7,8 @@ import { FileIcon } from "../components/FileIcon";
 import { previewAttachment } from "../components/AttachmentPreview";
 import { toast } from "../components/Toasts";
 import { Check, LoaderCircle, Mic, Paperclip, Pause, Play, RotateCcw, SendHorizontal, Smile, Trash2, X } from "../components/icons";
-import { pendingFile, sendChat, type PendingFile } from "../state/chat";
-import { AudioPlayer } from "./Messages";
+import { pendingFile, quoteOf, sendChat, type PendingFile } from "../state/chat";
+import { AudioPlayer, QuoteBody } from "./Messages";
 import { blobToBase64, clock, kindOf } from "./media";
 import { plainChat } from "./format";
 
@@ -209,12 +209,17 @@ export function Composer({
   space,
   replyTo,
   onClearReply,
+  quoting,
+  onClearQuote,
   dropped,
 }: {
   account: string;
   space: string;
   replyTo: ChatMessageDto | null;
   onClearReply: () => void;
+  /** mensagem que vai ser citada (cartão com X em cima da caixa) */
+  quoting: ChatMessageDto | null;
+  onClearQuote: () => void;
   /** arquivos soltos sobre a conversa (o Chat passa para cá) */
   dropped: { files: File[]; seq: number } | null;
 }) {
@@ -229,10 +234,13 @@ export function Composer({
     toast(msg, "error");
   });
 
-  // "Responder no fio": o cursor vai para a caixa
+  // "Responder no fio" e "Citar na resposta": o cursor vai para a caixa
   useEffect(() => {
-    if (replyTo) area.current?.focus({ preventScroll: true });
-  }, [replyTo]);
+    if (replyTo || quoting) area.current?.focus({ preventScroll: true });
+  }, [replyTo, quoting]);
+  // citando uma resposta de fio, a nova sai no mesmo fio (a API só cita no mesmo fio ou uma mensagem principal)
+  const thread = replyTo?.thread ?? (quoting?.threadReply ? quoting.thread : null);
+  const quote = quoting ? quoteOf(quoting) : null;
 
   // trocou de conversa: começa vazio (não na primeira vez)
   const lastSpace = useRef(space);
@@ -306,10 +314,11 @@ export function Composer({
   function doSend() {
     // os arquivos já subiram: a mensagem só referencia
     // a miniatura vai junto (a mensagem que está saindo mostra e libera no fim)
-    sendChat(space, text, staged, replyTo?.thread);
+    sendChat(space, text, staged, thread, quote);
     setText("");
     setStaged([]);
     onClearReply();
+    onClearQuote();
     if (area.current) area.current.style.height = "";
   }
 
@@ -328,8 +337,9 @@ export function Composer({
 
   async function sendAudio(blob: Blob, type: string) {
     const f = pendingFile(blob, audioName(ext()), type);
-    sendChat(space, "", [f], replyTo?.thread);
+    sendChat(space, "", [f], thread, quote);
     onClearReply();
+    onClearQuote();
   }
 
   const insert = (s: string) => {
@@ -346,15 +356,15 @@ export function Composer({
   };
 
   const fileButton = (
-    <button type="button" className="btn ic chat-plain" data-tip="Anexar arquivo" aria-label="Anexar arquivo" onClick={() => fileInput.current?.click()}>
-      <Paperclip size={19} aria-hidden />
+    <button type="button" className="btn ic chat-plain" data-tip="Anexar arquivo" data-tip-pos="top-start" aria-label="Anexar arquivo" onClick={() => fileInput.current?.click()}>
+      <Paperclip size={18} aria-hidden />
     </button>
   );
   const emojiButton = (
     <Popover.Root>
       <Popover.Trigger asChild>
-        <button type="button" className="btn ic chat-plain" data-tip="Emoji" aria-label="Inserir emoji">
-          <Smile size={19} aria-hidden />
+        <button type="button" className="btn ic chat-plain" data-tip="Emoji" data-tip-pos="top" aria-label="Inserir emoji">
+          <Smile size={18} aria-hidden />
         </button>
       </Popover.Trigger>
       <Popover.Portal>
@@ -371,7 +381,7 @@ export function Composer({
     </Popover.Root>
   );
   const sendButton = (
-    <button type="button" className="btn solid ic chat-send" aria-label={waiting ? "Enviando quando os arquivos terminarem" : "Enviar"} onClick={send} disabled={waiting}>
+    <button type="button" className="btn solid ic chat-send" data-tip={waiting ? "Enviando quando os arquivos terminarem" : "Enviar"} data-tip-pos="top-end" aria-label={waiting ? "Enviando quando os arquivos terminarem" : "Enviar"} onClick={send} disabled={waiting}>
       {waiting ? <LoaderCircle size={17} className="spinning" aria-hidden /> : <SendHorizontal size={17} aria-hidden />}
     </button>
   );
@@ -396,6 +406,16 @@ export function Composer({
           </button>
         </div>
       )}
+      {quote && (
+        <div className="chat-cq">
+          <div className="chat-quote" aria-label={`Citando ${quote.preview.sender?.name ?? "mensagem"}`}>
+            <QuoteBody name={quote.preview.sender?.name ?? "Mensagem citada"} text={plainChat(quote.preview.text)} />
+          </div>
+          <button type="button" className="btn ic chat-plain chat-cq-x" data-tip="Cancelar citação" data-tip-pos="top-end" aria-label="Cancelar citação" onClick={onClearQuote}>
+            <X size={16} aria-hidden />
+          </button>
+        </div>
+      )}
       {replyTo && (
         <div className="chat-replying">
           <span>
@@ -409,8 +429,8 @@ export function Composer({
 
       {rec.phase === "recording" ? (
         <div className="chat-box is-rec">
-          <button type="button" className="btn ic chat-plain" data-tip="Descartar" aria-label="Descartar gravação" onClick={cancel}>
-            <Trash2 size={19} aria-hidden />
+          <button type="button" className="btn ic chat-plain" data-tip="Descartar" data-tip-pos="top-start" aria-label="Descartar gravação" onClick={cancel}>
+            <Trash2 size={18} aria-hidden />
           </button>
           <span className="chat-recdot" aria-hidden />
           <span className="chat-rtime" role="timer" aria-label={`Gravando: ${clock(rec.elapsed)}`}>
@@ -423,12 +443,14 @@ export function Composer({
             <span className="chat-rest" />
           </div>
           <span className="chat-rlbl">Gravando</span>
-          <button type="button" className="btn glass ic" data-tip="Parar e ouvir" aria-label="Parar e ouvir antes de enviar" onClick={() => void review()}>
+          <button type="button" className="btn glass ic" data-tip="Parar e ouvir" data-tip-pos="top" aria-label="Parar e ouvir antes de enviar" onClick={() => void review()}>
             <Pause size={17} aria-hidden />
           </button>
           <button
             type="button"
             className="btn solid ic chat-send"
+            data-tip="Enviar áudio"
+            data-tip-pos="top-end"
             aria-label="Enviar áudio"
             onClick={async () => {
               const got = await stop();
@@ -441,8 +463,8 @@ export function Composer({
         </div>
       ) : rec.phase === "review" ? (
         <div className="chat-box is-review">
-          <button type="button" className="btn ic chat-plain" data-tip="Descartar" aria-label="Descartar áudio" onClick={cancel}>
-            <Trash2 size={19} aria-hidden />
+          <button type="button" className="btn ic chat-plain" data-tip="Descartar" data-tip-pos="top-start" aria-label="Descartar áudio" onClick={cancel}>
+            <Trash2 size={18} aria-hidden />
           </button>
           <div className="chat-review">
             <AudioPlayer src={rec.url} seed={rec.url} />
@@ -450,6 +472,8 @@ export function Composer({
           <button
             type="button"
             className="btn solid ic chat-send"
+            data-tip="Enviar áudio"
+            data-tip-pos="top-end"
             aria-label="Enviar áudio"
             onClick={() => {
               void sendAudio(rec.blob, rec.type);
@@ -510,7 +534,7 @@ export function Composer({
               <button
                 type="button"
                 className="btn ic chat-plain"
-                data-tip="Gravar áudio (segure ou clique)"
+                data-tip="Gravar áudio (segure ou clique)" data-tip-pos="top-end"
                 aria-label="Gravar áudio"
                 onPointerDown={() => {
                   void start();
@@ -525,7 +549,7 @@ export function Composer({
                   }
                 }}
               >
-                <Mic size={19} aria-hidden />
+                <Mic size={18} aria-hidden />
               </button>
             )}
             {sendButton}

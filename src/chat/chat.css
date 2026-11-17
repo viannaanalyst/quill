@@ -648,6 +648,40 @@
 .chat-ul li + li {
   margin-top: 1px;
 }
+.chat-ol {
+  padding-left: 22px;
+}
+.chat-ol > li::marker {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink2);
+}
+/* lista dentro de lista (recuo do Markdown) */
+.chat-ul .chat-ul {
+  margin: 1px 0 2px;
+}
+/* espaço entre parágrafo, lista e citação (a linha em branco do texto não desenha nada sozinha) */
+.chat-p + .chat-ul,
+.chat-ul + .chat-p,
+.chat-p + .chat-bq,
+.chat-bq + .chat-p,
+.chat-ul + .chat-bq,
+.chat-bq + .chat-ul {
+  margin-top: 6px;
+}
+/* citação do Markdown (> texto) */
+.chat-bq {
+  margin: 0;
+  padding: 1px 0 1px 11px;
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--ink3) 45%, transparent);
+  color: var(--ink2);
+}
+/* separador do Markdown (---) */
+.chat-hr {
+  border: 0;
+  height: 1px;
+  margin: 9px 0;
+  background: color-mix(in srgb, var(--ink) 14%, transparent);
+}
 .chat-pre {
   margin: 6px 0;
   padding: 8px 11px;
@@ -701,21 +735,35 @@
   padding: 0 3px;
 }
 
-/* cartão da mensagem citada */
+/* cartão da mensagem citada (como o do Google Chat): barrinha colorida à esquerda, nome pequeno em
+   negrito e o começo do texto em até 2 linhas */
 .chat-quote {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 1px;
   width: 100%;
-  min-width: 0;
+  min-width: min(220px, 100%);
   margin: 2px 0 6px;
-  padding: 5px 10px 6px 11px;
-  border-radius: 4px 10px 10px 4px;
-  box-shadow: inset 3px 0 0 var(--blue);
+  padding: 6px 12px 7px 14px;
+  border-radius: 10px;
+  overflow: hidden;
   background: color-mix(in srgb, var(--ink) 5%, transparent);
   text-align: left;
   font-size: 13px;
   line-height: 1.4;
+}
+.chat-quote::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--blue);
+}
+.chat-bub.is-mine .chat-quote {
+  background: color-mix(in srgb, var(--blue) 9%, var(--surface));
 }
 button.chat-quote {
   cursor: pointer;
@@ -724,9 +772,20 @@ button.chat-quote {
 button.chat-quote:hover {
   background: color-mix(in srgb, var(--ink) 9%, transparent);
 }
+.chat-bub.is-mine button.chat-quote:hover {
+  background: color-mix(in srgb, var(--blue) 15%, var(--surface));
+}
+button.chat-quote:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
 .chat-qn {
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .chat-qt {
   color: var(--ink2);
@@ -734,53 +793,17 @@ button.chat-quote:hover {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  white-space: pre-line;
+  overflow-wrap: anywhere;
+  /* o cartão é um resumo: quebras de linha viram espaço */
+  white-space: normal;
 }
 
-/* dica com data e hora completas ao passar o mouse na mensagem */
-.chat-msg[data-when]::after {
-  content: attr(data-when);
-  position: absolute;
-  z-index: 3;
-  left: 0;
-  top: calc(100% + 4px);
-  white-space: nowrap;
-  pointer-events: none;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--bink);
-  background: linear-gradient(to bottom, var(--btop), var(--bbot));
-  padding: 4px 10px;
-  border-radius: 999px;
-  box-shadow:
-    inset 0 1px 0 var(--bhl),
-    0 6px 16px -6px rgba(0, 0, 0, 0.35);
-  opacity: 0;
-  transform: translateY(-3px);
-  transition:
-    opacity 0.12s ease-out,
-    transform 0.12s ease-out;
-}
-.chat-mine-item > .chat-msg[data-when]::after {
-  left: auto;
-  right: 0;
-}
-.chat-msg[data-when]:hover::after {
-  opacity: 1;
-  transform: none;
-  transition-delay: 0.6s;
-}
-/* sobre as reações e a barra, a dica delas tem prioridade */
-.chat-msg:has(.chat-rxs:hover, .chat-bar:hover)::after {
-  opacity: 0;
-  transition-delay: 0s;
-}
-
-/* barra flutuante da mensagem (como a do Google Chat) */
+/* barra flutuante da mensagem (como a do Google Chat): no começo da mensagem, sobre a borda de cima;
+   na primeira do grupo, na linha do nome (a posição vem de placeBar, no Messages.tsx) */
 .chat-bar {
   position: absolute;
-  top: -20px;
-  right: 8px;
+  top: var(--chat-bar-y, -20px);
+  left: var(--chat-bar-x, 6px);
   z-index: 4;
   display: flex;
   align-items: center;
@@ -794,7 +817,7 @@ button.chat-quote:hover {
     0 2px 4px -2px rgba(0, 0, 0, 0.08);
   opacity: 0;
   transform: translateY(4px) scale(0.97);
-  transform-origin: right bottom;
+  transform-origin: left bottom;
   pointer-events: none;
   transition:
     opacity 0.12s ease-out,
@@ -921,6 +944,46 @@ button.chat-quote:hover {
 }
 .chat-rx-n {
   font-variant-numeric: tabular-nums;
+}
+
+/* emoji do Google (Noto): o desenho parado fica embaixo até o animado carregar */
+.chat-nemo {
+  position: relative;
+  display: inline-block;
+  width: 1.3em;
+  height: 1.3em;
+  vertical-align: -0.3em;
+  flex: none;
+}
+.chat-nemo img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+}
+.chat-nemo-anim,
+.chat-nemo.is-anim .chat-nemo-still {
+  opacity: 0;
+}
+.chat-nemo.is-anim .chat-nemo-anim {
+  opacity: 1;
+}
+.chat-rx .chat-nemo {
+  width: 17px;
+  height: 17px;
+  vertical-align: middle;
+}
+.chat-bar-emo .chat-nemo {
+  width: 20px;
+  height: 20px;
+  vertical-align: middle;
+}
+.chat-bub.is-jumbo .chat-nemo {
+  width: 48px;
+  height: 48px;
+  vertical-align: bottom;
 }
 .chat-rx-pop {
   padding: 6px;
@@ -1251,23 +1314,29 @@ button.chat-quote:hover {
   gap: 6px;
 }
 
-/* áudio */
+/* mensagem de voz: cartão com play, ondinha, tempo e velocidade */
 .chat-bub-aud {
-  padding: 7px 14px 7px 7px;
+  padding: 7px 10px 7px 7px;
   border-radius: 999px;
 }
 .chat-aud-wrap {
   display: inline-flex;
-  margin-top: 8px;
-  padding: 7px 14px 7px 7px;
+  max-width: 100%;
+  margin-top: 4px;
+  padding: 7px 10px 7px 7px;
   border-radius: 999px;
   box-shadow: inset 0 0 0 1px var(--line);
-  background: var(--surface);
+  background: var(--chat-other);
+}
+.chat-mh + .chat-item .chat-aud-wrap,
+.chat-mh + .chat-msg .chat-aud-wrap {
+  margin-top: 4px;
 }
 .chat-aud {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  min-width: 0;
 }
 .chat-aud-btn.btn.ic {
   width: 34px;
@@ -1294,12 +1363,55 @@ button.chat-quote:hover {
 .chat-wave i.is-p {
   background: var(--blue);
 }
+/* a barrinha que está tocando agora */
+.chat-wave i.is-now {
+  background: color-mix(in srgb, var(--blue) 55%, transparent);
+}
+.chat-wave:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+}
 .chat-adur {
   font-size: 12.5px;
   color: var(--ink2);
   font-variant-numeric: tabular-nums;
   font-weight: 500;
   min-width: 32px;
+  white-space: nowrap;
+}
+.chat-adur-of {
+  color: var(--ink3);
+  font-weight: 400;
+}
+/* velocidade: 1x → 1,5x → 2x */
+.chat-aud-rate {
+  flex: none;
+  min-width: 38px;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink2);
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  transition:
+    background-color 0.12s ease,
+    transform 0.12s ease-out;
+}
+.chat-aud-rate:hover {
+  background: color-mix(in srgb, var(--ink) 12%, transparent);
+  color: var(--ink);
+}
+.chat-aud-rate:active {
+  transform: scale(0.95);
+}
+.chat-aud-rate:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
+.chat-aud-rate:disabled {
+  opacity: 0.5;
 }
 
 /* arquivo */
@@ -1352,6 +1464,28 @@ button.chat-quote:hover {
 .chat-note {
   color: var(--danger, #c2453d);
 }
+/* citando: o cartão fica em cima da caixa de escrever, com o X para cancelar */
+.chat-cq {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 0 6px;
+}
+.chat-cq .chat-quote {
+  flex: 1;
+  margin: 0;
+  background: var(--panel);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.chat-cq-lbl {
+  font-weight: 500;
+  color: var(--ink3);
+}
+.chat-cq-x.btn.ic {
+  flex: none;
+  width: 30px;
+  height: 30px;
+}
 .chat-replying span {
   flex: 1;
   min-width: 0;
@@ -1362,12 +1496,12 @@ button.chat-quote:hover {
 .chat-box {
   display: flex;
   flex-direction: column;
-  border-radius: 26px;
+  border-radius: 22px;
   background: var(--panel);
   box-shadow:
     inset 0 0 0 1px var(--line),
     0 1px 2px rgba(0, 0, 0, 0.04);
-  padding: 6px 7px 6px 8px;
+  padding: 4px 5px 4px 6px;
   transition: box-shadow 0.2s ease;
 }
 .chat-box:focus-within {
@@ -1383,11 +1517,15 @@ button.chat-quote:hover {
 .chat-arow {
   display: flex;
   align-items: flex-end;
-  gap: 4px;
-  min-height: 40px;
+  gap: 2px;
+  min-height: 36px;
 }
-.chat-arow > .btn {
-  margin-bottom: 1px;
+/* anexar, emoji, microfone e enviar: todos com 36 px, na mesma linha */
+.chat-arow > .btn.ic,
+.chat-box.is-rec > .btn.ic,
+.chat-box.is-review > .btn.ic {
+  width: 36px;
+  height: 36px;
 }
 .chat-plain.btn {
   color: var(--ink2);
@@ -1407,16 +1545,14 @@ button.chat-quote:hover {
   font-size: 14px;
   line-height: 1.45;
   color: var(--ink);
-  padding: 10px 6px;
+  padding: 8px 6px;
   max-height: 140px;
 }
 .chat-input::placeholder {
   color: var(--ink3);
 }
 .chat-send.btn.solid.ic {
-  width: 38px;
-  height: 38px;
-  margin-left: 4px;
+  margin-left: 2px;
 }
 .chat-emoji {
   display: grid;
@@ -1462,9 +1598,9 @@ button.chat-quote:hover {
   flex-direction: row;
   align-items: center;
   gap: 4px;
-  height: 52px;
+  height: 46px;
   border-radius: 999px;
-  padding: 0 7px 0 8px;
+  padding: 0 5px 0 6px;
 }
 .chat-box.is-rec {
   box-shadow:
@@ -1830,4 +1966,28 @@ button.chat-th {
   .chat-fl2 {
     animation: none;
   }
+}
+.chat-bub.is-jumbo .chat-nemo + .chat-nemo {
+  margin-left: 4px;
+}
+
+/* dica em cima, alinhada pela esquerda (anexar, descartar) ou pela direita (enviar): botões nas pontas da caixa */
+.chat-cmp [data-tip-pos="top-start"]::after {
+  top: auto;
+  left: 0;
+  bottom: calc(100% + 8px);
+  transform: translateY(-3px);
+}
+.chat-cmp [data-tip-pos="top-end"]::after {
+  top: auto;
+  left: auto;
+  right: 0;
+  bottom: calc(100% + 8px);
+  transform: translateY(-3px);
+}
+.chat-cmp [data-tip-pos="top-start"]:hover::after,
+.chat-cmp [data-tip-pos="top-start"]:focus-visible::after,
+.chat-cmp [data-tip-pos="top-end"]:hover::after,
+.chat-cmp [data-tip-pos="top-end"]:focus-visible::after {
+  transform: none;
 }

@@ -2,6 +2,7 @@ import { useEffect, lazy, Suspense, useState, type CSSProperties } from "react";
 import "./settings.css";
 import { TopBar } from "../components/TopBar";
 import { Logo } from "../components/Logo";
+import { AccountPhoto } from "../components/MyAvatar";
 import {
   AtSign,
   Bell,
@@ -112,6 +113,17 @@ const chipOf = (email: string) => {
   return label === "Workspace" ? "Google Workspace" : label;
 };
 
+/** Foto do Google da conta (sem foto, o logo do serviço), com a bolinha da cor da conta. */
+function RealAccountLogo({ email, color, size }: { email: string; color: string; size: number }) {
+  const picture = useMailbox((s) => s.profiles[email]?.picture);
+  return (
+    <span className={`st-logo${picture ? " has-photo" : ""}`}>
+      {picture ? <AccountPhoto email={email} size={size * 2} /> : <Logo name={logoOf(email)} size={size} />}
+      <i style={{ background: color }} />
+    </span>
+  );
+}
+
 /** Linha de uma conta de verdade: apelido e cor salvos por e-mail. */
 function RealAccountRow({ email, index, selected, onSelect, onDisconnect }: { email: string; index: number; selected: boolean; onSelect: () => void; onDisconnect: () => void }) {
   const [nickname] = usePref(`account:${email}:nickname`, accountName(email));
@@ -119,10 +131,7 @@ function RealAccountRow({ email, index, selected, onSelect, onDisconnect }: { em
   return (
     <li className="st-account" data-selected={selected}>
       <button className="st-hit" aria-label={`Ver detalhes de ${nickname}`} aria-current={selected ? "true" : undefined} onClick={onSelect} />
-      <span className="st-logo">
-        <Logo name={logoOf(email)} size={21} />
-        <i style={{ background: color }} />
-      </span>
+      <RealAccountLogo email={email} color={color} size={21} />
       <div className="st-account-body">
         <div className="st-account-name">
           {nickname}
@@ -154,10 +163,7 @@ function RealDetails({ email, index, onDisconnect }: { email: string; index: num
     <aside className="st-side screen-enter" aria-label={`Detalhes de ${nickname}`}>
       <section className="card st-card">
         <div className="st-detail-head">
-          <span className="st-logo">
-            <Logo name={logoOf(email)} size={22} />
-            <i style={{ background: color }} />
-          </span>
+          <RealAccountLogo email={email} color={color} size={22} />
           <div>
             <div className="st-detail-name">{nickname}</div>
             <div className="st-detail-mail">{email}</div>

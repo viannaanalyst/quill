@@ -251,3 +251,103 @@ Pedido do Gabriel depois de usar o Chat com a conta real, comparando com o Googl
   atualizados). Vale a partir da próxima montagem.
 - Repositório público sem dados pessoais à vista: a assinatura do app usa a impressão digital do certificado (não o
   nome com e-mail) e os dados de exemplo da prévia usam e-mails fictícios (voce@gmail.com, voce@empresa.com.br…).
+
+### Chat: Markdown, emojis animados, dicas e botão de enviar (não commitado em 2026-11-17)
+
+Pedido do Gabriel depois de ver notas de reunião do Gemini com asteriscos e barras invertidas à vista.
+- **Markdown no texto** (`src/chat/format.ts`), junto com a marcação do Google Chat: `**negrito**`, `__negrito__`,
+  `~~tachado~~`, links `[texto](url)`, títulos `#`/`##`/`###` como linha em negrito, listas `1.`, `-`, `*`, `•`
+  aninhadas pelo recuo, citação `> texto` e linha `---`. Escapes (`\[`, `\*`, `\_`, `\(`…) mostram só o caractere;
+  marca sem par fica como texto; nada é interpretado dentro de código; URL solta não leva `.`, `,` ou `)` do fim.
+  Tela nova para lista numerada, subitens, citação e separador (`chatText.tsx`).
+- **Emojis animados do Google** (Noto Animated Emoji): mensagem só com 1 a 3 emojis fica grande e animada; chips de
+  reação e as 3 reações rápidas da barra mostram o desenho parado e animam ao passar o mouse. Se o Google não tiver
+  a animação, fica o parado; sem internet, o caractere. Novos `src/chat/noto.ts` e `src/chat/Emoji.tsx`.
+- **Dicas sem corte:** botões da caixa de escrever com a dica para cima ("Anexar arquivo" e "Descartar" alinhadas
+  pela esquerda; "Enviar", "Enviar áudio" e "Gravar áudio" pela direita). Na lista de mensagens, a dica escolhe o lado
+  que cabe na hora. Conferido com um script que mede todas as dicas da tela com a lista rolada de cima a baixo: zero
+  cortadas a 1280×800 e 1100×720 (tamanho mínimo da janela), com e sem o fio de respostas aberto, em claro e escuro.
+- **Botão de enviar** do tamanho dos outros: 36 px com ícone de 17 px (era 38 px); anexar, emoji e microfone com
+  ícone de 18 px; a caixa de escrever caiu de 52 para 44 px de altura. O Enviar ganhou dica.
+- Dados de exemplo: notas de reunião no formato do Gemini e uma mensagem só de emoji (🎉🙌).
+- Testes: `npm test` com 60 casos (40 novos de Markdown, 5 dos endereços dos emojis e os 15 de antes, um deles
+  ajustado para o formato novo das listas). Decisões no acréscimo do
+  [ADR-023](02-decisoes-adrs/ADR-023-google-chat-pela-api-so-workspace.md).
+- Conferido na prévia (claro e escuro); ainda não testado no Mac.
+
+### Resposta rápida do e-mail como a do Gmail (não commitado em 2026-11-17)
+
+Pedido do Gabriel: a caixa de resposta ficava sempre aberta no pé da tela, sem formatação, e o editor completo só
+tinha o X (que voltava para a caixa de entrada).
+- **Fechada até clicar:** no fim do e-mail aparecem **Responder**, **Responder a todos** e **Encaminhar**. Clicando
+  (ali, na barra de cima ou na seta da mensagem), a caixa abre logo abaixo da mensagem e rola junto com ela
+  (`src/read/InlineReply.tsx`).
+- **Formatação:** negrito, itálico, sublinhado, marcadores, link e emoji ao lado do Enviar; o botão **Aa** troca pela
+  barra inteira do Escrever. A `RichToolbar` ganhou o modo `compact` e o `up` (dicas e janelinhas abrem para cima).
+- **Anexos** pelo clipe (até 25 MB no total; imagem colada vira anexo), com pílula para tirar.
+- **Rascunho:** salva sozinho no Gmail 3 s depois da última mudança. Saindo do e-mail, a resposta fica guardada e
+  reabre como estava (`src/state/replyDrafts.ts`, com testes). ⌘↵ envia; a lixeira da caixa descarta (e apaga o
+  rascunho).
+- **Editor completo → "Voltar ao e-mail":** a seta no lugar do X volta para o e-mail com a resposta aberta, o texto,
+  os anexos e o mesmo rascunho. Enviar ou descartar no editor também volta para o e-mail (`ComposeDraft.returnTo`).
+- Ainda falta: **Responder a todos** responde só a quem mandou, porque o Quill ainda não lê os outros destinatários
+  (Para e Cc) do e-mail recebido.
+- Conferido na prévia (claro e escuro), com script: abrir, escrever com negrito, barra inteira, editor completo,
+  voltar com o texto e descartar.
+
+### Chat: horário, barra, citação e mensagem de voz como no Google Chat (não commitado em 2026-11-17)
+
+Pedido do Gabriel: deixar a conversa do Chat igual ao Google Chat em quatro pontos.
+- **Horário ao lado do nome** no formato do Google Chat: hoje só a hora ("11:00"), outro dia "5 de nov., 11:00" e
+  outro ano "12 de dez. de 2025, 16:40" (`src/chat/time.ts`, com testes). Saiu "agora"/"5 min" e saiu a dica com data
+  e hora completas que aparecia ao parar o mouse na bolha (e no horário). O leitor de tela continua ouvindo a data
+  completa na barra de ações.
+- **Barra de ações à esquerda:** flutua sobre a borda de cima, no começo do balão (antes ficava no canto direito). Na
+  primeira mensagem do grupo ela vai para a linha do nome, logo depois do horário, para não cobrir o nome; nas suas
+  mensagens fica no começo do balão (ou antes de "Você · hora", quando o balão é curto). A posição é medida quando o
+  mouse ou o Tab chega na mensagem; as dicas continuam escolhendo o lado que cabe.
+- **Citar na resposta:** botão novo na barra. O cartão (barrinha azul, nome em negrito pequeno, até 2 linhas do texto
+  com reticências) aparece em cima da caixa de escrever, com X para cancelar, e a mensagem sai citando a outra
+  (`quotedMessageMetadata` da API). Citando uma resposta de fio, a nova sai no mesmo fio (regra da API). O cartão na
+  mensagem ganhou o mesmo visual; clicar nele continua rolando até a original e destacando por um instante.
+  Parte nativa: `QuoteRef`/`quote_allowed` e `send_request(..., quote)` em `quill-core/src/chat.rs`, hora da última
+  mudança (`updateTime`) em cada mensagem e o parâmetro `quote` no comando `chat_send` (2 testes novos em Rust).
+- **Mensagem de voz:** cartão próprio com play/pausa redondo, ondinha que vai enchendo enquanto toca (clicar ou as
+  setas pulam; Home/End vão ao começo e ao fim), tempo "0:21 / 0:42" com números de largura fixa e velocidade
+  1x → 1,5x → 2x. Sem os controles do sistema.
+- Dados de exemplo: mensagens de outro ano, de 5 de novembro e de ontem, uma citação sua e um áudio recebido.
+- Testes: `npm test` com 66 casos (3 novos do horário); `cargo test --features net` no `quill-core` com 284 (rodado
+  numa cópia só com estas mudanças, porque o `google.rs` estava no meio de outra mudança que ainda não compila nos
+  testes).
+- Conferido na prévia (claro e escuro), com prints; ainda não testado no Mac (enviar citando precisa da conta real).
+
+### Excluir para sempre, esvaziar a Lixeira e fotos das contas (não commitado em 2026-11-17)
+
+Pedido do Gabriel: apagar de vez o que está na Lixeira e no Spam, e cada conta mostrar a própria foto.
+- **Excluir para sempre** ([ADR-027](02-decisoes-adrs/ADR-027-excluir-para-sempre-com-acesso-completo-ao-gmail.md)):
+  nas pastas **Lixeira** e **Spam** as ações em massa ganham **Excluir para sempre** (vermelho); a Lixeira troca
+  "Mover para a Entrada" por **Tirar da lixeira**. Lendo um e-mail da Lixeira, o botão da lixeira vira **Excluir para
+  sempre** e aparece **Tirar da lixeira**. Sempre com confirmação ("não dá para desfazer nem recuperar depois"); o
+  e-mail some na hora e volta se o servidor recusar; aviso com a quantidade.
+- **Esvaziar lixeira** no topo da pasta Lixeira: todas as contas conectadas, ou só a escolhida nas pílulas de contas.
+  Gmail: lista todos os ids com o marcador `TRASH` (500 por página) e apaga com `batchDelete` (grupos de 1000). IMAP:
+  `UID SEARCH ALL` na Lixeira, `\Deleted` e `EXPUNGE`.
+- **Escopo novo do Google** `https://mail.google.com/` (o único que deixa apagar de vez). Contas que entraram antes
+  recebem o aviso "Para excluir para sempre, entre de novo com esta conta (o Google pede uma permissão a mais)"
+  (`LoginError::Permission`, `DELETE_NEEDS_PERMISSION`); o resto continua funcionando.
+- Parte nativa: `delete_message`, `batch_delete` e `trash_ids` em `quill-core/src/google.rs`
+  (`check_id` e `parse_message_page` em `gmail.rs`); `delete_forever`/`empty_trash` em `session.rs` e
+  `imap_session.rs`; `act(..., "delete")`, `delete_many` e `empty_trash` em `imap_client.rs` (só Lixeira e Spam
+  aceitam apagar de vez); comandos `messages_delete_forever` e `trash_empty` no `src-tauri/src/lib.rs`, escolhendo
+  Google ou IMAP pelo provedor da conta.
+- Telas: `api.deleteForever`/`api.trashEmpty`, `deleteForever`/`emptyTrash` em `src/state/mailbox.ts`, partes sem
+  React em `src/state/deleteForever.ts` (com testes). Prévia: `?screen=trash` abre a Lixeira com 3 e-mails de exemplo.
+- **Fotos das contas:** a foto escolhida no Quill agora só aparece no avatar do cabeçalho e no menu da conta
+  (`AccountPhoto` com `main`). Nas pílulas de contas da Caixa de entrada, na lista de contas do menu, em Ajustes →
+  Contas e no menu de agendas do Calendário, cada conta mostra a foto do Google dela (sem foto: o logo do serviço nas
+  pílulas e em Ajustes; as iniciais nos demais).
+- Testes: `cargo test --features net` no `quill-core` com 297 (13 novos: escopo, `batchDelete` em grupos de 1000,
+  nada para apagar, permissão faltando, páginas da Lixeira, ids e páginas no `gmail.rs`, e IMAP apagar, apagar vários,
+  ids inválidos e esvaziar); `npm test` com 70 (4 novos).
+- Conferido na prévia (claro e escuro), com prints. Falta conferir no Mac com conta real, depois de entrar de novo
+  com cada conta Google.
