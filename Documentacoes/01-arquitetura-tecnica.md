@@ -33,7 +33,7 @@ não entram aqui.
 | Gmail API | Ler, organizar, enviar, rascunhos, anexos, contadores | HTTPS com token de acesso |
 | Google Agenda | Agendas, eventos, convites, criar/editar/apagar, Meet | HTTPS com token de acesso |
 | People API | Contatos e "Outros contatos" (só leitura) para sugestões; nome e foto das pessoas do Google Chat (diretório da empresa) | HTTPS com token de acesso |
-| Google Chat API | Conversas, mensagens, pessoas de cada conversa, anexos (baixar e enviar) — só contas Workspace | HTTPS com token de acesso; consulta a cada 8 s/30 s com a tela aberta |
+| Google Chat API | Conversas, mensagens, pessoas de cada conversa, anexos (baixar e enviar), reações, editar e apagar as próprias mensagens — só contas Workspace | HTTPS com token de acesso; consulta a cada 8 s/30 s com a tela aberta |
 | iCloud IMAP/SMTP | E-mail das contas iCloud | TLS (rustls), senha de app |
 | iCloud CalDAV/CardDAV | Agenda e contatos do iCloud | HTTPS, senha de app, só `*.icloud.com` |
 | Outros provedores IMAP/SMTP | E-mail de "Outro e-mail" | TLS (rustls), senha do provedor |
@@ -133,9 +133,9 @@ do sistema (`keyring`) e abrir o navegador (`open`). O app usa `desktop`; os tes
 | `dav` | — | WebDAV: corpo dos pedidos e leitura das respostas `multistatus` | 7 |
 | `caldav` | — | Agenda do iCloud: agendas, eventos, repetições, fusos; monta os `.ics` | 23 |
 | `carddav` | — | Contatos do iCloud: catálogos e vCards (nome, e-mails, foto) | 8 |
-| `chat` | — | Google Chat: lê conversas, membros, mensagens, anexos e pessoas (People API); monta envio e upload; classifica erros (permissão, app não configurado, conta sem Workspace) | 29 |
-| `google` | `net` | Conversa com o Google: volta do navegador, troca e renovação de tokens, Gmail, Agenda, People, Chat (com download e upload de anexos) | 38 |
-| `chat_client` | `net` | `ChatService`: cache na memória do próprio id, das pessoas, dos membros e das prévias; resolve nomes e fotos | 7 |
+| `chat` | — | Google Chat: lê conversas, membros, mensagens (com reações e "editada"), anexos e pessoas (People API); monta envio, upload, reação, edição e o filtro das próprias reações; confere nomes de mensagem e de reação; classifica erros (permissão, app não configurado, conta sem Workspace, mensagem com respostas) | 37 |
+| `google` | `net` | Conversa com o Google: volta do navegador, troca e renovação de tokens, Gmail, Agenda, People, Chat (com download e upload de anexos, reações, editar e apagar) | 44 |
+| `chat_client` | `net` | `ChatService`: cache na memória do próprio id, das pessoas, dos membros e das prévias; resolve nomes e fotos; tira só a própria reação; refaz a prévia depois de editar ou apagar | 10 |
 | `imap_client` | `net` | Conversa com servidores IMAP e SMTP (TLS com rustls), palpite de servidores | 17 |
 | `dav_client` | `net` | CalDAV/CardDAV com o iCloud: HTTP Basic só em HTTPS e só para `*.icloud.com`; redirecionamentos à mão | 14 |
 | `session` | `desktop` | Sessão das contas Google: login (tempo máximo de 4 min, cancelável, com o jeito de abrir a página escolhido pelo app), tokens nas Chaves, renovação, ações | 2 |
@@ -188,6 +188,10 @@ contatos do iCloud vão por CalDAV/CardDAV com a mesma senha de app. Erros que p
 | | `chat_attachment` | Conteúdo de um anexo em base64 (até 50 MB), para miniatura, player e prévia |
 | | `chat_attachment_save` | Baixa um anexo para Downloads (até 200 MB); `open` também abre |
 | | `chat_upload` | Envia um arquivo (até 200 MB) cru no corpo do pedido, dados nos cabeçalhos `x-quill-*`; progresso no evento `chat-upload-progress` |
+| | `chat_react` | Reage com um emoji (`reactions.create`); `false` se a conta já tinha reagido com ele |
+| | `chat_unreact` | Tira a própria reação com aquele emoji (acha o nome com `reactions.list` filtrado pelo próprio id) |
+| | `chat_edit` | Troca o texto de uma mensagem sua (`messages.patch`, `updateMask=text`, até 4.096 caracteres) |
+| | `chat_delete` | Apaga uma mensagem sua (`messages.delete` sem `force`: com respostas, o Google recusa) |
 | Sistema | `open_link` | Abre link no navegador (só http, https, mailto) |
 | | `touch_id_available` | O Mac pode pedir Touch ID ou senha? |
 | | `touch_id_authenticate` | Pede o Touch ID (true = confirmado, false = cancelado) |
@@ -201,7 +205,7 @@ contatos do iCloud vão por CalDAV/CardDAV com a mesma senha de app. Erros que p
 | `calendar.ts` | Agendas e eventos de todas as contas, juntando cópias do mesmo convite (iCalUID + início) e escondendo feriados repetidos em outro idioma; criar, editar, apagar, responder |
 | `contacts.ts` | Sugestões de destinatário, com cache em `quill.contacts.cache` |
 | `outbox.ts` | Caixa de saída com "Desfazer": segura o e-mail N segundos antes de enviar |
-| `chat.ts` | Google Chat: conta escolhida, conversas, mensagens por conversa, pessoas, mensagens saindo (com progresso e "Tentar de novo"), não lidas (`quill.chat.seen`) e fixadas (`quill.chat.pinned`); com o Chat fechado, atualiza junto com os e-mails |
+| `chat.ts` | Google Chat: conta escolhida, conversas, mensagens por conversa, pessoas, mensagens saindo (com progresso e "Tentar de novo"), não lidas (`quill.chat.seen`), fixadas (`quill.chat.pinned`), reações suas (`quill.chat.reacted`), editar e apagar (a tela muda na hora e volta se der erro); com o Chat fechado, atualiza junto com os e-mails |
 
 Preferências que várias telas leem ficam no `localStorage` (prefixo `quill.`) por `usePref`/`getPref`. Lista completa
 em [05-referencia.md](05-referencia.md).
@@ -245,7 +249,7 @@ Na prévia do navegador, `mailbox.ts`, `calendar.ts` e `chat.ts` usam dados de e
 | Senha do iCloud | Enviada só por HTTPS e só para `icloud.com` / `*.icloud.com`; redirecionamentos seguidos à mão e conferidos; a senha nunca aparece em erro |
 | IMAP/SMTP | Sempre TLS com rustls e o verificador de certificados do sistema |
 | Anexos | Nome de arquivo limpo, sem sobrescrever; `reveal_download` só aceita caminhos dentro de Downloads |
-| Google Chat | Nomes de conversa (`spaces/<id>`), de conteúdo (download) e de conversa da resposta conferidos antes de montar o caminho na API; `spaceUri` só se for `https://*.google.com`; erros do Google viram frase curta (nunca o token); limites de 50 MB (mostrar), 200 MB (baixar/enviar) e 4.096 caracteres |
+| Google Chat | Nomes de conversa (`spaces/<id>`), de mensagem, de reação, de conteúdo (download) e de conversa da resposta conferidos antes de montar o caminho na API; reação só com emoji; tirar reação confere que é da própria conta; `spaceUri` só se for `https://*.google.com`; erros do Google viram frase curta (nunca o token); limites de 50 MB (mostrar), 200 MB (baixar/enviar) e 4.096 caracteres |
 | Microfone | Só quando a pessoa grava no Chat; frase de permissão em `src-tauri/Info.plist` (`NSMicrophoneUsageDescription`), que o Tauri junta ao app |
 | Credenciais do Google | Embutidas na montagem pelo `build.rs` (Infisical ou `oauth.local.env`, fora do git); nunca no repositório |
 | Touch ID | `LocalAuthentication` do macOS (`DeviceOwnerAuthentication`: digital ou senha do Mac) |
@@ -292,10 +296,11 @@ infisical run --env=prod -- npm run tauri build
 
 Em 2026-11-17, na VPS:
 
-- **Testes da `quill-core`:** `cargo test --features net` → **247 testes passaram, 0 falharam** (249 com
+- **Testes da `quill-core`:** `cargo test --features net` → **264 testes passaram, 0 falharam** (266 com
   `--features desktop`). Cobrem OAuth, leitura do Gmail e da Agenda, contatos, contas, anexos, IMAP (com servidor
   falso), iCalendar/vCard, WebDAV, CalDAV e CardDAV, Google Chat (leitura, envio, download e upload com progresso,
-  cache de pessoas) e as conversas com o Google e o iCloud (com servidores falsos). Não falam com servidores reais.
+  reações, editar e apagar, cache de pessoas) e as conversas com o Google e o iCloud (com servidores falsos). Não
+  falam com servidores reais.
 - **`src-tauri/src/lib.rs` na VPS (sem GTK, o Tauri de verdade não compila no Linux):** um projeto temporário com um
   "Tauri de mentira" (só os tipos e assinaturas que o `lib.rs` usa: `State`, `AppHandle`, `Manager`, `Emitter`,
   `ipc::Request`, `generate_handler!`…) e o `lib.rs` real como biblioteca, conferido com `cargo check`. Pega erro de

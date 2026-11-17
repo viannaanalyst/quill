@@ -29,6 +29,7 @@ import {
   Unlink,
 } from "../components/icons";
 import { escapeHtml, normalizeUrl, sanitizeHtml } from "./richText";
+import { EMOJIS } from "../lib/emojis";
 
 type Align = "left" | "center" | "right" | "full";
 type Icon = ComponentType<{ size?: number; "aria-hidden"?: boolean }>;
@@ -88,15 +89,6 @@ const COLORS: [string, string][] = [
   ["#12b5cb", "Ciano"], ["#1a73e8", "Azul"], ["#9334e6", "Roxo"], ["#d01884", "Rosa"],
   ["#f6c7c3", "Vermelho-claro"], ["#fde2c4", "Laranja-claro"], ["#fff1a8", "Amarelo-claro"], ["#ccebd3", "Verde-claro"],
   ["#c4eef4", "Ciano-claro"], ["#cfe0fc", "Azul-claro"], ["#e6d6fa", "Lilás"], ["#f9cfe5", "Rosa-claro"],
-];
-
-const EMOJIS: [string, string][] = [
-  ["😀", "Sorriso"], ["😁", "Sorrisão"], ["😂", "Rindo"], ["😊", "Feliz"], ["😍", "Apaixonado"], ["🥰", "Carinho"], ["😉", "Piscadela"], ["😎", "Óculos escuros"],
-  ["🤩", "Encantado"], ["🤔", "Pensando"], ["😅", "Ufa"], ["🥲", "Emocionado"], ["😢", "Triste"], ["😮", "Surpreso"], ["😬", "Constrangido"], ["🙄", "Revirando os olhos"],
-  ["😴", "Com sono"], ["🤗", "Abraço"], ["🙏", "Mãos juntas"], ["👏", "Palmas"], ["👍", "Joinha"], ["👎", "Não curti"], ["👋", "Tchau"], ["💪", "Força"],
-  ["🤝", "Aperto de mãos"], ["🙌", "Mãos para cima"], ["✌️", "Paz"], ["👀", "Olhos"], ["❤️", "Coração"], ["🔥", "Fogo"], ["✨", "Brilho"], ["💯", "Cem"],
-  ["🎉", "Festa"], ["🎂", "Bolo"], ["🎁", "Presente"], ["✅", "Feito"], ["❌", "Não"], ["⚠️", "Atenção"], ["📌", "Alfinete"], ["📎", "Clipe"],
-  ["📅", "Calendário"], ["⏰", "Despertador"], ["📞", "Telefone"], ["💡", "Ideia"], ["🚀", "Foguete"], ["☕", "Café"], ["⭐", "Estrela"], ["🌟", "Estrela brilhante"],
 ];
 
 const ALIGNS: { value: Align; label: string; icon: Icon; cmd: string }[] = [

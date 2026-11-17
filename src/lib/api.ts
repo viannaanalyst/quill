@@ -114,6 +114,14 @@ export interface ChatMessageDto {
   threadReply: boolean;
   attachments: ChatAttachmentDto[];
   deleted: boolean;
+  /** emoji e quantas pessoas reagiram (a API não diz se você está entre elas) */
+  reactions: ChatReactionDto[];
+  /** editada depois de enviada */
+  edited: boolean;
+}
+export interface ChatReactionDto {
+  emoji: string;
+  count: number;
 }
 export interface ChatPageDto {
   messages: ChatMessageDto[];
@@ -206,6 +214,14 @@ export const api = {
   chatMembers: (email: string, space: string) => call<ChatPersonDto[]>("chat_members", { email, space }),
   chatSend: (email: string, space: string, text: string, thread?: string | null, attachments?: ChatAttachmentRef[]) =>
     call<ChatMessageDto>("chat_send", { email, space, text, thread: thread ?? null, attachments: attachments ?? null }),
+  /** reage com um emoji; false quando a conta já tinha reagido com ele */
+  chatReact: (email: string, message: string, emoji: string) => call<boolean>("chat_react", { email, message, emoji }),
+  /** tira a própria reação com aquele emoji */
+  chatUnreact: (email: string, message: string, emoji: string) => call<void>("chat_unreact", { email, message, emoji }),
+  /** troca o texto de uma mensagem sua; devolve como ficou */
+  chatEdit: (email: string, message: string, text: string) => call<ChatMessageDto>("chat_edit", { email, message, text }),
+  /** apaga uma mensagem sua */
+  chatDelete: (email: string, message: string) => call<void>("chat_delete", { email, message }),
   /** conteúdo de um anexo do Chat em base64 (até 50 MB) */
   chatAttachment: (email: string, resourceName: string) => call<string>("chat_attachment", { email, resourceName }),
   /** baixa um anexo do Chat para Downloads ("save") ou baixa e abre ("open"); devolve o caminho */

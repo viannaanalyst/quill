@@ -554,29 +554,231 @@
   padding: 1px 5px;
   border-radius: 5px;
 }
-/* responder (aparece ao passar o mouse) */
-.chat-act {
+/* ações da mensagem (aparecem ao passar o mouse ou com o foco do teclado) */
+.chat-tools {
   position: absolute;
-  top: -4px;
+  top: -14px;
   right: 0;
+  z-index: 2;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 11px;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line), var(--shadow);
+  opacity: 0;
+  transform: translateY(2px);
+  pointer-events: none;
+  transition:
+    opacity 0.12s ease-out,
+    transform 0.12s ease-out;
+}
+.chat-msg:hover > .chat-tools,
+.chat-tools:focus-within,
+.chat-tools.is-open {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+.chat-mine .chat-tools {
+  right: calc(100% + 8px);
+  top: 2px;
+}
+.chat-tool {
   width: 28px;
   height: 28px;
   border-radius: 9px;
   display: grid;
   place-items: center;
   color: var(--ink2);
+  transition: background-color 0.12s ease;
+}
+.chat-tool:hover,
+.chat-tool:focus-visible,
+.chat-tool[data-state="open"] {
+  background: var(--surface2);
+  color: var(--ink);
+}
+/* o menu abre fora de .chat (portal): usa a cor de perigo global */
+.chat-menu .chat-menu-danger {
+  color: var(--danger);
+}
+
+/* reações */
+.chat-rxs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.chat-mine .chat-rxs {
+  justify-content: flex-end;
+}
+.chat-rx {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 9px 0 7px;
+  border-radius: 999px;
   background: var(--surface);
-  box-shadow: 0 0 0 1px var(--line), var(--shadow);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink2);
+  transition:
+    background-color 0.12s ease,
+    box-shadow 0.12s ease,
+    transform 0.12s ease-out;
+}
+.chat-rx:hover {
+  background: var(--surface2);
+}
+.chat-rx:active {
+  transform: scale(0.95);
+}
+.chat-rx.is-mine {
+  background: color-mix(in srgb, var(--blue) 12%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--blue) 45%, transparent);
+  color: var(--blue);
+}
+.chat-rx-e {
+  font-size: 15px;
+  line-height: 1;
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+}
+.chat-rx-n {
+  font-variant-numeric: tabular-nums;
+}
+.chat-rx-pop {
+  padding: 6px;
+  max-width: calc(100vw - 24px);
+}
+.chat-rx-quick {
+  display: flex;
+  gap: 2px;
+}
+.chat-rx-q,
+.chat-rx-g {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  font-size: 21px;
+  line-height: 1;
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  transition:
+    background-color 0.12s ease,
+    transform 0.12s ease-out;
+}
+.chat-rx-g {
+  width: 32px;
+  height: 32px;
+  font-size: 18px;
+}
+.chat-rx-q:hover,
+.chat-rx-q:focus-visible,
+.chat-rx-g:hover,
+.chat-rx-g:focus-visible {
+  background: var(--surface2);
+  transform: scale(1.12);
+}
+.chat-rx-q.is-mine,
+.chat-rx-g.is-mine {
+  background: color-mix(in srgb, var(--blue) 14%, transparent);
+}
+.chat-rx-more {
+  color: var(--ink2);
+  margin-left: 2px;
+  box-shadow: inset 1px 0 0 var(--line);
+  border-radius: 0 10px 10px 0;
+}
+.chat-rx-more:hover,
+.chat-rx-more:focus-visible,
+.chat-rx-more[aria-expanded="true"] {
+  transform: none;
+  color: var(--ink);
+}
+.chat-rx-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 32px);
+  gap: 2px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+  animation: q-pop-in var(--pop-in) var(--ease-out-soft) both;
+}
+
+/* editar no lugar */
+.chat-msg.is-editing {
+  width: 560px;
+  max-width: 100%;
+}
+.chat-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+  width: 100%;
+}
+.chat-edit-input {
+  width: 100%;
+  resize: none;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink);
+  padding: 8px 13px;
+  border-radius: 14px;
+  background: var(--surface);
+  border: 0;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--blue) 55%, var(--line)),
+    0 0 0 4px color-mix(in srgb, var(--blue) 12%, transparent);
+  outline: none;
+  overflow-y: auto;
+}
+.chat-edit.is-mine .chat-edit-input {
+  background: var(--chat-mine);
+}
+.chat-edit-input[aria-invalid="true"] {
+  box-shadow:
+    inset 0 0 0 1px var(--chat-red),
+    0 0 0 4px color-mix(in srgb, var(--chat-red) 12%, transparent);
+}
+.chat-edit-acts {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.chat-edit-hint {
+  margin-right: auto;
+  font-size: 12px;
+  color: var(--ink3);
+}
+.chat-edit-err {
+  font-size: 12px;
+}
+.chat-edited {
+  font-size: 12px;
+  color: var(--ink3);
+  white-space: nowrap;
+}
+
+/* mensagem apagada saindo */
+.chat-msg.chat-gone {
   opacity: 0;
-  transition: opacity 0.12s ease-out;
+  transform: scale(0.96);
+  transform-origin: left center;
+  pointer-events: none;
+  transition:
+    opacity 180ms ease-in,
+    transform 180ms ease-in;
 }
-.chat-msg:hover > .chat-act,
-.chat-act:focus-visible {
-  opacity: 1;
-}
-.chat-mine .chat-act {
-  right: auto;
-  left: -36px;
+.chat-mine .chat-msg.chat-gone {
+  transform-origin: right center;
 }
 .chat-replytag {
   display: inline-flex;

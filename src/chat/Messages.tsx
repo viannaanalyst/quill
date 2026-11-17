@@ -1,3 +1,4 @@
+import * as Popover from "@radix-ui/react-popover";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api, friendlyError, type ChatAttachmentDto, type ChatMessageDto } from "../lib/api";
 import { isTauri } from "../lib/platform";
@@ -6,8 +7,30 @@ import { FileIcon } from "../components/FileIcon";
 import { AccountPhoto } from "../components/MyAvatar";
 import { previewAttachment } from "../components/AttachmentPreview";
 import { toast } from "../components/Toasts";
-import { Check, Download, ExternalLink, Eye, Hash, LoaderCircle, Maximize2, Pause, Play, Reply, RotateCcw, Trash2, Users, Video, X } from "../components/icons";
-import { discardOutgoing, retryOutgoing, type Outgoing, type PendingFile } from "../state/chat";
+import { askConfirm } from "../components/ConfirmHost";
+import {
+  Check,
+  Download,
+  Ellipsis,
+  ExternalLink,
+  Eye,
+  Hash,
+  LoaderCircle,
+  Maximize2,
+  Pause,
+  Pencil,
+  Play,
+  Plus,
+  Reply,
+  RotateCcw,
+  Smile,
+  Trash2,
+  Users,
+  Video,
+  X,
+} from "../components/icons";
+import { EMOJIS, QUICK_REACTIONS, emojiName } from "../lib/emojis";
+import { deleteMessage, discardOutgoing, editMessage, retryOutgoing, toggleReaction, useChat, type Outgoing, type PendingFile } from "../state/chat";
 import type { ChatPersonDto, ChatSpaceDto } from "../lib/api";
 import { ChatText, openLink } from "./chatText";
 import { blobToBase64, clock, kindOf, loadAttachment, waveOf } from "./media";
@@ -369,29 +392,263 @@ function Attachments({ account, list, mine }: { account: string; list: ChatAttac
 }
 
 /* ---------- mensagens ---------- */
-function MessageBody({ account, m, onReply }: { account: string; m: ChatMessageDto; onReply: (m: ChatMessageDto) => void }) {
+/** Emojis com que você reagiu nesta mensagem (guardados no app: a API só diz a contagem). */
+function useMine(m: ChatMessageDto): string[] {
+  const raw = useChat((s) => s.reacted[`${s.account ?? ""}|${m.name}`]);
+  return useMemo(() => (raw ?? []).filter((e) => m.reactions.some((r) => r.emoji === e)), [raw, m.reactions]);
+}
+
+/** Chips das reações (😀 3) abaixo do balão; o seu fica destacado e clicar nele tira a sua reação. */
+function Reactions({ space, m }: { space: string; m: ChatMessageDto }) {
+  const mine = useMine(m);
+  if (m.deleted || m.reactions.length === 0) return null;
   return (
-    <div className="chat-msg">
-      {m.deleted ? (
-        <div className="chat-mt is-deleted">Mensagem apagada</div>
-      ) : (
-        m.text && (
-          <div className={m.mine ? "chat-bub" : "chat-mt"}>
-            <ChatText text={m.text} />
+    <div className="chat-rxs" role="group" aria-label="Reações">
+      {m.reactions.map((r) => {
+        const isMine = mine.includes(r.emoji);
+        return (
+          <button
+            key={r.emoji}
+            type="button"
+            className={`chat-rx${isMine ? " is-mine" : ""}`}
+            aria-pressed={isMine}
+            aria-label={`${emojiName(r.emoji)}: ${r.count} ${r.count === 1 ? "reação" : "reações"}${isMine ? ", uma é sua" : ""}`}
+            data-tip={isMine ? "Tirar sua reação" : `Reagir com ${r.emoji}`}
+            onClick={() => void toggleReaction(space, m, r.emoji)}
+          >
+            <span className="chat-rx-e" aria-hidden>
+              {r.emoji}
+            </span>
+            <span className="chat-rx-n" aria-hidden>
+              {r.count}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Botão de reagir: faixa com 6 rápidas e "+" que abre todos os emojis. */
+function ReactButton({ space, m, onOpenChange }: { space: string; m: ChatMessageDto; onOpenChange: (open: boolean) => void }) {
+  const [open, setOpen] = useState(false);
+  const [all, setAll] = useState(false);
+  const mine = useMine(m);
+  const change = (v: boolean) => {
+    setOpen(v);
+    if (!v) setAll(false);
+    onOpenChange(v);
+  };
+  const pick = (e: string) => {
+    change(false);
+    void toggleReaction(space, m, e);
+  };
+  const item = ([e, name]: [string, string], cls: string) => (
+    <button key={e} type="button" className={`${cls}${mine.includes(e) ? " is-mine" : ""}`} aria-label={`${mine.includes(e) ? "Tirar" : "Reagir com"} ${name}`} aria-pressed={mine.includes(e)} onClick={() => pick(e)}>
+      <span aria-hidden>{e}</span>
+    </button>
+  );
+  return (
+    <Popover.Root open={open} onOpenChange={change}>
+      <Popover.Trigger asChild>
+        <button type="button" className="chat-tool" data-tip="Reagir" aria-label="Reagir">
+          <Smile size={15} aria-hidden />
+        </button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content className="qp-content chat-rx-pop" side="top" align={m.mine ? "end" : "start"} sideOffset={8} collisionPadding={12}>
+          <div className="chat-rx-quick" role="group" aria-label="Reações rápidas">
+            {QUICK_REACTIONS.map((q) => item(q, "chat-rx-q"))}
+            <button type="button" className="chat-rx-q chat-rx-more" aria-label="Mais emojis" aria-expanded={all} data-tip="Mais emojis" onClick={() => setAll(!all)}>
+              <Plus size={16} aria-hidden />
+            </button>
           </div>
-        )
-      )}
-      <Attachments account={account} list={m.attachments} mine={m.mine} />
-      {m.thread && !m.deleted && (
-        <button type="button" className="chat-act" data-tip="Responder na conversa" data-tip-pos="left" aria-label="Responder na conversa" onClick={() => onReply(m)}>
+          {all && (
+            <div className="chat-rx-grid" role="group" aria-label="Todos os emojis">
+              {EMOJIS.map((q) => item(q, "chat-rx-g"))}
+            </div>
+          )}
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
+/** Ações que aparecem ao passar o mouse (ou com o foco do teclado): reagir, responder e, nas suas, editar e apagar. */
+function MessageTools({ space, m, onReply, onEdit }: { space: string; m: ChatMessageDto; onReply: (m: ChatMessageDto) => void; onEdit: (m: ChatMessageDto) => void }) {
+  const [reacting, setReacting] = useState(false);
+  const [menu, setMenu] = useState(false);
+  if (m.deleted) return null;
+  const remove = async () => {
+    const ok = await askConfirm({
+      title: "Apagar mensagem?",
+      text: "Ela some para todas as pessoas da conversa. Não dá para desfazer.",
+      action: "Apagar",
+    });
+    if (ok) void deleteMessage(space, m);
+  };
+  return (
+    <div className={`chat-tools${reacting || menu ? " is-open" : ""}`} role="toolbar" aria-label="Ações da mensagem">
+      <ReactButton space={space} m={m} onOpenChange={setReacting} />
+      {m.thread && (
+        <button type="button" className="chat-tool" data-tip="Responder na conversa" aria-label="Responder na conversa" onClick={() => onReply(m)}>
           <Reply size={15} aria-hidden />
         </button>
+      )}
+      {m.mine && (
+        <Popover.Root open={menu} onOpenChange={setMenu}>
+          <Popover.Trigger asChild>
+            <button type="button" className="chat-tool" data-tip="Mais" aria-label="Mais ações da mensagem">
+              <Ellipsis size={15} aria-hidden />
+            </button>
+          </Popover.Trigger>
+          <Popover.Portal>
+            <Popover.Content className="qp-content chat-menu" side="bottom" align="end" sideOffset={6} collisionPadding={12}>
+              {m.text && (
+                <Popover.Close asChild>
+                  <button type="button" onClick={() => onEdit(m)}>
+                    <Pencil size={15} aria-hidden />
+                    Editar
+                  </button>
+                </Popover.Close>
+              )}
+              <Popover.Close asChild>
+                <button type="button" className="chat-menu-danger" onClick={() => void remove()}>
+                  <Trash2 size={15} aria-hidden />
+                  Apagar
+                </button>
+              </Popover.Close>
+            </Popover.Content>
+          </Popover.Portal>
+        </Popover.Root>
       )}
     </div>
   );
 }
 
-function ThreadChip({ account, replies, onReply, root }: { account: string; replies: ChatMessageDto[]; root: ChatMessageDto; onReply: (m: ChatMessageDto) => void }) {
+/** Balão virando campo de texto: Enter salva, Shift+Enter quebra a linha, Esc cancela. */
+function EditBox({ space, m, onDone }: { space: string; m: ChatMessageDto; onDone: () => void }) {
+  const [text, setText] = useState(m.text);
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    el.setSelectionRange(el.value.length, el.value.length);
+    el.closest(".chat-edit")?.scrollIntoView({ block: "nearest" });
+  }, []);
+  // cresce com o texto (até 8 linhas; depois rola)
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 8 * 21 + 18)}px`;
+  }, [text]);
+  const tooLong = text.length > 4096;
+  const empty = !text.trim();
+  const save = () => {
+    if (empty || tooLong) return;
+    onDone();
+    void editMessage(space, m, text);
+  };
+  return (
+    <form
+      className={`chat-edit${m.mine ? " is-mine" : ""}`}
+      onSubmit={(e) => {
+        e.preventDefault();
+        save();
+      }}
+    >
+      <textarea
+        ref={ref}
+        className="chat-edit-input"
+        value={text}
+        rows={1}
+        aria-label="Editar mensagem"
+        aria-invalid={tooLong || undefined}
+        aria-describedby={tooLong ? `${m.name}-edit-err` : undefined}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            onDone();
+          } else if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            save();
+          }
+        }}
+      />
+      {tooLong && (
+        <span id={`${m.name}-edit-err`} className="chat-err chat-edit-err" role="alert">
+          O Google Chat aceita até 4.096 caracteres.
+        </span>
+      )}
+      <div className="chat-edit-acts">
+        <span className="chat-edit-hint">Enter salva · Esc cancela</span>
+        <button type="button" className="btn glass sm" onClick={onDone}>
+          Cancelar
+        </button>
+        <button type="submit" className="btn solid sm" disabled={empty || tooLong}>
+          Salvar
+        </button>
+      </div>
+    </form>
+  );
+}
+
+interface BodyProps {
+  account: string;
+  space: string;
+  m: ChatMessageDto;
+  onReply: (m: ChatMessageDto) => void;
+  editing: string | null;
+  onEdit: (name: string | null) => void;
+}
+
+function MessageBody({ account, space, m, onReply, editing, onEdit }: BodyProps) {
+  const gone = useChat((s) => s.removing.includes(m.name));
+  const isEditing = editing === m.name && !m.deleted;
+  const edited = m.edited && !m.deleted && (
+    <span className="chat-edited" title={m.mine ? "Você editou esta mensagem" : "Mensagem editada"}>
+      {" "}
+      (editada)
+    </span>
+  );
+  return (
+    <div className={`chat-msg${gone ? " chat-gone" : ""}${isEditing ? " is-editing" : ""}`} aria-hidden={gone || undefined}>
+      {m.deleted ? (
+        <div className="chat-mt is-deleted">Mensagem apagada</div>
+      ) : isEditing ? (
+        <EditBox space={space} m={m} onDone={() => onEdit(null)} />
+      ) : (
+        m.text && (
+          <div className={m.mine ? "chat-bub" : "chat-mt"}>
+            <ChatText text={m.text} />
+            {edited}
+          </div>
+        )
+      )}
+      <Attachments account={account} list={m.attachments} mine={m.mine} />
+      <Reactions space={space} m={m} />
+      {!isEditing && !gone && <MessageTools space={space} m={m} onReply={onReply} onEdit={(x) => onEdit(x.name)} />}
+    </div>
+  );
+}
+
+function ThreadChip({
+  account,
+  space,
+  replies,
+  onReply,
+  root,
+}: {
+  account: string;
+  space: string;
+  replies: ChatMessageDto[];
+  root: ChatMessageDto;
+  onReply: (m: ChatMessageDto) => void;
+}) {
   const [open, setOpen] = useState(false);
   const people = [...new Map(replies.map((r) => [r.sender.id, r.sender])).values()].slice(0, 3);
   const mineIds = new Set(replies.filter((r) => r.mine).map((r) => r.sender.id));
@@ -415,12 +672,18 @@ function ThreadChip({ account, replies, onReply, root }: { account: string; repl
                   <span className="chat-mn">{r.mine ? "Você" : r.sender.name}</span>
                   <span className="chat-mtm">{hhmm(r.createMs)}</span>
                 </div>
-                {r.text && (
-                  <div className="chat-mt">
-                    <ChatText text={r.text} />
-                  </div>
+                {r.deleted ? (
+                  <div className="chat-mt is-deleted">Mensagem apagada</div>
+                ) : (
+                  r.text && (
+                    <div className="chat-mt">
+                      <ChatText text={r.text} />
+                      {r.edited && <span className="chat-edited"> (editada)</span>}
+                    </div>
+                  )
                 )}
                 <Attachments account={account} list={r.attachments} mine={false} />
+                <Reactions space={space} m={r} />
               </div>
             </div>
           ))}
@@ -527,6 +790,7 @@ function OutgoingItem({ o }: { o: Outgoing }) {
 
 export function MessageList({
   account,
+  space,
   messages,
   outgoing,
   now,
@@ -538,6 +802,7 @@ export function MessageList({
   onClearFilter,
 }: {
   account: string;
+  space: string;
   messages: ChatMessageDto[];
   outgoing: Outgoing[];
   now: number;
@@ -549,6 +814,13 @@ export function MessageList({
   onClearFilter: () => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
+  const [editing, setEditing] = useState<string | null>(null);
+  // trocar de conversa fecha a edição
+  const [editSpace, setEditSpace] = useState(space);
+  if (editSpace !== space) {
+    setEditSpace(space);
+    setEditing(null);
+  }
   const shown = useMemo(() => {
     const q = filter.trim().toLowerCase();
     return q ? messages.filter((m) => m.text.toLowerCase().includes(q) || m.attachments.some((a) => a.name.toLowerCase().includes(q))) : messages;
@@ -617,8 +889,8 @@ export function MessageList({
             {it.list.map((m) => (
               <div key={m.name} className="chat-mine-item">
                 {m.threadReply && <span className="chat-replytag"><Reply size={12} aria-hidden />Resposta na conversa</span>}
-                <MessageBody account={account} m={m} onReply={onReply} />
-                {m.thread && replies.get(m.thread) && <ThreadChip account={account} replies={replies.get(m.thread)!} root={m} onReply={onReply} />}
+                <MessageBody account={account} space={space} m={m} onReply={onReply} editing={editing} onEdit={setEditing} />
+                {m.thread && replies.get(m.thread) && <ThreadChip account={account} space={space} replies={replies.get(m.thread)!} root={m} onReply={onReply} />}
               </div>
             ))}
           </div>
@@ -633,8 +905,8 @@ export function MessageList({
               {it.list.map((m) => (
                 <div key={m.name}>
                   {m.threadReply && <span className="chat-replytag"><Reply size={12} aria-hidden />Resposta na conversa</span>}
-                  <MessageBody account={account} m={m} onReply={onReply} />
-                  {m.thread && replies.get(m.thread) && <ThreadChip account={account} replies={replies.get(m.thread)!} root={m} onReply={onReply} />}
+                  <MessageBody account={account} space={space} m={m} onReply={onReply} editing={editing} onEdit={setEditing} />
+                  {m.thread && replies.get(m.thread) && <ThreadChip account={account} space={space} replies={replies.get(m.thread)!} root={m} onReply={onReply} />}
                 </div>
               ))}
             </div>

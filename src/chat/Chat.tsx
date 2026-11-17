@@ -420,6 +420,7 @@ function Conversation({ s, account }: { s: ChatSpaceDto; account: string }) {
       ) : (
         <MessageList
           account={account}
+          space={s.name}
           messages={messages ?? []}
           outgoing={outgoing}
           now={clockNow()}

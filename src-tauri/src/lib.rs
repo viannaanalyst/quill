@@ -552,6 +552,40 @@ async fn chat_upload(app: tauri::AppHandle, state: State<'_, AppState>, request:
     chat.upload(&token, &space, &name, &kind, bytes, progress).await.map_err(chat_err)
 }
 
+/// Reage a uma mensagem do Chat com um emoji. `false` quando a conta já tinha reagido com ele.
+#[tauri::command]
+async fn chat_react(state: State<'_, AppState>, email: String, message: String, emoji: String) -> Result<bool, String> {
+    let (chat, token) = chat_ctx(&state, &email).await?;
+    chat.react(&token, &message, &emoji).await.map_err(chat_err)
+}
+
+/// Tira a reação da própria conta com aquele emoji.
+#[tauri::command]
+async fn chat_unreact(state: State<'_, AppState>, email: String, message: String, emoji: String) -> Result<(), String> {
+    let (chat, token) = chat_ctx(&state, &email).await?;
+    chat.unreact(&email, &token, &message, &emoji).await.map_err(chat_err)
+}
+
+/// Troca o texto de uma mensagem da própria conta; devolve a mensagem como ficou ("editada").
+#[tauri::command]
+async fn chat_edit(state: State<'_, AppState>, email: String, message: String, text: String) -> Result<quill_core::chat::ChatMessage, String> {
+    if text.trim().is_empty() {
+        return Err("Escreva uma mensagem.".into());
+    }
+    if text.chars().count() > 4096 {
+        return Err("Mensagem longa demais: o Google Chat aceita até 4.096 caracteres.".into());
+    }
+    let (chat, token) = chat_ctx(&state, &email).await?;
+    chat.edit(&email, &token, &message, &text).await.map_err(chat_err)
+}
+
+/// Apaga uma mensagem da própria conta (se ela tiver respostas, o Google recusa).
+#[tauri::command]
+async fn chat_delete(state: State<'_, AppState>, email: String, message: String) -> Result<(), String> {
+    let (chat, token) = chat_ctx(&state, &email).await?;
+    chat.delete(&token, &message).await.map_err(chat_err)
+}
+
 /// Troca o ícone do Dock (PNG em base64); vazio volta ao ícone padrão.
 #[tauri::command]
 async fn set_dock_icon(app: tauri::AppHandle, png_base64: String) -> Result<(), String> {
@@ -617,6 +651,8 @@ fn reveal_download(app: tauri::AppHandle, path: String) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // avisos do sistema (e-mail novo, mensagem no Chat)
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             let accounts_file = data_dir.join("accounts.json");
@@ -671,7 +707,11 @@ pub fn run() {
             chat_send,
             chat_attachment,
             chat_attachment_save,
-            chat_upload
+            chat_upload,
+            chat_react,
+            chat_unreact,
+            chat_edit,
+            chat_delete
         ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o Quill");

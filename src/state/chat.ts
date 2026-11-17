@@ -1,3 +1,4 @@
+import { notify } from "../lib/notify";
 import { useSyncExternalStore } from "react";
 import {
   api,
@@ -75,10 +76,15 @@ interface ChatState {
   seen: Record<string, number>;
   /** `${conta}|${conversa}` fixadas pela pessoa */
   pinned: string[];
+  /** `${conta}|${mensagem}` → emojis com que você reagiu (a API só diz a contagem, não quem reagiu) */
+  reacted: Record<string, string[]>;
+  /** mensagens saindo da tela (animação de apagar) */
+  removing: string[];
 }
 
 const SEEN_PREF = "chat.seen";
 const PINNED_PREF = "chat.pinned";
+const REACTED_PREF = "chat.reacted";
 const ACCOUNT_PREF = "chat.account";
 
 let state: ChatState = {
@@ -96,6 +102,8 @@ let state: ChatState = {
   outgoing: [],
   seen: getPref<Record<string, number>>(SEEN_PREF, {}),
   pinned: getPref<string[]>(PINNED_PREF, []),
+  reacted: getPref<Record<string, string[]>>(REACTED_PREF, {}),
+  removing: [],
 };
 const listeners = new Set<() => void>();
 function set(patch: Partial<ChatState>) {
@@ -163,6 +171,26 @@ function baseline(account: string, spaces: ChatSpaceDto[]) {
   set({ seen });
 }
 
+/** Aviso de mensagem nova: conversas cuja atividade avançou, com a última mensagem de outra pessoa. */
+let announcedFor: string | null = null;
+function announceNewChat(account: string, before: ChatSpaceDto[], after: ChatSpaceDto[]) {
+  // primeira lista desta conta: só registra
+  if (announcedFor !== account || before.length === 0) {
+    announcedFor = account;
+    return;
+  }
+  const prev = new Map(before.map((sp) => [sp.name, sp.lastActiveMs]));
+  const view = getStore().view;
+  for (const sp of after) {
+    const was = prev.get(sp.name) ?? 0;
+    if (sp.lastActiveMs <= was || !sp.lastMessage || sp.lastMessage.mine) continue;
+    // a conversa já está aberta na tela, com o Quill na frente: não precisa avisar
+    if (view.name === "chat" && view.space === sp.name && document.hasFocus()) continue;
+    const who = sp.lastMessage.senderName;
+    void notify("chat", sp.title, `${who && sp.kind !== "dm" ? `${who}: ` : ""}${sp.lastMessage.text || "Enviou um anexo"}`);
+  }
+}
+
 let spacesBusy = false;
 /** Busca as conversas da conta escolhida. `silent` não mostra carregando nem apaga a lista. */
 export async function loadSpaces(silent = false) {
@@ -179,11 +207,13 @@ export async function loadSpaces(silent = false) {
     if (!isTauri) {
       const s = await loadSample();
       if (Object.keys(state.seen).length === 0) set({ seen: s.sampleSeen(account) });
+      if (Object.keys(state.reacted).length === 0) set({ reacted: s.sampleReacted(account) });
       set({ spaces: s.sampleSpaces(), status: "ready", problem: null, error: null, pinned: state.pinned.length ? state.pinned : s.samplePinned(account) });
       return;
     }
     const spaces = await api.chatSpaces(account);
     baseline(account, spaces);
+    announceNewChat(account, state.spaces, spaces);
     set({ spaces, status: "ready", problem: null, error: null });
   } catch (e) {
     const problem = problemOf(e);
@@ -393,6 +423,139 @@ export const retryOutgoing = (id: string) => void run(id);
 export function discardOutgoing(id: string) {
   state.outgoing.find((x) => x.id === id)?.files.forEach((f) => f.thumb && URL.revokeObjectURL(f.thumb));
   set({ outgoing: state.outgoing.filter((x) => x.id !== id) });
+}
+
+/* ---------- reações, editar e apagar ---------- */
+/** Quantas mensagens com reação sua o app lembra (as mais antigas saem). */
+const MAX_REACTED = 2000;
+
+/** Emojis com que você reagiu nesta mensagem (só os que a mensagem ainda mostra). */
+export function myReactions(s: ChatState, m: ChatMessageDto): string[] {
+  const list = s.reacted[key(m.name, s.account ?? "")];
+  return list ? list.filter((e) => m.reactions.some((r) => r.emoji === e)) : [];
+}
+
+function patchMessage(space: string, name: string, f: (m: ChatMessageDto) => ChatMessageDto) {
+  const list = state.messages[space];
+  if (!list) return;
+  set({ messages: { ...state.messages, [space]: list.map((m) => (m.name === name ? f(m) : m)) } });
+}
+
+function setReacted(k: string, emojis: string[]) {
+  const reacted = { ...state.reacted };
+  delete reacted[k];
+  if (emojis.length) reacted[k] = emojis;
+  const keys = Object.keys(reacted);
+  for (const old of keys.slice(0, Math.max(0, keys.length - MAX_REACTED))) delete reacted[old];
+  setPref(REACTED_PREF, reacted);
+  set({ reacted });
+}
+
+/** Soma (ou tira) uma reação na contagem da mensagem. */
+export function bumpReaction(m: ChatMessageDto, emoji: string, delta: 1 | -1): ChatMessageDto {
+  const has = m.reactions.some((r) => r.emoji === emoji);
+  const reactions = has
+    ? m.reactions.flatMap((r) => (r.emoji !== emoji ? [r] : r.count + delta > 0 ? [{ ...r, count: r.count + delta }] : []))
+    : delta > 0
+      ? [...m.reactions, { emoji, count: 1 }]
+      : m.reactions;
+  return { ...m, reactions };
+}
+
+const busyReactions = new Set<string>();
+
+/** Reage com o emoji ou, se a reação já é sua, tira. A tela muda na hora e volta se der erro. */
+export async function toggleReaction(space: string, message: ChatMessageDto, emoji: string) {
+  const account = state.account;
+  if (!account) return;
+  const k = key(message.name, account);
+  const busy = `${k}|${emoji}`;
+  if (busyReactions.has(busy)) return;
+  busyReactions.add(busy);
+  const before = state.reacted[k] ?? [];
+  const cur = state.messages[space]?.find((m) => m.name === message.name) ?? message;
+  const removing = myReactions(state, cur).includes(emoji);
+  patchMessage(space, message.name, (m) => bumpReaction(m, emoji, removing ? -1 : 1));
+  setReacted(k, removing ? before.filter((e) => e !== emoji) : [...before.filter((e) => e !== emoji), emoji]);
+  try {
+    if (!isTauri) {
+      (await loadSample()).sampleReact(space, message.name, emoji, !removing);
+    } else if (removing) {
+      await api.chatUnreact(account, message.name, emoji);
+    } else if (!(await api.chatReact(account, message.name, emoji))) {
+      // você já tinha reagido com ele (em outro aparelho): a contagem já incluía você
+      patchMessage(space, message.name, (m) => bumpReaction(m, emoji, -1));
+    }
+  } catch (e) {
+    patchMessage(space, message.name, (m) => bumpReaction(m, emoji, removing ? 1 : -1));
+    setReacted(k, before);
+    const { toast } = await import("../components/Toasts");
+    toast(`${removing ? "Não consegui tirar a reação" : "Não consegui reagir"}: ${friendlyError(e)}`, "error");
+  } finally {
+    busyReactions.delete(busy);
+  }
+}
+
+/** Troca o texto de uma mensagem sua. Devolve se deu certo (com erro, o texto antigo volta). */
+export async function editMessage(space: string, message: ChatMessageDto, text: string): Promise<boolean> {
+  const account = state.account;
+  const clean = text.trim();
+  if (!account || !clean) return false;
+  if (clean === message.text.trim()) return true;
+  const old = { text: message.text, edited: message.edited, formattedText: message.formattedText };
+  patchMessage(space, message.name, (m) => ({ ...m, text: clean, formattedText: null, edited: true }));
+  try {
+    const saved = isTauri ? await api.chatEdit(account, message.name, clean) : (await loadSample()).sampleEdit(space, message.name, clean);
+    // a reação pode ter mudado enquanto salvava: mantém a da tela
+    patchMessage(space, message.name, (m) => ({ ...saved, reactions: m.reactions, edited: true }));
+    syncPreview(space, message);
+    return true;
+  } catch (e) {
+    patchMessage(space, message.name, (m) => ({ ...m, ...old }));
+    const { toast } = await import("../components/Toasts");
+    toast(`Não consegui editar: ${friendlyError(e)}`, "error");
+    return false;
+  }
+}
+
+/** Quanto dura a saída da mensagem apagada (igual ao CSS de .chat-gone). */
+const REMOVE_MS = 180;
+
+/** Apaga uma mensagem sua (a confirmação fica na tela). A mensagem sai com animação; com erro, volta. */
+export async function deleteMessage(space: string, message: ChatMessageDto): Promise<boolean> {
+  const account = state.account;
+  if (!account) return false;
+  set({ removing: [...state.removing, message.name] });
+  const started = Date.now();
+  try {
+    if (isTauri) await api.chatDelete(account, message.name);
+    else (await loadSample()).sampleDelete(space, message.name);
+    await new Promise((r) => window.setTimeout(r, Math.max(0, REMOVE_MS - (Date.now() - started))));
+    const list = state.messages[space] ?? [];
+    set({ messages: { ...state.messages, [space]: list.filter((m) => m.name !== message.name) } });
+    syncPreview(space, message);
+    return true;
+  } catch (e) {
+    const { toast } = await import("../components/Toasts");
+    toast(`Não consegui apagar: ${friendlyError(e)}`, "error");
+    return false;
+  } finally {
+    set({ removing: state.removing.filter((n) => n !== message.name) });
+  }
+}
+
+/** Se a mensagem editada ou apagada era a última da lista, a prévia passa a mostrar a mais nova que sobrou. */
+function syncPreview(space: string, changed: ChatMessageDto) {
+  const last = state.messages[space]?.at(-1);
+  set({
+    spaces: state.spaces.map((s) => {
+      if (s.name !== space || !s.lastMessage || changed.createMs < s.lastMessage.createMs) return s;
+      if (!last) return { ...s, lastMessage: null };
+      const text = last.deleted ? "Mensagem apagada" : last.text || (last.attachments[0] ? `Anexo: ${last.attachments[0].name}` : "");
+      const senderName = last.mine || s.kind === "dm" ? null : (last.sender.name.split(/\s+/)[0] ?? null);
+      return { ...s, lastMessage: { text, senderName, mine: last.mine, createMs: last.createMs } };
+    }),
+  });
 }
 
 /* ---------- atualização ---------- */

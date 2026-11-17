@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 import { api, friendlyError, NEEDS_LOGIN, type AccountInfo, type AttachmentInfo, type ImapConfig, type MessageAction, type MessageSummaryDto, type OutgoingMessage } from "../lib/api";
 import { isTauri } from "../lib/platform";
 import { getPref } from "../lib/storage";
+import { isAutomatedSender, notify } from "../lib/notify";
 import { ACCOUNTS, MESSAGES } from "../inbox/sampleData";
 import type { Account, Message } from "../inbox/types";
 import type { LogoName } from "../components/Logo";
@@ -179,6 +180,7 @@ export async function loadFolder(folder: FolderId) {
     folderStatus: { ...state.folderStatus, [folder]: "ready" },
     needsLogin: [...needsLogin],
   });
+  if (folder === "inbox") announceNewMail(list);
   return results;
 }
 
@@ -191,6 +193,18 @@ export async function searchAll(q: string): Promise<Message[]> {
     .toSorted((a, b) => (b.internalDate ?? 0) - (a.internalDate ?? 0));
   set({ folders: { ...state.folders, search: list } });
   return list;
+}
+
+/** E-mails da Entrada já vistos nesta sessão (a primeira carga só registra, sem avisar). */
+let knownInbox: Set<string> | null = null;
+function announceNewMail(list: Message[]) {
+  const fresh = knownInbox ? list.filter((m) => m.unread && !knownInbox!.has(m.id)) : [];
+  knownInbox = new Set([...(knownInbox ?? []), ...list.map((m) => m.id)]);
+  const peopleOnly = getPref("notifyPeopleOnly", true);
+  const worth = fresh.filter((m) => !peopleOnly || !isAutomatedSender(m.fromEmail));
+  if (worth.length === 0) return;
+  if (worth.length === 1) void notify("email", worth[0].from, worth[0].subject || "(sem assunto)");
+  else void notify("email", `${worth.length} e-mails novos`, worth.slice(0, 3).map((m) => `${m.from}: ${m.subject}`).join("\n"));
 }
 
 async function loadCounts() {

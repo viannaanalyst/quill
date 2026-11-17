@@ -102,6 +102,12 @@ dados deste Mac" (Ajustes → Privacidade) apaga todas. Nunca guardam senha nem 
 | `chat.seen` | objeto | `{"<conta>\|<spaces/id>": ms}` | `{}` | Até quando cada conversa foi vista (base das não lidas) |
 | `chat.baseline.<conta>` | boolean | `true`, `false` | `false` | Já abriu o Chat dessa conta (na primeira vez, o que existe conta como lido) |
 | `chat.pinned` | lista | `["<conta>\|<spaces/id>", …]` | `[]` | Conversas fixadas (só neste Mac; a API não informa as do Google Chat) |
+| `chat.reacted` | objeto | `{"<conta>\|<spaces/id/messages/id>": ["👍", …]}` (até 2.000 mensagens) | `{}` | Emojis com que você reagiu, para destacar o chip (a API só informa a contagem) |
+
+**Notificações (2026-11-17):** `notifyChat` (boolean, padrão `true`: avisar mensagens do Chat), `notifySoundEmail` e
+`notifySoundChat` (`pop` (padrão), `gota`, `sino`, `cristal`, `marimba`, `brisa`; arquivos em `src/assets/sounds/`).
+`notify`, `notifySound`, `notifyPeopleOnly`, `quietHours`, `quietFrom` e `quietTo` agora funcionam de verdade
+(`src/lib/notify.ts`).
 
 **Nota sobre `confirmDelete`:** ligado por padrão em todo o app (corrigido em 2026-11-17). A pergunta usa a janela
 própria do Quill (`askConfirm`, em `src/components/ConfirmHost.tsx`), porque o `window.confirm` do navegador não

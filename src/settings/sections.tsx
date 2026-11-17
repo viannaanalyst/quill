@@ -1,4 +1,5 @@
 import { isTauri } from "../lib/platform";
+import { playSound, SOUNDS } from "../lib/notify";
 import { confirmTouchId, touchIdAvailable } from "../components/LockScreen";
 import { toast } from "../components/Toasts";
 import { useEffect, useState, type ReactNode } from "react";
@@ -9,6 +10,7 @@ import {
   Monitor,
   Moon,
   OctagonAlert,
+  Play,
   Send,
   Star,
   Sun,
@@ -198,15 +200,46 @@ export function NotificationsSection() {
   const [quiet, setQuiet] = usePref("quietHours", false);
   const [from, setFrom] = usePref("quietFrom", "22:00");
   const [to, setTo] = usePref("quietTo", "07:00");
+  const [notifyChat, setNotifyChat] = usePref("notifyChat", true);
+  const [soundEmail, setSoundEmail] = usePref("notifySoundEmail", "pop");
+  const [soundChat, setSoundChat] = usePref("notifySoundChat", "pop");
+  const soundOptions = SOUNDS.map((x) => ({ value: x.id, label: x.label }));
+  const pickSound = (set: (v: string) => void) => (v: string) => {
+    set(v);
+    playSound(v);
+  };
   return (
-    <Panel id="st-notifications" title="Notificações" sub="Quando e como o Quill avisa que chegou e-mail.">
+    <Panel id="st-notifications" title="Notificações" sub="Quando e como o Quill avisa que chegou e-mail ou mensagem no Chat.">
       <Rows>
-        <Row title="Avisar quando chegar e-mail" sub="Mostra um aviso do sistema com remetente e assunto.">
+        <Row title="Avisar quando chegar e-mail" sub="Mostra um aviso do sistema com remetente e assunto (com o Quill na frente, só o som).">
           <Toggle on={notify} onChange={setNotify} label="Avisar quando chegar e-mail" />
         </Row>
-        <Row title="Tocar um som" sub="Um som discreto junto com o aviso.">
-          <Toggle on={sound} onChange={setSound} label="Tocar um som" disabled={!notify} />
+        <Row title="Avisar mensagens do Chat" sub="Mensagens novas nas conversas do Google Chat.">
+          <Toggle on={notifyChat} onChange={setNotifyChat} label="Avisar mensagens do Chat" />
         </Row>
+        <Row title="Tocar um som" sub="Um som discreto junto com o aviso.">
+          <Toggle on={sound} onChange={setSound} label="Tocar um som" disabled={!notify && !notifyChat} />
+        </Row>
+        {sound && (
+          <>
+            <Row title="Som do e-mail" sub="Escolher já toca o som.">
+              <div className="st-sound">
+                <Select label="Som do e-mail" size="sm" value={soundEmail} onChange={pickSound(setSoundEmail)} options={soundOptions} />
+                <button type="button" className="btn glass ic st-sound-play" aria-label="Ouvir o som do e-mail" data-tip="Ouvir" onClick={() => playSound(soundEmail)}>
+                  <Play size={14} aria-hidden />
+                </button>
+              </div>
+            </Row>
+            <Row title="Som do Chat" sub="Pode ser diferente do e-mail, para saber de onde veio.">
+              <div className="st-sound">
+                <Select label="Som do Chat" size="sm" value={soundChat} onChange={pickSound(setSoundChat)} options={soundOptions} />
+                <button type="button" className="btn glass ic st-sound-play" aria-label="Ouvir o som do Chat" data-tip="Ouvir" onClick={() => playSound(soundChat)}>
+                  <Play size={14} aria-hidden />
+                </button>
+              </div>
+            </Row>
+          </>
+        )}
         <Row title="Só de pessoas" sub="Ignora propaganda, newsletters e avisos automáticos.">
           <Toggle on={peopleOnly} onChange={setPeopleOnly} label="Só de pessoas" disabled={!notify} />
         </Row>

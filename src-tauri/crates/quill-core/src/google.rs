@@ -428,6 +428,55 @@ impl GoogleClient {
         crate::chat::parse_message(&resp).map_err(LoginError::Google)
     }
 
+    fn check_message(message: &str) -> Result<(), LoginError> {
+        if crate::chat::valid_message_name(message) {
+            Ok(())
+        } else {
+            Err(LoginError::Google("mensagem inválida".into()))
+        }
+    }
+
+    /// Reage a uma mensagem com um emoji. `false` quando a conta já tinha reagido com ele (o Google responde 409).
+    pub async fn chat_react(&self, token: &str, message: &str, emoji: &str) -> Result<bool, LoginError> {
+        Self::check_message(message)?;
+        let body = crate::chat::reaction_body(emoji).map_err(LoginError::Google)?;
+        match self.request(reqwest::Method::POST, format!("{}/{message}/reactions", self.chat_api), token, Some(body)).await {
+            Ok(_) => Ok(true),
+            Err(LoginError::Google(m)) if m.starts_with("409") => Ok(false),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Reações de uma pessoa (`users/<id>`) com um emoji numa mensagem (para achar o nome e tirar a reação).
+    pub async fn chat_reactions(&self, token: &str, message: &str, user_id: &str, emoji: &str) -> Result<Vec<crate::chat::RawReaction>, LoginError> {
+        Self::check_message(message)?;
+        let url = format!("{}/{message}/reactions?{}", self.chat_api, crate::chat::my_reactions_query(user_id, emoji));
+        let body = self.request(reqwest::Method::GET, url, token, None).await?;
+        crate::chat::parse_reactions(&body).map_err(LoginError::Google)
+    }
+
+    /// Tira uma reação (`spaces/<id>/messages/<id>/reactions/<id>`).
+    pub async fn chat_delete_reaction(&self, token: &str, reaction: &str) -> Result<(), LoginError> {
+        if !crate::chat::valid_reaction_name(reaction) {
+            return Err(LoginError::Google("reação inválida".into()));
+        }
+        self.request(reqwest::Method::DELETE, format!("{}/{reaction}", self.chat_api), token, None).await.map(|_| ())
+    }
+
+    /// Troca o texto de uma mensagem da própria conta e devolve como ficou.
+    pub async fn chat_edit(&self, token: &str, message: &str, text: &str) -> Result<crate::chat::RawMessage, LoginError> {
+        Self::check_message(message)?;
+        let (body, query) = crate::chat::edit_request(text);
+        let resp = self.request(reqwest::Method::PATCH, format!("{}/{message}?{query}", self.chat_api), token, Some(body)).await?;
+        crate::chat::parse_message(&resp).map_err(LoginError::Google)
+    }
+
+    /// Apaga uma mensagem. Sem `force`: se ela tiver respostas, o Google recusa (não apaga as respostas dos outros).
+    pub async fn chat_delete(&self, token: &str, message: &str) -> Result<(), LoginError> {
+        Self::check_message(message)?;
+        self.request(reqwest::Method::DELETE, format!("{}/{message}", self.chat_api), token, None).await.map(|_| ())
+    }
+
     /// Conteúdo de um anexo do Chat (`media.download`), até `max` bytes.
     pub async fn chat_media(&self, token: &str, resource: &str, max: u64) -> Result<Vec<u8>, LoginError> {
         if !crate::chat::valid_media_resource(resource) {
@@ -1214,6 +1263,71 @@ mod tests {
         let big = vec![0u8; crate::chat::MAX_UPLOAD + 1];
         let e = client("http://127.0.0.1:9").chat_upload("ya29", "spaces/B", "x.bin", "", big, std::sync::Arc::new(|_, _| {})).await.unwrap_err();
         assert!(e.to_string().contains("200 MB"));
+    }
+
+    #[tokio::test]
+    async fn chat_react_posts_unicode_emoji() {
+        let (base, srv) = fake_google(vec![r#"{"name":"spaces/B/messages/1.1/reactions/R1","emoji":{"unicode":"👍"}}"#]).await;
+        assert!(client(&base).chat_react("ya29", "spaces/B/messages/1.1", "👍").await.unwrap());
+        let req = &srv.await.unwrap()[0];
+        assert!(req.starts_with("POST /gmail/chat/spaces/B/messages/1.1/reactions HTTP"));
+        assert!(req.contains(r#"{"emoji":{"unicode":"👍"}}"#));
+    }
+
+    #[tokio::test]
+    async fn chat_react_twice_is_not_an_error() {
+        let (base, _srv) = fake_google_with(vec![(409, r#"{"error":{"code":409,"message":"Reaction already exists.","status":"ALREADY_EXISTS"}}"#)]).await;
+        assert!(!client(&base).chat_react("ya29", "spaces/B/messages/1", "👍").await.unwrap(), "já tinha reagido: devolve false");
+    }
+
+    #[tokio::test]
+    async fn chat_unreact_finds_own_reaction_then_deletes() {
+        let (base, srv) = fake_google(vec![
+            r#"{"reactions":[{"name":"spaces/B/messages/1/reactions/R7","user":{"name":"users/42"},"emoji":{"unicode":"❤️"}}]}"#,
+            "{}",
+        ])
+        .await;
+        let c = client(&base);
+        let found = c.chat_reactions("ya29", "spaces/B/messages/1", "users/42", "❤️").await.unwrap();
+        assert_eq!(found.len(), 1);
+        c.chat_delete_reaction("ya29", &found[0].name).await.unwrap();
+        let reqs = srv.await.unwrap();
+        assert!(reqs[0].starts_with("GET /gmail/chat/spaces/B/messages/1/reactions?filter=emoji.unicode"));
+        assert!(reqs[0].contains("user.name+%3D+%22users%2F42%22"));
+        assert!(reqs[1].starts_with("DELETE /gmail/chat/spaces/B/messages/1/reactions/R7 HTTP"));
+    }
+
+    #[tokio::test]
+    async fn chat_edit_patches_only_text() {
+        let (base, srv) = fake_google(vec![
+            r#"{"name":"spaces/B/messages/1","sender":{"name":"users/42"},"createTime":"2026-11-17T12:00:00Z","lastUpdateTime":"2026-11-17T12:01:00Z","text":"certo"}"#,
+        ])
+        .await;
+        let m = client(&base).chat_edit("ya29", "spaces/B/messages/1", "certo").await.unwrap();
+        assert!(m.edited);
+        assert_eq!(m.text, "certo");
+        let req = &srv.await.unwrap()[0];
+        assert!(req.starts_with("PATCH /gmail/chat/spaces/B/messages/1?updateMask=text HTTP"));
+        assert!(req.ends_with(r#"{"text":"certo"}"#));
+    }
+
+    #[tokio::test]
+    async fn chat_delete_sends_delete_without_force() {
+        let (base, srv) = fake_google(vec!["{}"]).await;
+        client(&base).chat_delete("ya29", "spaces/B/messages/1").await.unwrap();
+        let req = &srv.await.unwrap()[0];
+        assert!(req.starts_with("DELETE /gmail/chat/spaces/B/messages/1 HTTP"), "sem force: não apaga as respostas dos outros");
+    }
+
+    #[tokio::test]
+    async fn chat_message_actions_reject_strange_names_without_network() {
+        let c = client("http://127.0.0.1:9");
+        assert!(c.chat_react("ya29", "spaces/B/messages/../x", "👍").await.is_err());
+        assert!(c.chat_react("ya29", "spaces/B/messages/1", "abc").await.is_err());
+        assert!(c.chat_reactions("ya29", "spaces/B", "users/1", "👍").await.is_err());
+        assert!(c.chat_delete_reaction("ya29", "spaces/B/messages/1").await.is_err());
+        assert!(c.chat_edit("ya29", "spaces/B/messages/1?x", "a").await.is_err());
+        assert!(c.chat_delete("ya29", "spaces/B").await.is_err());
     }
 
     #[tokio::test]

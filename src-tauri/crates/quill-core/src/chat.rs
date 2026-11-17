@@ -78,6 +78,25 @@ pub const MAX_INLINE: u64 = 50 * 1024 * 1024;
 /// Tamanho máximo de um anexo baixado para a pasta Downloads.
 pub const MAX_DOWNLOAD: u64 = 200 * 1024 * 1024;
 
+/// Reação com emoji numa mensagem: o emoji e quantas pessoas reagiram com ele.
+/// A API não diz se a própria conta está entre elas; a tela guarda as reações que fez.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatReaction {
+    pub emoji: String,
+    pub count: u32,
+}
+
+/// Uma reação como `reactions.list` devolve.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RawReaction {
+    /// `spaces/<id>/messages/<id>/reactions/<id>`
+    pub name: String,
+    pub user_id: String,
+    /// `None` para emoji próprio da empresa (sem unicode)
+    pub emoji: Option<String>,
+}
+
 /// Uma mensagem como a API devolve (antes de resolver quem enviou).
 #[derive(Debug, Clone, PartialEq)]
 pub struct RawMessage {
@@ -97,6 +116,9 @@ pub struct RawMessage {
     pub thread_reply: bool,
     pub attachments: Vec<ChatAttachment>,
     pub deleted: bool,
+    pub reactions: Vec<ChatReaction>,
+    /// editada depois de enviada (`lastUpdateTime`)
+    pub edited: bool,
 }
 
 /// Mensagem pronta para a tela.
@@ -115,6 +137,8 @@ pub struct ChatMessage {
     pub thread_reply: bool,
     pub attachments: Vec<ChatAttachment>,
     pub deleted: bool,
+    pub reactions: Vec<ChatReaction>,
+    pub edited: bool,
 }
 
 /// Uma página de mensagens, da mais antiga para a mais nova.
@@ -205,6 +229,33 @@ fn simple_id(s: &str) -> bool {
 /// Confere um nome de conversa vindo da tela (`spaces/<id>`), para não montar caminho estranho na API.
 pub fn valid_space_name(name: &str) -> bool {
     name.strip_prefix("spaces/").is_some_and(simple_id)
+}
+
+/// Pedaço do fim de um nome (`messages/<id>`, `reactions/<id>`): letras, números, `-`, `_` e `.`.
+fn name_segment(s: &str) -> bool {
+    !s.is_empty() && s != "." && s != ".." && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
+}
+
+/// Confere um nome de mensagem vindo da tela (`spaces/<id>/messages/<id>`; o id pode ter ponto).
+pub fn valid_message_name(name: &str) -> bool {
+    let mut parts = name.split('/');
+    matches!(
+        (parts.next(), parts.next(), parts.next(), parts.next(), parts.next()),
+        (Some("spaces"), Some(space), Some("messages"), Some(msg), None) if simple_id(space) && name_segment(msg)
+    )
+}
+
+/// Confere um nome de reação (`spaces/<id>/messages/<id>/reactions/<id>`).
+pub fn valid_reaction_name(name: &str) -> bool {
+    match name.rsplit_once("/reactions/") {
+        Some((msg, id)) => valid_message_name(msg) && name_segment(id),
+        None => false,
+    }
+}
+
+/// `spaces/<id>/messages/<id>` → `spaces/<id>`.
+pub fn space_of_message(name: &str) -> Option<String> {
+    valid_message_name(name).then(|| name.splitn(3, '/').take(2).collect::<Vec<_>>().join("/"))
 }
 
 /// `users/<id>` → `people/<id>` (o id é o mesmo nas duas APIs).
@@ -336,6 +387,19 @@ struct MsgJson {
     #[serde(default)]
     attachment: Vec<AttachmentJson>,
     deletion_metadata: Option<serde_json::Value>,
+    last_update_time: Option<String>,
+    #[serde(default)]
+    emoji_reaction_summaries: Vec<ReactionSummaryJson>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReactionSummaryJson {
+    emoji: Option<EmojiJson>,
+    reaction_count: Option<u32>,
+}
+#[derive(Deserialize)]
+struct EmojiJson {
+    unicode: Option<String>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -368,12 +432,25 @@ struct DriveRef {
 fn raw_message(m: MsgJson) -> RawMessage {
     let sender = m.sender.unwrap_or(SenderJson { name: String::new(), kind: String::new(), display_name: None });
     let deleted = m.deletion_metadata.is_some();
+    let create_ms = rfc3339_ms(&m.create_time);
+    let edited = !deleted && m.last_update_time.as_deref().is_some_and(|t| rfc3339_ms(t) > create_ms);
+    let reactions = if deleted {
+        Vec::new()
+    } else {
+        m.emoji_reaction_summaries
+            .into_iter()
+            .filter_map(|r| {
+                let emoji = r.emoji?.unicode.filter(|u| !u.is_empty())?;
+                Some(ChatReaction { emoji, count: r.reaction_count.unwrap_or(1).max(1) })
+            })
+            .collect()
+    };
     RawMessage {
         name: m.name,
         sender_bot: sender.kind == "BOT",
         sender_display_name: sender.display_name.filter(|n| !n.trim().is_empty()),
         sender_id: sender.name,
-        create_ms: rfc3339_ms(&m.create_time),
+        create_ms,
         create_time: m.create_time,
         text: if deleted { String::new() } else { m.text },
         formatted_text: if deleted { None } else { m.formatted_text.filter(|t| !t.is_empty()) },
@@ -394,6 +471,8 @@ fn raw_message(m: MsgJson) -> RawMessage {
             })
             .collect(),
         deleted,
+        reactions,
+        edited,
     }
 }
 
@@ -431,6 +510,60 @@ pub fn send_request(text: &str, thread: Option<&str>, attachments: &[AttachmentR
     }
     let query = if thread.is_some() { "messageReplyOption=REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD".to_string() } else { String::new() };
     (serde_json::Value::Object(body).to_string(), query)
+}
+
+/// Corpo de `reactions.create`. Só emoji (nada de letras ou números), até 8 caracteres.
+pub fn reaction_body(emoji: &str) -> Result<String, String> {
+    let ok = !emoji.is_empty()
+        && emoji.chars().count() <= 8
+        && !emoji.chars().any(|c| c.is_ascii_alphanumeric() || c.is_control() || c.is_whitespace());
+    if !ok {
+        return Err("emoji inválido".into());
+    }
+    Ok(serde_json::json!({ "emoji": { "unicode": emoji } }).to_string())
+}
+
+/// Parâmetros de `reactions.list` para achar a reação da própria conta com aquele emoji.
+pub fn my_reactions_query(user_id: &str, emoji: &str) -> String {
+    let filter = format!(r#"emoji.unicode = "{emoji}" AND user.name = "{user_id}""#);
+    format!("filter={}", enc(&filter))
+}
+
+/// Lê `reactions.list` (nomes estranhos ficam de fora).
+pub fn parse_reactions(json: &str) -> Result<Vec<RawReaction>, String> {
+    #[derive(Deserialize)]
+    struct List {
+        #[serde(default)]
+        reactions: Vec<Item>,
+    }
+    #[derive(Deserialize)]
+    struct Item {
+        #[serde(default)]
+        name: String,
+        user: Option<User>,
+        emoji: Option<EmojiJson>,
+    }
+    #[derive(Deserialize)]
+    struct User {
+        #[serde(default)]
+        name: String,
+    }
+    let list: List = serde_json::from_str(json).map_err(|e| e.to_string())?;
+    Ok(list
+        .reactions
+        .into_iter()
+        .filter(|r| valid_reaction_name(&r.name))
+        .map(|r| RawReaction {
+            name: r.name,
+            user_id: r.user.map(|u| u.name).unwrap_or_default(),
+            emoji: r.emoji.and_then(|e| e.unicode).filter(|u| !u.is_empty()),
+        })
+        .collect())
+}
+
+/// Corpo e parâmetros de `messages.patch` (troca só o texto).
+pub fn edit_request(text: &str) -> (String, String) {
+    (serde_json::json!({ "text": text }).to_string(), "updateMask=text".to_string())
 }
 
 /// Confere o nome de um conteúdo (`attachmentDataRef.resourceName`) antes de pôr no caminho do download.
@@ -601,6 +734,9 @@ pub fn preview_text(m: &RawMessage) -> String {
     m.attachments.first().map(|a| format!("Anexo: {}", a.name)).unwrap_or_default()
 }
 
+/// Apagar mensagem que tem respostas: o Google só deixa apagando as respostas junto (`force`), e o Quill não faz isso.
+pub const HAS_REPLIES: &str = "Essa mensagem tem respostas. O Google Chat só deixa apagar junto com as respostas; apague pelo Google Chat se quiser.";
+
 /// Classifica um erro do Google (texto "403 Forbidden: {json}") num aviso para a tela.
 pub fn classify_error(msg: &str) -> ChatErrorKind {
     #[derive(Deserialize)]
@@ -621,6 +757,9 @@ pub fn classify_error(msg: &str) -> ChatErrorKind {
     }
     if lower.contains("consumer") || lower.contains("google workspace account") {
         return ChatErrorKind::NotWorkspace;
+    }
+    if lower.contains("repl") && (lower.contains("force") || lower.contains("thread")) && lower.contains("delet") {
+        return ChatErrorKind::Other(HAS_REPLIES.into());
     }
     let short = match msg.find('{').and_then(|i| serde_json::from_str::<Body>(&msg[i..]).ok()) {
         Some(b) if !b.error.message.is_empty() => format!("O Google Chat recusou o pedido: {}", b.error.message),
@@ -967,5 +1106,107 @@ mod tests {
         assert_eq!(decode_component("relat%C3%B3rio%20final%2B1.pdf"), "relatório final+1.pdf");
         assert_eq!(decode_component("a+b"), "a+b");
         assert_eq!(decode_component("100%"), "100%");
+    }
+
+    #[test]
+    fn le_reacoes_e_edicao_das_mensagens() {
+        let json = r#"{"messages":[
+          {"name":"spaces/A/messages/X1.Y1","sender":{"name":"users/2"},"createTime":"2026-11-17T12:00:00Z",
+           "lastUpdateTime":"2026-11-17T12:05:00Z","text":"corrigido",
+           "emojiReactionSummaries":[
+             {"emoji":{"unicode":"👍"},"reactionCount":3},
+             {"emoji":{"unicode":"❤️"}},
+             {"emoji":{"customEmoji":{"uid":"abc"}},"reactionCount":2}
+           ]},
+          {"name":"spaces/A/messages/2","sender":{"name":"users/2"},"createTime":"2026-11-17T12:00:00Z","text":"sem nada"}
+        ]}"#;
+        let (list, _) = parse_messages(json).unwrap();
+        let m = &list[0];
+        assert_eq!(
+            m.reactions,
+            [ChatReaction { emoji: "👍".into(), count: 3 }, ChatReaction { emoji: "❤️".into(), count: 1 }],
+            "emoji próprio da empresa (sem unicode) fica de fora; sem contagem conta 1"
+        );
+        assert!(m.edited);
+        assert!(list[1].reactions.is_empty());
+        assert!(!list[1].edited);
+    }
+
+    #[test]
+    fn mensagem_apagada_nao_mostra_reacoes() {
+        let m = parse_message(
+            r#"{"name":"spaces/A/messages/1","createTime":"2026-11-17T12:00:00Z","deletionMetadata":{"deletionType":"CREATOR"},
+               "lastUpdateTime":"2026-11-17T12:09:00Z","emojiReactionSummaries":[{"emoji":{"unicode":"👍"},"reactionCount":1}]}"#,
+        )
+        .unwrap();
+        assert!(m.deleted);
+        assert!(m.reactions.is_empty());
+        assert!(!m.edited, "apagar não é editar");
+    }
+
+    #[test]
+    fn so_aceita_nome_de_mensagem_e_de_reacao_simples() {
+        assert!(valid_message_name("spaces/AAAA/messages/UBHHVc_AAAA.UBHHVc_AAAA"));
+        assert!(valid_message_name("spaces/A/messages/client-abc"));
+        assert!(!valid_message_name("spaces/A/messages/"));
+        assert!(!valid_message_name("spaces/A/messages/.."));
+        assert!(!valid_message_name("spaces/A/messages/1/reactions/2"));
+        assert!(!valid_message_name("spaces/A/messages/1?x=1"));
+        assert!(!valid_message_name("spaces/../messages/1"));
+        assert!(!valid_message_name("users/1"));
+        assert!(valid_reaction_name("spaces/A/messages/1.1/reactions/R-1_x"));
+        assert!(!valid_reaction_name("spaces/A/messages/1/reactions/"));
+        assert!(!valid_reaction_name("spaces/A/messages/1/reactions/a/b"));
+        assert!(!valid_reaction_name("spaces/A/messages/1"));
+        assert_eq!(space_of_message("spaces/A/messages/1.2").as_deref(), Some("spaces/A"));
+        assert_eq!(space_of_message("spaces/A"), None);
+    }
+
+    #[test]
+    fn monta_pedido_de_reacao() {
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&reaction_body("👍").unwrap()).unwrap(),
+            serde_json::json!({"emoji":{"unicode":"👍"}})
+        );
+        assert!(reaction_body("").is_err());
+        assert!(reaction_body("abc").is_err(), "só emoji, não texto");
+        assert!(reaction_body(&"😀".repeat(20)).is_err());
+    }
+
+    #[test]
+    fn filtro_das_proprias_reacoes() {
+        let q = my_reactions_query("users/123", "👍");
+        let decoded: Vec<(String, String)> = url::form_urlencoded::parse(q.as_bytes()).into_owned().collect();
+        assert_eq!(decoded, [("filter".to_string(), r#"emoji.unicode = "👍" AND user.name = "users/123""#.to_string())]);
+    }
+
+    #[test]
+    fn le_lista_de_reacoes() {
+        let json = r#"{"reactions":[
+          {"name":"spaces/A/messages/1/reactions/R1","user":{"name":"users/123","type":"HUMAN"},"emoji":{"unicode":"👍"}},
+          {"name":"spaces/A/messages/1/reactions/R2","user":{"name":"users/9"},"emoji":{"customEmoji":{"uid":"x"}}},
+          {"name":"../x","user":{"name":"users/123"},"emoji":{"unicode":"👍"}}
+        ]}"#;
+        let list = parse_reactions(json).unwrap();
+        assert_eq!(
+            list,
+            [RawReaction { name: "spaces/A/messages/1/reactions/R1".into(), user_id: "users/123".into(), emoji: Some("👍".into()) },
+             RawReaction { name: "spaces/A/messages/1/reactions/R2".into(), user_id: "users/9".into(), emoji: None }],
+            "nome estranho fica de fora"
+        );
+        assert!(parse_reactions("{}").unwrap().is_empty());
+    }
+
+    #[test]
+    fn monta_pedido_de_edicao() {
+        let (body, query) = edit_request("novo \"texto\"");
+        assert_eq!(serde_json::from_str::<serde_json::Value>(&body).unwrap(), serde_json::json!({"text":"novo \"texto\""}));
+        assert_eq!(query, "updateMask=text");
+    }
+
+    #[test]
+    fn apagar_mensagem_com_respostas_vira_frase_clara() {
+        let msg = r#"400 Bad Request: {"error":{"code":400,"message":"Message has thread replies. Set force=true to delete the message and its replies.","status":"FAILED_PRECONDITION"}}"#;
+        assert_eq!(classify_error(msg), ChatErrorKind::Other(HAS_REPLIES.into()));
     }
 }

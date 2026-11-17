@@ -120,6 +120,8 @@ impl ChatService {
             thread_reply: m.thread_reply,
             attachments: m.attachments,
             deleted: m.deleted,
+            reactions: m.reactions,
+            edited: m.edited,
         }
     }
 
@@ -288,6 +290,47 @@ impl ChatService {
         // a mensagem acabou de sair desta conta, mesmo que o próprio id não tenha vindo
         m.mine = true;
         Ok(m)
+    }
+
+    /// A prévia da conversa desta mensagem será buscada de novo na próxima lista (a mensagem mudou ou sumiu).
+    fn forget_preview(&self, message: &str) {
+        if let Some(space) = crate::chat::space_of_message(message) {
+            self.previews.lock().expect("trava").remove(&space);
+        }
+    }
+
+    /// Reage com um emoji. `false` quando a conta já tinha reagido com ele.
+    pub async fn react(&self, token: &str, message: &str, emoji: &str) -> Result<bool, LoginError> {
+        self.client.chat_react(token, message, emoji).await
+    }
+
+    /// Tira a reação da própria conta com aquele emoji (procura o nome dela com `reactions.list`).
+    /// Se não houver reação, não faz nada.
+    pub async fn unreact(&self, account: &str, token: &str, message: &str, emoji: &str) -> Result<(), LoginError> {
+        let me = self.me(account, token).await.ok_or_else(|| LoginError::Google("não consegui saber qual é a sua conta no Chat".into()))?;
+        let found = self.client.chat_reactions(token, message, &me, emoji).await?;
+        // o filtro já vem do Google, mas a conferência aqui garante que nunca sai a reação de outra pessoa
+        for r in found.iter().filter(|r| r.user_id == me && r.emoji.as_deref() == Some(emoji) && r.name.starts_with(&format!("{message}/reactions/"))) {
+            self.client.chat_delete_reaction(token, &r.name).await?;
+        }
+        Ok(())
+    }
+
+    /// Troca o texto de uma mensagem da própria conta e devolve como ficou.
+    pub async fn edit(&self, account: &str, token: &str, message: &str, text: &str) -> Result<ChatMessage, LoginError> {
+        let raw = self.client.chat_edit(token, message, text).await?;
+        self.forget_preview(message);
+        let me = self.me(account, token).await;
+        let mut m = self.message(raw, me.as_deref());
+        m.mine = true;
+        Ok(m)
+    }
+
+    /// Apaga uma mensagem da própria conta.
+    pub async fn delete(&self, token: &str, message: &str) -> Result<(), LoginError> {
+        self.client.chat_delete(token, message).await?;
+        self.forget_preview(message);
+        Ok(())
     }
 
     /// Conteúdo de um anexo, até `max` bytes.
@@ -489,6 +532,65 @@ mod tests {
         assert_eq!(m.create_ms, 1_794_918_600_000);
     }
 
+    #[tokio::test]
+    async fn reagir_e_tirar_so_a_propria_reacao() {
+        let (base, seen) = fake_router(vec![
+            ("/x/people/people/me", r#"{"resourceName":"people/42"}"#),
+            ("/x/chat/spaces/B/messages/1/reactions", r#"{"name":"spaces/B/messages/1/reactions/R7","emoji":{"unicode":"❤️"}}"#),
+            (
+                "/x/chat/spaces/B/messages/1/reactions?",
+                r#"{"reactions":[
+                  {"name":"spaces/B/messages/1/reactions/R8","user":{"name":"users/9"},"emoji":{"unicode":"❤️"}},
+                  {"name":"spaces/B/messages/1/reactions/R7","user":{"name":"users/42"},"emoji":{"unicode":"❤️"}}]}"#,
+            ),
+            ("/x/chat/spaces/B/messages/1/reactions/", "{}"),
+        ])
+        .await;
+        let svc = service(&base);
+        assert!(svc.react("ya29", "spaces/B/messages/1", "❤️").await.unwrap());
+        svc.unreact("eu@empresa.com", "ya29", "spaces/B/messages/1", "❤️").await.unwrap();
+        let reqs = seen.lock().unwrap().clone();
+        assert!(reqs[0].starts_with("POST /x/chat/spaces/B/messages/1/reactions "));
+        assert!(reqs.iter().any(|r| r.starts_with("GET /x/chat/spaces/B/messages/1/reactions?filter=") && r.contains("users%2F42")));
+        let deletes: Vec<_> = reqs.iter().filter(|r| r.starts_with("DELETE")).collect();
+        assert_eq!(deletes.len(), 1, "{reqs:?}");
+        assert!(deletes[0].starts_with("DELETE /x/chat/spaces/B/messages/1/reactions/R7 "), "nunca tira a reação de outra pessoa");
+    }
+
+    #[tokio::test]
+    async fn editar_volta_como_minha_e_editada() {
+        let (base, seen) = fake_router(vec![
+            ("/x/people/people/me", r#"{"resourceName":"people/1"}"#),
+            ("/x/people/people:batchGet", r#"{"responses":[]}"#),
+            (
+                "/x/chat/spaces/B/messages/2",
+                r#"{"name":"spaces/B/messages/2","sender":{"name":"users/1"},"createTime":"2026-11-17T12:00:00Z","lastUpdateTime":"2026-11-17T12:02:00Z","text":"Combinado às 16h"}"#,
+            ),
+        ])
+        .await;
+        let m = service(&base).edit("eu@empresa.com", "ya29", "spaces/B/messages/2", "Combinado às 16h").await.unwrap();
+        assert!(m.mine);
+        assert!(m.edited);
+        assert_eq!(m.text, "Combinado às 16h");
+        assert!(seen.lock().unwrap().iter().any(|r| r.starts_with("PATCH /x/chat/spaces/B/messages/2?updateMask=text ")));
+    }
+
+    #[tokio::test]
+    async fn apagar_ou_editar_refaz_a_previa_da_lista() {
+        let mut r = routes();
+        r.push(("/x/chat/spaces/B/messages/2", "{}"));
+        let (base, seen) = fake_router(r).await;
+        let svc = service(&base);
+        svc.spaces("eu@empresa.com", "ya29").await.unwrap();
+        svc.delete("ya29", "spaces/B/messages/2").await.unwrap();
+        let n = seen.lock().unwrap().len();
+        svc.spaces("eu@empresa.com", "ya29").await.unwrap();
+        let reqs = seen.lock().unwrap();
+        assert!(reqs[n - 1].starts_with("DELETE /x/chat/spaces/B/messages/2 "));
+        assert!(reqs[n..].iter().any(|r| r.starts_with("GET /x/chat/spaces/B/messages?")), "a prévia da conversa é buscada de novo: {:?}", &reqs[n..]);
+        assert!(!reqs[n..].iter().any(|r| r.starts_with("GET /x/chat/spaces/A/messages?")), "as outras continuam do cache");
+    }
+
     /// O Tauri roda os comandos em outra linha: os pedidos do Chat precisam poder mudar de linha (Send).
     #[test]
     fn pedidos_podem_rodar_em_outra_linha() {
@@ -499,6 +601,10 @@ mod tests {
         send(&svc.members("a", "t", "spaces/B"));
         send(&svc.send("a", "t", "spaces/B", "oi", None, &[]));
         send(&svc.media("t", "abc", 10));
+        send(&svc.react("t", "spaces/B/messages/1", "👍"));
+        send(&svc.unreact("a", "t", "spaces/B/messages/1", "👍"));
+        send(&svc.edit("a", "t", "spaces/B/messages/1", "oi"));
+        send(&svc.delete("t", "spaces/B/messages/1"));
         send(&svc.upload("t", "spaces/B", "a.txt", "text/plain", vec![1], std::sync::Arc::new(|_, _| {})));
     }
 }

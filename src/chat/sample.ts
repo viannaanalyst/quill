@@ -32,6 +32,8 @@ function msg(space: string, sender: ChatPersonDto, ms: number, text: string, ext
     threadReply: false,
     attachments: [],
     deleted: false,
+    reactions: [],
+    edited: false,
     ...extra,
   };
 }
@@ -39,7 +41,12 @@ const att = (name: string, contentType: string): ChatAttachmentDto => ({ name, c
 
 const FIN = "spaces/financeiro";
 function financeiro(): ChatMessageDto[] {
-  const root = msg(FIN, MC, day(9, 12), "Bom dia, pessoal! Os números de outubro já estão no painel: https://painel.financeiro.app/outubro. Conferem se bate com o que vocês têm?");
+  const root = msg(FIN, MC, day(9, 12), "Bom dia, pessoal! Os números de outubro já estão no painel: https://painel.financeiro.app/outubro. Conferem se bate com o que vocês têm?", {
+    reactions: [
+      { emoji: "👍", count: 3 },
+      { emoji: "🙏", count: 1 },
+    ],
+  });
   const thread = root.thread;
   return [
     root,
@@ -47,8 +54,9 @@ function financeiro(): ChatMessageDto[] {
     msg(FIN, BN, day(9, 40), "Só a linha de viagens que mudou, já ajustei.", { thread, threadReply: true }),
     msg(FIN, RL, day(10, 5), "Gravei o passo a passo do fechamento e tirei foto do quadro da reunião.", {
       attachments: [att("quadro-reuniao.jpg", "image/svg+xml"), att("passo-a-passo-fechamento.mp4", "video/mp4")],
+      reactions: [{ emoji: "❤️", count: 2 }],
     }),
-    msg(FIN, ME, day(10, 12), "Ficou ótimo, Rafael! Vou usar o vídeo no treinamento de sexta."),
+    msg(FIN, ME, day(10, 12), "Ficou ótimo, Rafael! Vou usar o vídeo no treinamento de sexta.", { edited: true, reactions: [{ emoji: "😂", count: 1 }] }),
     msg(FIN, ME, day(10, 12), "", { attachments: [att("audio-treinamento.m4a", "audio/wav")] }),
     msg(FIN, BN, day(10, 24), "Segue o relatório final com as observações da diretoria.", { attachments: [att("Relatório de outubro.pdf", "application/pdf")] }),
   ];
@@ -118,8 +126,43 @@ export function sampleSeen(account: string): Record<string, number> {
 
 export const samplePinned = (account: string) => [`${account}|${FIN}`, `${account}|spaces/mariana`];
 
+/** Páginas guardadas: os nomes das mensagens ficam iguais e editar/apagar/reagir na prévia não se perde ao atualizar. */
+const cache = new Map<string, ChatMessageDto[]>();
+const pageOf = (space: string) => {
+  if (!cache.has(space)) cache.set(space, PAGES[space]?.() ?? []);
+  return cache.get(space)!;
+};
+
 export function samplePage(space: string): ChatPageDto {
-  return { messages: PAGES[space]?.() ?? [], nextPageToken: null };
+  return { messages: pageOf(space), nextPageToken: null };
+}
+
+/** Reações que "você" já fez nas mensagens de exemplo (o 👍 da Mariana conta você). */
+export function sampleReacted(account: string): Record<string, string[]> {
+  const root = pageOf(FIN)[0];
+  return { [`${account}|${root.name}`]: ["👍"] };
+}
+
+const change = (space: string, name: string, f: (m: ChatMessageDto) => ChatMessageDto | null) =>
+  cache.set(space, pageOf(space).flatMap((m) => (m.name === name ? (f(m) ?? []) : [m])));
+
+/** Prévia: edita, apaga ou reage numa mensagem de exemplo. */
+export function sampleEdit(space: string, name: string, text: string): ChatMessageDto {
+  let out: ChatMessageDto | null = null;
+  change(space, name, (m) => (out = { ...m, text, edited: true }));
+  return out!;
+}
+export const sampleDelete = (space: string, name: string) => change(space, name, () => null);
+export function sampleReact(space: string, name: string, emoji: string, add: boolean) {
+  change(space, name, (m) => {
+    const has = m.reactions.find((r) => r.emoji === emoji);
+    const reactions = add
+      ? has
+        ? m.reactions.map((r) => (r.emoji === emoji ? { ...r, count: r.count + 1 } : r))
+        : [...m.reactions, { emoji, count: 1 }]
+      : m.reactions.flatMap((r) => (r.emoji !== emoji ? [r] : r.count > 1 ? [{ ...r, count: r.count - 1 }] : []));
+    return { ...m, reactions };
+  });
 }
 
 export function sampleMembers(space: string): ChatPersonDto[] {
@@ -129,7 +172,9 @@ export function sampleMembers(space: string): ChatPersonDto[] {
 
 /** Mensagem "enviada" na prévia. */
 export function sampleSent(space: string, text: string, thread: string | null, attachments: ChatAttachmentDto[]): ChatMessageDto {
-  return msg(space, ME, Date.now(), text, { attachments, thread: thread ?? undefined, threadReply: !!thread });
+  const m = msg(space, ME, Date.now(), text, { attachments, thread: thread ?? undefined, threadReply: !!thread });
+  cache.set(space, [...pageOf(space), m]);
+  return m;
 }
 
 /* ---------- conteúdo dos anexos de exemplo ---------- */

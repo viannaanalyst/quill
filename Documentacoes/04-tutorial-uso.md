@@ -191,6 +191,16 @@ Anexos e áudio:
   mensagem; PDF e outros arquivos têm **Ver** e **Baixar** (vai para Downloads); arquivo do Google Drive abre no
   navegador.
 
+Reações, editar e apagar:
+- **Reagir:** passe o mouse na mensagem e clique na carinha. Aparecem 6 rápidas (👍 ❤️ 😂 😮 😢 🙏); o **+** abre
+  todos os emojis. As reações aparecem embaixo da mensagem com a contagem (😀 3); a sua fica em azul. Clicar num chip
+  reage com o mesmo emoji; clicar no seu (azul) tira a sua reação.
+- **Editar** (só as suas): passe o mouse, clique em **⋯ → Editar**. O balão vira um campo: **Enter** salva, **⇧Enter**
+  quebra a linha, **Esc** cancela. Depois aparece "(editada)".
+- **Apagar** (só as suas): **⋯ → Apagar** e confirme. A mensagem some para todos. Se ela tiver respostas no fio, o
+  Google Chat não deixa apagar pelo Quill (só junto com as respostas, no Google Chat).
+- Pelo teclado: **Tab** até a mensagem mostra os mesmos botões.
+
 Outros botões: **fixar** a conversa (fica em "Fixadas", só neste Mac), **buscar** nas mensagens carregadas, **ligar**
 e **nova conversa** (abrem o Google Chat no navegador). As mensagens novas chegam a cada 8 segundos com a tela aberta.
 
@@ -245,5 +255,7 @@ do cabeçalho.
 | Chat: "Entre de novo com a conta para liberar o Chat" | A conta entrou antes das permissões do Chat | Clicar em **Entrar de novo** |
 | Chat: "ainda não foi liberado para o Quill no Google Cloud" | Falta configurar o app de Chat no projeto do Google Cloud | Google Cloud → Google Chat API → Configuração |
 | Chat: não grava áudio | Microfone negado ao Quill | Ajustes do Sistema → Privacidade e Segurança → Microfone → ligar o Quill |
+| Chat: reação sua não fica azul | Você reagiu pelo celular ou navegador: a API só informa a contagem, não quem reagiu | Clicar no chip reage de novo; o Quill percebe que já era sua e passa a destacar |
+| Chat: "Essa mensagem tem respostas" ao apagar | O Google só apaga junto com as respostas do fio | Apagar pelo Google Chat, se quiser apagar tudo |
 | Chat: mensagem nova demora | A tela busca a cada 8 s, só com a janela à vista | Esperar alguns segundos ou trocar de conversa e voltar |
 | Agendei o envio e não saiu | Agendar envio ainda não funciona | Enviar na hora |

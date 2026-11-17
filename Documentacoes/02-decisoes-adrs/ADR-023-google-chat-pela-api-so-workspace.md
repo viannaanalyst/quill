@@ -1,6 +1,6 @@
 ---
 type: adr
-tags: [quill, adr, google-chat, workspace, anexos, audio]
+tags: [quill, adr, google-chat, workspace, anexos, audio, reacoes]
 updated: 2026-11-17
 ---
 
@@ -57,3 +57,33 @@ do Google Chat tem limites que mudam o que dá para mostrar:
 - **`chat.users.readstate.readonly` para as não lidas:** seria um pedido por conversa a cada atualização e mais uma
   permissão; o controle no app resolve sem custo. Pode entrar depois para acompanhar a leitura feita em outro lugar.
 - **Mostrar o Chat do Google numa janela web dentro do app:** sem o visual do Quill e com o login do Google na janela.
+
+## Acréscimo (2026-11-17): reações, editar e apagar
+
+**Contexto**
+A permissão `chat.messages`, que já estava no login, cobre `reactions.create`, `reactions.list`, `reactions.delete`,
+`messages.patch` e `messages.delete` (conferido na documentação da API). Mas:
+- a mensagem traz só o resumo das reações (`emojiReactionSummaries`: emoji e contagem), **sem dizer se a própria conta
+  reagiu**;
+- para tirar uma reação é preciso o nome dela (`…/reactions/<id>`), que só vem pelo `reactions.list`;
+- apagar mensagem que tem respostas no fio falha, a não ser com `force=true`, que apaga as respostas de todo mundo;
+- a documentação não diz o que acontece ao reagir duas vezes com o mesmo emoji.
+
+**Decisão**
+- **Reações suas guardadas no app** (`quill.chat.reacted`, até 2.000 mensagens): o chip fica azul quando o emoji está
+  nessa lista e a mensagem ainda mostra a reação. Buscar `reactions.list` de cada mensagem a cada 8 s seria um pedido
+  por mensagem; fica só para a hora de tirar a reação.
+- **Tirar reação:** `reactions.list` com o filtro `emoji.unicode = "…" AND user.name = "users/<próprio id>"`, e o
+  Quill confere de novo que a reação é da própria conta antes de apagar.
+- **Reagir duas vezes:** se o Google responder 409, o Quill trata como "já era sua" (não soma de novo).
+- **Editar** só o texto (`updateMask=text`); a mensagem mostra "(editada)" quando `lastUpdateTime` é depois do envio.
+- **Apagar sem `force`:** o Quill nunca apaga respostas de outras pessoas; se o Google recusar, aparece a frase
+  "Essa mensagem tem respostas…".
+- Emoji próprio da empresa (sem unicode) não aparece nos chips.
+- A tela muda na hora (contagem, texto, mensagem saindo com animação) e volta ao que era se o Google recusar.
+
+**Consequências**
+- Reações feitas pelo celular ou pelo navegador aparecem na contagem, mas sem o destaque azul até você clicar nelas
+  no Quill.
+- Editar e apagar respostas dentro do fio (a lista aberta em "N respostas") ainda não têm botão; reagir nelas, sim,
+  pelos chips.

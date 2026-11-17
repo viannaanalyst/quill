@@ -745,3 +745,12 @@
   width: 13px;
   height: 13px;
 }
+.st-sound {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.st-sound .st-sound-play {
+  width: 30px;
+  height: 30px;
+}

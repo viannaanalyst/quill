@@ -165,3 +165,27 @@ Baseado no `git log` e nas mensagens dos commits. Horários em Brasília (UTC−
 - Prévia do navegador: `?screen=chat`, com `&chat=none` (sem Workspace), `&chat=rec` (gravando) e `&chat=att`
   (enviando anexos), com conversas de exemplo. Ainda não testado no Mac.
 
+
+### Notificações do sistema e sons
+
+- Avisos do macOS (plugin de notificação do Tauri, permissão `notification:default`) quando chega e-mail novo na Entrada
+  ou mensagem no Chat. Com o Quill na frente, só toca o som; com o Quill atrás, aparece o aviso do sistema.
+- Respeita Ajustes → Notificações: avisar e-mail, avisar Chat (novo), tocar som, "Só de pessoas" (ignora remetentes
+  automáticos como no-reply e newsletter) e horário silencioso.
+- Seis sons gerados para o Quill (Pop, Gota, Sino, Cristal, Marimba, Brisa), escolhidos separadamente para e-mail e
+  Chat, com botão para ouvir. O Gabriel escolheu **Pop** como padrão.
+
+### Chat: reações, editar e apagar
+
+- **Reações:** chips com emoji e contagem embaixo da mensagem (`emojiReactionSummaries`); a sua fica azul. Ao passar o
+  mouse, botão de reagir com 6 rápidas (👍 ❤️ 😂 😮 😢 🙏) e "+" com todos os emojis (a lista do Escrever foi para
+  `src/lib/emojis.ts`, com nomes para leitor de tela). Clicar no seu chip tira a reação (`reactions.list` filtrado pelo
+  próprio id + `reactions.delete`). Como a API não diz quem reagiu, o Quill guarda as suas em `quill.chat.reacted`.
+- **Editar** (só as suas, menu ⋯): o balão vira campo no lugar, Enter salva e Esc cancela (`messages.patch` com
+  `updateMask=text`); aparece "(editada)" pelo `lastUpdateTime`.
+- **Apagar** (só as suas, menu ⋯): confirmação com `askConfirm`, `messages.delete` sem `force` e a mensagem sai com
+  animação. Mensagem com respostas no fio: o Google recusa e aparece frase clara.
+- Tudo muda na hora na tela e volta se o Google recusar. Comandos novos `chat_react`, `chat_unreact`, `chat_edit` e
+  `chat_delete`; 17 testes novos (264 no total). Decisões no acréscimo do
+  [ADR-023](02-decisoes-adrs/ADR-023-google-chat-pela-api-so-workspace.md).
+- Conferido na prévia (claro e escuro); ainda não testado no Mac.
