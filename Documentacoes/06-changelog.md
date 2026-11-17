@@ -133,3 +133,6 @@ Baseado no `git log` e nas mensagens dos commits. Horários em Brasília (UTC−
 - Testado no Mac em 2026-11-17, sem fazer login: a janela abre (com o Safari como navegador, é uma janela do Safari
   sem barra de endereço, não uma folha presa ao Quill); fechar a janela cancela a espera; Cancelar no Quill fecha a
   janela. O login completo fica para o Gabriel testar.
+- "Mais cores" virou uma roda de cores (todas as cores; o centro é claro, a borda é forte), com barra de brilho, cinzas
+  e código #RRGGBB; funciona com mouse e teclado.
+- Prévias do Chat no Doop mais leves: as animações rodam uma vez só e os ícones carregam sem travar o desenho.
