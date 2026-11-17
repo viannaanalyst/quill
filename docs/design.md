@@ -54,6 +54,12 @@ Escala: título do cabeçalho 20/400 · saudação 24/600 · título de cartão 
   - Escuro: preenchimento rgba(255,255,255,.05), contorno rgba(255,255,255,.09).
 - **Nunca botão verde.**
 
+## Eventos e agenda
+
+- **Sem barrinha lateral colorida** nos eventos. O bloco do evento usa só um fundo suave na cor da agenda.
+- Nas listas de compromissos, a cor da agenda aparece como uma bolinha de 8px ao lado do horário.
+- Convite sem resposta: listrado, com contorno na cor da agenda.
+
 ## Cartões
 
 Cantos de 20px, borda de 1px, sombra 0 1px 2px rgba(0,0,0,.04).

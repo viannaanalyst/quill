@@ -880,3 +880,22 @@
     transform: scale(1);
   }
 }
+
+/* Na janela nativa a própria janela já é a moldura (cantos arredondados do sistema):
+   a ilustração vai até a borda, como as barras laterais dos apps da Apple,
+   e os botões da janela ficam por cima do céu. */
+.is-native .ob {
+  padding: 0;
+}
+.is-native .ob-panel {
+  border: 0;
+  border-radius: 0;
+}
+.is-native .ob-art {
+  margin: 0;
+  border-radius: 0;
+}
+.is-native .ob-panel > .window-lights {
+  left: 14px;
+  top: 22px;
+}

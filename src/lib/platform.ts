@@ -10,3 +10,13 @@ export function applyDevTheme() {
     document.documentElement.dataset.theme = theme;
   }
 }
+
+/**
+ * Marca a página quando roda dentro da janela nativa (ou simula com ?native=1 na prévia),
+ * para ajustes que só fazem sentido com a moldura real do sistema.
+ */
+export function applyPlatformClass() {
+  if (isTauri || devParams.get("native") === "1") {
+    document.documentElement.classList.add("is-native");
+  }
+}
