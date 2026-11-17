@@ -288,6 +288,6 @@ No Mac:
 - **Ainda não testado no Mac:** tudo o que entrou a partir do commit `37189cc`, incluindo iCloud, "Outro e-mail",
   Touch ID, envio, rascunhos, desfazer envio, Google Agenda, editor novo e prévia de anexos. Lista em
   [00-visao-geral.md](00-visao-geral.md).
-- Tamanho do app: cerca de 6 MB, segundo a montagem no Mac em 2026-11-17 (não medido de novo para esta documentação).
+- Tamanho do app: 10,67 MB (Quill.app) e 6,87 MB (.dmg) na montagem do commit `198985e` em 2026-11-17; eram 6,4 MB antes de IMAP, CalDAV e das ilustrações.
 
 Não há testes automáticos das telas (Playwright) nem de ponta a ponta.
