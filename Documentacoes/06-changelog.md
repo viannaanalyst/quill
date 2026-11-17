@@ -104,3 +104,5 @@ Baseado no `git log` e nas mensagens dos commits. Horários em Brasília (UTC−
 
 - "Confirmar antes de apagar" agora vale de verdade (ligado por padrão) e usa a janela própria do Quill; o
   `window.confirm` do navegador não funciona dentro do app.
+- Filtro de contas mostra a foto real de cada conta (a do Google, ou a escolhida no Quill para a conta principal), com
+  o logo do serviço só quando não há foto.

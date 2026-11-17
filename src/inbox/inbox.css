@@ -681,3 +681,12 @@
   padding: 1px 7px;
   font-variant-numeric: tabular-nums;
 }
+.inbox-acc-logo.has-photo {
+  border-radius: 50%;
+  background: none;
+  box-shadow: none;
+}
+.inbox-acc-logo.has-photo .photo {
+  width: 22px;
+  height: 22px;
+}

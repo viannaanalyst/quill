@@ -34,6 +34,7 @@ import type { Account, AccountId, Message } from "./types";
 import { bulkAction, folderMessages, loadFolder, markReadRemote, refreshMailbox, useMailbox, type FolderId } from "../state/mailbox";
 import { SliderGroup } from "../components/SliderGroup";
 import { usePref } from "../lib/usePref";
+import { AccountPhoto, AVATAR_PREF } from "../components/MyAvatar";
 import { ConnectGoogleButton } from "../components/ConnectGoogle";
 import { Banner } from "./Banner";
 import { isTauri } from "../lib/platform";
@@ -348,6 +349,9 @@ export default function Inbox({ folder: folderParam }: { folder: string }) {
 
 /** Filtro por conta: pílulas compactas com o destaque que desliza (some quando há uma conta só). */
 function AccountsBar({ accounts, filter, onChange }: { accounts: Account[]; filter: Filter; onChange: (f: Filter) => void }) {
+  const profiles = useMailbox((s) => s.profiles);
+  const firstEmail = useMailbox((s) => s.connected[0]?.email);
+  const [customPhoto] = usePref<string | null>(AVATAR_PREF, null);
   const total = accounts.reduce((sum, a) => sum + a.unread, 0);
   return (
     <SliderGroup activeKey={filter} className="inbox-accounts" role="group" label="Contas">
@@ -358,8 +362,13 @@ function AccountsBar({ accounts, filter, onChange }: { accounts: Account[]; filt
       </button>
       {accounts.map((a) => (
         <button key={a.id} className="inbox-acc" aria-pressed={filter === a.id} onClick={() => onChange(a.id)} data-tip={a.id}>
-          <span className="inbox-acc-logo">
-            <Logo name={a.logo} size={13} />
+          {/* foto da conta (Google ou a escolhida no Quill); sem foto, o logo do serviço */}
+          <span className={`inbox-acc-logo${profiles[a.id]?.picture || a.id === firstEmail ? " has-photo" : ""}`}>
+            {profiles[a.id]?.picture || (a.id === firstEmail && customPhoto) ? (
+              <AccountPhoto email={a.id} size={22} />
+            ) : (
+              <Logo name={a.logo} size={13} />
+            )}
             <i style={{ background: a.color }} />
           </span>
           {a.name}
