@@ -24,16 +24,15 @@ import {
   Star,
   Video,
 } from "../components/icons";
-import { ACCOUNTS, ACCOUNT_BY_ID, AGENDA, MESSAGES, PENDING_INVITE, TODAY_LABEL, WEEK } from "./sampleData";
-import type { AccountId, AgendaItem, Message } from "./types";
+import { ACCOUNT_BY_ID, AGENDA, PENDING_INVITE, TODAY_LABEL, WEEK } from "./sampleData";
+import type { Account, AccountId, AgendaItem, Message } from "./types";
+import { loadMailbox, markReadRemote, useMailbox } from "../state/mailbox";
 import { markRead, navigate, useStore } from "../state/store";
 
 type Filter = "all" | AccountId;
 
-const TOTAL_UNREAD = ACCOUNTS.reduce((sum, a) => sum + a.unread, 0);
-
 export const FOLDERS = [
-  { id: "inbox", label: "Entrada", icon: InboxIcon, count: TOTAL_UNREAD },
+  { id: "inbox", label: "Entrada", icon: InboxIcon, count: 0 },
   { id: "starred", label: "Importantes", icon: Star, count: 6 },
   { id: "sent", label: "Enviados", icon: Send },
   { id: "drafts", label: "Rascunhos", icon: FileText, count: 2 },
@@ -46,6 +45,13 @@ export default function Inbox({ folder }: { folder: string }) {
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [query, setQuery] = useState("");
   const readIds = useStore((s) => s.readIds);
+  const accounts = useMailbox((s) => s.accounts);
+  const messages = useMailbox((s) => s.messages);
+  const live = useMailbox((s) => s.live);
+  const status = useMailbox((s) => s.status);
+  const needsLogin = useMailbox((s) => s.needsLogin);
+  const accountById = useMemo(() => new Map(accounts.map((a) => [a.id, a])), [accounts]);
+  const totalUnread = accounts.reduce((sum, a) => sum + a.unread, 0);
   const folderInfo = FOLDERS.find((f) => f.id === folder) ?? FOLDERS[0];
 
   const isUnread = (m: Message) => m.unread && !readIds.has(m.id);
@@ -54,16 +60,17 @@ export default function Inbox({ folder }: { folder: string }) {
   const visible = useMemo(() => {
     if (folder !== "inbox") return [];
     const q = query.trim().toLocaleLowerCase("pt-BR");
-    return MESSAGES.filter((m) => {
+    return messages.filter((m) => {
       if (filter !== "all" && m.account !== filter) return false;
       if (unreadOnly && !(m.unread && !readIds.has(m.id))) return false;
       if (q && !`${m.from} ${m.subject} ${m.preview}`.toLocaleLowerCase("pt-BR").includes(q)) return false;
       return true;
     });
-  }, [folder, filter, unreadOnly, query, readIds]);
+  }, [folder, filter, unreadOnly, query, readIds, messages]);
 
   const open = (id: string) => {
     markRead(id);
+    markReadRemote(id);
     navigate({ name: "read", id });
   };
 
@@ -71,11 +78,11 @@ export default function Inbox({ folder }: { folder: string }) {
     <>
       <TopBar
         title="Caixa de entrada"
-        sub="1.284 e-mails"
+        sub={live ? `${messages.length} e-mails recentes` : "1.284 e-mails"}
         search={query}
         onSearch={setQuery}
         actions={
-          <button className="btn glass ic" aria-label="Atualizar" data-tip="Atualizar">
+          <button className="btn glass ic" aria-label="Atualizar" data-tip="Atualizar" onClick={() => void loadMailbox()}>
             <RefreshCw size={17} aria-hidden />
           </button>
         }
@@ -98,7 +105,7 @@ export default function Inbox({ folder }: { folder: string }) {
               >
                 <f.icon size={17} aria-hidden />
                 {f.label}
-                {"count" in f && <span className="count">{f.count}</span>}
+                {"count" in f && <span className="count">{f.id === "inbox" ? totalUnread : f.count}</span>}
               </button>
             ))}
           </nav>
@@ -106,13 +113,13 @@ export default function Inbox({ folder }: { folder: string }) {
 
         <div className="content">
           <div className="col-main">
-            <AccountsBar filter={filter} onChange={setFilter} />
+            <AccountsBar accounts={accounts} filter={filter} onChange={setFilter} />
 
             <section className="card list" aria-label="E-mails">
               <div className="list-head">
                 <span className="checkbox" aria-hidden />
                 <span>
-                  {folderInfo.label} · {filter === "all" ? "todas as contas" : ACCOUNT_BY_ID.get(filter)?.name}
+                  {folderInfo.label} · {filter === "all" ? "todas as contas" : accountById.get(filter)?.name}
                 </span>
                 <div className="segmented" role="group" aria-label="Mostrar" style={{ marginLeft: "auto" }}>
                   <button aria-pressed={!unreadOnly} onClick={() => setUnreadOnly(false)}>Todas</button>
@@ -124,15 +131,22 @@ export default function Inbox({ folder }: { folder: string }) {
               </div>
 
               <div className="list-scroll">
-                {folder === "inbox" && <Banner />}
-                {visible.length === 0 ? (
+                {folder === "inbox" && <Banner unread={messages.filter(isUnread).length} accounts={accounts.length} />}
+                {needsLogin.length > 0 && (
+                  <p className="list-empty" role="alert">
+                    {needsLogin.join(", ")} precisa entrar de novo. Abra Ajustes → Contas.
+                  </p>
+                )}
+                {visible.length === 0 && live && status === "loading" ? (
+                  <p className="list-empty" role="status">Carregando seus e-mails…</p>
+                ) : visible.length === 0 ? (
                   <p className="list-empty">
                     {folder === "inbox" ? "Nenhum e-mail com esse filtro." : `Nada em ${folderInfo.label} por enquanto.`}
                   </p>
                 ) : (
                   <ul className="rows">
                     {visible.map((m) => (
-                      <MessageRow key={m.id} message={m} unread={isUnread(m)} onOpen={() => open(m.id)} />
+                      <MessageRow key={m.id} message={m} account={accountById.get(m.account)} unread={isUnread(m)} onOpen={() => open(m.id)} />
                     ))}
                   </ul>
                 )}
@@ -165,7 +179,8 @@ export default function Inbox({ folder }: { folder: string }) {
   );
 }
 
-function AccountsBar({ filter, onChange }: { filter: Filter; onChange: (f: Filter) => void }) {
+function AccountsBar({ accounts, filter, onChange }: { accounts: Account[]; filter: Filter; onChange: (f: Filter) => void }) {
+  const total = accounts.reduce((sum, a) => sum + a.unread, 0);
   return (
     <div className="card accounts" role="group" aria-label="Contas">
       <button className="account" aria-pressed={filter === "all"} onClick={() => onChange("all")}>
@@ -174,11 +189,11 @@ function AccountsBar({ filter, onChange }: { filter: Filter; onChange: (f: Filte
         </span>
         <span className="account-text">
           <span className="account-name" style={{ display: "block" }}>Todas</span>
-          <span className="account-sub" style={{ display: "block" }}>{ACCOUNTS.length} contas</span>
+          <span className="account-sub" style={{ display: "block" }}>{accounts.length} {accounts.length === 1 ? "conta" : "contas"}</span>
         </span>
-        <span className="account-count" aria-label={`${TOTAL_UNREAD} não lidos`}>{TOTAL_UNREAD}</span>
+        <span className="account-count" aria-label={`${total} não lidos`}>{total}</span>
       </button>
-      {ACCOUNTS.map((a) => (
+      {accounts.map((a) => (
         <button key={a.id} className="account" aria-pressed={filter === a.id} onClick={() => onChange(a.id)}>
           <span className="account-logo">
             <Logo name={a.logo} size={17} />
@@ -195,8 +210,7 @@ function AccountsBar({ filter, onChange }: { filter: Filter; onChange: (f: Filte
   );
 }
 
-function MessageRow({ message: m, unread, onOpen }: { message: Message; unread: boolean; onOpen: () => void }) {
-  const account = ACCOUNT_BY_ID.get(m.account)!;
+function MessageRow({ message: m, account, unread, onOpen }: { message: Message; account?: Account; unread: boolean; onOpen: () => void }) {
   return (
     <li className={`row${unread ? " unread" : ""}`}>
       <button className="row-hit" onClick={onOpen} aria-label={`${unread ? "Não lido. " : ""}${m.from}: ${m.subject}`} />
@@ -205,10 +219,12 @@ function MessageRow({ message: m, unread, onOpen }: { message: Message; unread: 
         <div className="row-top">
           <span className="row-from">{m.from}</span>
           {m.verified && <VerifiedBadge />}
-          <span className="acct">
-            <i style={{ background: account.color }} />
-            {account.name}
-          </span>
+          {account && (
+            <span className="acct">
+              <i style={{ background: account.color }} />
+              {account.name}
+            </span>
+          )}
           <span className="row-date">{m.date}</span>
         </div>
         <div className="row-subject">{m.subject}</div>
@@ -299,7 +315,7 @@ function Envelope({ x, y, w, rotate }: { x: number; y: number; w: number; rotate
 }
 
 /** Banner ilustrado do topo da lista (de dia no claro, à noite no escuro). */
-function Banner() {
+function Banner({ unread, accounts }: { unread: number; accounts: number }) {
   return (
     <div className="banner">
       <svg viewBox="0 0 1000 112" preserveAspectRatio="xMidYMid slice" aria-hidden>
@@ -345,7 +361,9 @@ function Banner() {
       </svg>
       <div className="banner-text">
         <h2>Bom dia, Gabriel</h2>
-        <p>12 e-mails novos em 5 contas · 3 compromissos hoje</p>
+        <p>
+          {unread} {unread === 1 ? "e-mail novo" : "e-mails novos"} em {accounts} {accounts === 1 ? "conta" : "contas"} · 3 compromissos hoje
+        </p>
       </div>
     </div>
   );

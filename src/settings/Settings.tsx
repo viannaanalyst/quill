@@ -25,6 +25,9 @@ import {
 import { ACCOUNTS } from "../inbox/sampleData";
 import type { AccountId } from "../inbox/types";
 import { SENDER_EMAILS } from "../compose/contacts";
+import { isTauri } from "../lib/platform";
+import { friendlyError } from "../lib/api";
+import { disconnect, signInWithGoogle, useMailbox } from "../state/mailbox";
 
 type Vars = CSSProperties & Record<`--${string}`, string>;
 
@@ -87,6 +90,26 @@ export default function Settings({ onRestartOnboarding }: { onRestartOnboarding:
   const [prefs, setPrefs] = useState(INITIAL);
   const [confirming, setConfirming] = useState(false);
   const [icloudFixed, setIcloudFixed] = useState(false);
+  const connected = useMailbox((s) => s.connected);
+  const live = isTauri && connected.length > 0;
+  const [addStatus, setAddStatus] = useState<string | null>(null);
+  const [confirmEmail, setConfirmEmail] = useState<string | null>(null);
+
+  /** Adicionar conta: Google abre o login de verdade (no app); os outros serviços ainda não. */
+  const addAccount = async (provider: string) => {
+    if (!isTauri) return;
+    if (provider !== "Google") {
+      setAddStatus("Por enquanto só o Google está disponível. Microsoft, iCloud e IMAP vêm em seguida.");
+      return;
+    }
+    setAddStatus("Termine o login na janela do navegador que abriu…");
+    try {
+      const a = await signInWithGoogle();
+      setAddStatus(`${a.email} conectada.`);
+    } catch (e) {
+      setAddStatus(friendlyError(e));
+    }
+  };
 
   const update = (id: AccountId, patch: Partial<AccountPrefs>) => setPrefs((p) => ({ ...p, [id]: { ...p[id], ...patch } }));
   const account = ACCOUNTS.find((a) => a.id === selected)!;
@@ -129,13 +152,42 @@ export default function Settings({ onRestartOnboarding }: { onRestartOnboarding:
                 <div className="st-list-head">
                   <div>
                     <h2 className="st-title">Suas contas</h2>
-                    <div className="st-sub">{ACCOUNTS.length} contas · arraste para mudar a ordem na caixa de entrada</div>
+                    <div className="st-sub">
+                      {live ? connected.length : ACCOUNTS.length} {(live ? connected.length : ACCOUNTS.length) === 1 ? "conta" : "contas"} · arraste para mudar a ordem na caixa de entrada
+                    </div>
                   </div>
-                  <button className="btn solid">
+                  <button className="btn solid" onClick={() => void addAccount("Google")}>
                     <Plus size={16} aria-hidden />
                     Adicionar conta
                   </button>
                 </div>
+                {live ? (
+                  <ul className="st-accounts">
+                    {connected.map((acc, i) => (
+                      <li key={acc.email} className="st-account">
+                        <span className="st-logo">
+                          <Logo name={acc.email.includes("inchurch") ? "inchurch" : "gmail"} size={21} />
+                          <i style={{ background: ["#5A8CB7", "#7C9A74", "#C8925A", "#7A8CA8", "#A592B8"][i % 5] }} />
+                        </span>
+                        <div className="st-account-body">
+                          <div className="st-account-name">
+                            {acc.email.endsWith("@gmail.com") ? acc.email.split("@")[0] : acc.email.split("@")[1].split(".")[0]}
+                            <span className="chip">{acc.email.endsWith("@gmail.com") ? "Gmail" : "Google Workspace"}</span>
+                          </div>
+                          <div className="st-account-mail">{acc.email}</div>
+                          <div className="st-status">
+                            <CircleCheck size={13} aria-hidden />
+                            Conectada · Gmail API
+                          </div>
+                        </div>
+                        <button className="btn glass sm danger" style={{ position: "relative", zIndex: 2 }} onClick={() => setConfirmEmail(acc.email)}>
+                          <LogOut size={14} aria-hidden />
+                          Desconectar
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
                 <ul className="st-accounts">
                   {ACCOUNTS.map((a) => {
                     const p = prefs[a.id];
@@ -181,9 +233,12 @@ export default function Settings({ onRestartOnboarding }: { onRestartOnboarding:
                     );
                   })}
                 </ul>
+                )}
                 <div className="st-add">
                   <div className="st-add-title">Adicionar outra conta</div>
-                  <div className="st-add-sub">Você entra pela página oficial do serviço; o Quill nunca vê sua senha principal.</div>
+                  <div className="st-add-sub" role="status">
+                    {addStatus ?? "Você entra pela página oficial do serviço; o Quill nunca vê sua senha principal."}
+                  </div>
                   <div className="st-providers">
                     {[
                       { logo: "gmail" as const, name: "Google", sub: "Gmail ou Google Workspace" },
@@ -191,7 +246,7 @@ export default function Settings({ onRestartOnboarding }: { onRestartOnboarding:
                       { logo: "icloud" as const, name: "iCloud", sub: "Com senha de app da Apple" },
                       { logo: null, name: "Outro", sub: "Qualquer e-mail com IMAP" },
                     ].map((p) => (
-                      <button key={p.name} className="st-provider">
+                      <button key={p.name} className="st-provider" onClick={() => void addAccount(p.name)}>
                         <span className="st-logo">{p.logo ? <Logo name={p.logo} size={17} /> : <Server size={17} aria-hidden />}</span>
                         <span className="st-provider-name">{p.name}</span>
                         <span className="st-provider-sub">{p.sub}</span>
@@ -315,6 +370,17 @@ export default function Settings({ onRestartOnboarding }: { onRestartOnboarding:
           </>
         )}
       </div>
+      {confirmEmail && (
+        <ConfirmDisconnect
+          name={confirmEmail}
+          onCancel={() => setConfirmEmail(null)}
+          onConfirm={() => {
+            const email = confirmEmail;
+            setConfirmEmail(null);
+            void disconnect(email).catch((e) => setAddStatus(friendlyError(e)));
+          }}
+        />
+      )}
       {confirming && <ConfirmDisconnect name={sel.nickname} onCancel={() => setConfirming(false)} onConfirm={() => setConfirming(false)} />}
     </>
   );

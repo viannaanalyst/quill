@@ -34,6 +34,13 @@ App de e-mail e calendário, **macOS primeiro**, depois Windows. Começou como u
   - telas pesadas com carregamento sob demanda (`React.lazy`);
   - animações só com `transform`/`opacity`.
 
+## Login e segredos
+
+- Credenciais do app do Google (OAuth "App para computador"): no **Infisical, projeto `quill`** (`.infisical.json` na raiz), variáveis `GOOGLE_OAUTH_CLIENT_ID` e `GOOGLE_OAUTH_CLIENT_SECRET` (ambientes `dev` e `prod`).
+- O `src-tauri/build.rs` embute as duas na montagem, vindas das variáveis (`infisical run --env=prod -- npm run tauri build`) ou do arquivo `src-tauri/oauth.local.env` (fora do git). Sem elas o app monta, mas o login avisa "não configurado".
+- O app do Google está em **Testando** (usuários de teste: as contas do Gabriel). Nesse modo o Google desconecta a cada 7 dias; para publicar faltam página inicial e política de privacidade na aba Branding.
+- Lógica do login e do Gmail em `src-tauri/crates/quill-core` (testes: `cargo test --features net` dentro dessa pasta; roda até na VPS). Tokens de acesso permanentes ficam nas Chaves do sistema (`keyring`), nunca em arquivo.
+
 ## Fluxo de trabalho
 
 - Conferir as telas na **prévia** (navegador) com prints, em claro e escuro. **Não remontar o app no Mac a cada mudança** (pedido do Gabriel, para economizar): montar só quando terminar uma etapa grande ou quando for preciso ver algo que só existe na janela nativa.

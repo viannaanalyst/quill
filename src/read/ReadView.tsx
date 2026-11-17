@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./read.css";
 import { TopBar } from "../components/TopBar";
 import { InviteGate, RsvpButtons } from "../components/Rsvp";
@@ -38,26 +38,26 @@ import {
   X,
 } from "../components/icons";
 import { MessageAvatar } from "../components/MessageAvatar";
-import { ACCOUNT_BY_ID, MESSAGES } from "../inbox/sampleData";
-import type { Message } from "../inbox/types";
+import type { Account, Message } from "../inbox/types";
+import { loadBody, markReadRemote, useMailbox } from "../state/mailbox";
 import { markRead, markUnread, navigate } from "../state/store";
 import { THREADS, type Attachment, type Thread } from "./threads";
 
 /** Conversa de um e-mail: a de exemplo completa ou uma versão simples montada a partir da prévia. */
-function threadFor(m: Message): Thread {
-  return (
-    THREADS[m.id] ?? {
-      email: `${m.from.toLowerCase().replace(/[^a-z]/g, "")}@exemplo.com`,
-      to: "para mim",
-      date: m.date,
-      labels: [],
-      earlier: [],
-      body: [m.preview],
-      attachments: m.attachment ? [{ name: m.attachment, kind: "file", size: "—" }] : [],
-      senderRole: ACCOUNT_BY_ID.get(m.account)!.name,
-      history: [],
-    }
-  );
+function threadFor(m: Message, account: Account | undefined, body: string | undefined): Thread {
+  if (THREADS[m.id]) return THREADS[m.id];
+  const text = m.accountEmail ? (body ?? "Carregando o e-mail…") : m.preview;
+  return {
+    email: m.fromEmail ?? `${m.from.toLowerCase().replace(/[^a-z]/g, "")}@exemplo.com`,
+    to: m.accountEmail ? `para ${m.accountEmail}` : "para mim",
+    date: m.date,
+    labels: [],
+    earlier: [],
+    body: text.split(/\n{2,}/),
+    attachments: m.attachment && !m.accountEmail ? [{ name: m.attachment, kind: "file", size: "—" }] : [],
+    senderRole: account?.name ?? "",
+    history: [],
+  };
 }
 
 function AttachmentIcon({ kind, size }: { kind: Attachment["kind"]; size: number }) {
@@ -69,10 +69,42 @@ function AttachmentIcon({ kind, size }: { kind: Attachment["kind"]; size: number
 }
 
 export default function ReadView({ id }: { id: string }) {
-  const index = Math.max(0, MESSAGES.findIndex((m) => m.id === id));
-  const m = MESSAGES[index];
-  const t = threadFor(m);
-  const account = ACCOUNT_BY_ID.get(m.account)!;
+  const messages = useMailbox((s) => s.messages);
+  const accounts = useMailbox((s) => s.accounts);
+  const body = useMailbox((s) => s.bodies[id]);
+  const index = messages.findIndex((x) => x.id === id);
+
+  // e-mail real: busca o texto completo na primeira abertura
+  useEffect(() => {
+    void loadBody(id);
+  }, [id]);
+
+  if (index < 0) {
+    return (
+      <div className="list-empty" style={{ margin: "auto" }}>
+        Esse e-mail não está mais na caixa de entrada.{" "}
+        <button className="btn glass sm" onClick={() => navigate({ name: "inbox", folder: "inbox" })}>Voltar</button>
+      </div>
+    );
+  }
+  const m = messages[index];
+  const account = accounts.find((a) => a.id === m.account);
+  return <ReadMessage key={id} m={m} t={threadFor(m, account, body)} account={account} index={index} messages={messages} />;
+}
+
+function ReadMessage({
+  m,
+  t,
+  account,
+  index,
+  messages,
+}: {
+  m: Message;
+  t: Thread;
+  account: Account | undefined;
+  index: number;
+  messages: Message[];
+}) {
   const firstName = m.from.split(" ")[0];
 
   const [openEarlier, setOpenEarlier] = useState<Set<number>>(() => new Set());
@@ -83,9 +115,10 @@ export default function ReadView({ id }: { id: string }) {
 
   const back = () => navigate({ name: "inbox", folder: "inbox" });
   const go = (delta: number) => {
-    const next = MESSAGES[index + delta];
+    const next = messages[index + delta];
     if (!next) return;
     markRead(next.id);
+    markReadRemote(next.id);
     navigate({ name: "read", id: next.id });
   };
   const toggleEarlier = (i: number) =>
@@ -165,11 +198,11 @@ export default function ReadView({ id }: { id: string }) {
             <Folder size={17} aria-hidden />
           </button>
           <div className="rd-nav">
-            {index + 1} de {MESSAGES.length}
+            {index + 1} de {messages.length}
             <button className="btn glass ic" aria-label="E-mail anterior" data-tip="Anterior" onClick={() => go(-1)} disabled={index === 0}>
               <ChevronUp size={17} aria-hidden />
             </button>
-            <button className="btn glass ic" aria-label="Próximo e-mail" data-tip="Próximo" onClick={() => go(1)} disabled={index === MESSAGES.length - 1}>
+            <button className="btn glass ic" aria-label="Próximo e-mail" data-tip="Próximo" onClick={() => go(1)} disabled={index === messages.length - 1}>
               <ChevronDown size={17} aria-hidden />
             </button>
           </div>
@@ -181,10 +214,12 @@ export default function ReadView({ id }: { id: string }) {
               <header className="rd-head">
                 <h1 className="rd-subject">{m.subject}</h1>
                 <div className="rd-chips">
-                  <span className="acct">
-                    <i style={{ background: account.color }} />
-                    {account.name}
-                  </span>
+                  {account && (
+                    <span className="acct">
+                      <i style={{ background: account.color }} />
+                      {account.name}
+                    </span>
+                  )}
                   {t.labels.map((l) => (
                     <span key={l} className="chip">
                       <Tag size={12} aria-hidden />

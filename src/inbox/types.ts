@@ -1,7 +1,7 @@
 import type { LogoName } from "../components/Logo";
 
-/** Identificador de uma conta conectada. */
-export type AccountId = "pessoal" | "moradah" | "inchurch" | "outlook" | "icloud";
+/** Identificador de uma conta: apelido nos dados de exemplo ("pessoal"…) ou o e-mail nas contas reais. */
+export type AccountId = string;
 
 export interface Account {
   id: AccountId;
@@ -33,6 +33,10 @@ export interface Message {
   attachment?: string;
   /** convite de agenda dentro do e-mail */
   invite?: boolean;
+  /** só nos e-mails reais: e-mail da conta e data em milissegundos (para ordenar) */
+  accountEmail?: string;
+  internalDate?: number;
+  fromEmail?: string;
 }
 
 export interface AgendaItem {

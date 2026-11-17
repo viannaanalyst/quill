@@ -1,0 +1,26 @@
+[package]
+name = "quill-core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+base64 = "0.23.1"
+getrandom = "0.4.3"
+keyring = { version = "3", features = ["apple-native", "windows-native"], optional = true }
+open = { version = "5.4.5", optional = true }
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "rustls", "http2"], optional = true }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.11.1"
+tokio = { version = "1.54.1", features = ["net", "io-util", "time", "macros", "rt"], optional = true }
+url = "2.5.8"
+
+[features]
+default = []
+# rede: conversa com o Google (o app usa; os testes de lógica não precisam)
+net = ["dep:reqwest", "dep:tokio"]
+# app de computador: cofre de senhas do sistema e abrir o navegador
+desktop = ["net", "dep:keyring", "dep:open"]
+
+[dev-dependencies]
+tokio = { version = "1.54.1", features = ["net", "io-util", "time", "macros", "rt", "rt-multi-thread"] }

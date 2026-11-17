@@ -19,6 +19,7 @@ tauri-build = { version = "2.7.5", features = [] }
 tauri = { version = "2.12.6", features = [] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+quill-core = { path = "crates/quill-core", features = ["desktop"] }
 
 # App mais leve no build final: otimiza para tamanho, junta tudo e tira símbolos de depuração.
 [profile.release]

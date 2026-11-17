@@ -23,7 +23,9 @@ import {
   ShieldCheck,
   User,
 } from "../components/icons";
-import { devParams } from "../lib/platform";
+import { devParams, isTauri } from "../lib/platform";
+import { friendlyError } from "../lib/api";
+import { signInWithGoogle, useMailbox } from "../state/mailbox";
 import { getPref, setPref } from "../lib/storage";
 
 const STAGE_W = 717;
@@ -83,6 +85,10 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
   const [touchId, setTouchId] = useState(() => getPref("touchId", true));
   // Demonstração: a conta da inchurch "termina de conectar" alguns segundos depois de chegar ao passo 6.
   const [waiting, setWaiting] = useState(true);
+  // login real (app no Mac): qual serviço está esperando o navegador e o erro, se houver
+  const [signingIn, setSigningIn] = useState<string | null>(null);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const connected = useMailbox((s) => s.connected);
   const artRef = useFitScale<HTMLDivElement>();
   const hidden = usePageHidden();
 
@@ -90,8 +96,27 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
   const back = () => setStep((s) => Math.max(s - 1, 1));
   const goTo = (s: number) => setStep(s);
 
+  /** Escolha do serviço no passo "Entrar". Na prévia do navegador só avança; no app abre o login de verdade. */
+  const choose = async (provider: string) => {
+    if (!isTauri) return goTo(6);
+    setLoginError(null);
+    if (provider !== "google") {
+      setLoginError("Por enquanto só o Google está disponível. Microsoft, iCloud e IMAP vêm em seguida.");
+      return;
+    }
+    setSigningIn("google");
+    try {
+      await signInWithGoogle();
+      goTo(6);
+    } catch (e) {
+      setLoginError(friendlyError(e));
+    } finally {
+      setSigningIn(null);
+    }
+  };
+
   useEffect(() => {
-    if (step !== LAST_STEP) return;
+    if (step !== LAST_STEP || isTauri) return;
     setWaiting(true);
     const t = window.setTimeout(() => setWaiting(false), 3500);
     return () => window.clearTimeout(t);
@@ -238,18 +263,34 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
           </p>
           <div className="providers">
             {PROVIDERS.map((p, i) => (
-              // O login de verdade (página oficial de cada serviço) entra na próxima etapa.
-              <button key={p.id} className={`provider${i === 0 ? " primary" : ""}`} onClick={() => goTo(6)}>
+              <button
+                key={p.id}
+                className={`provider${i === 0 ? " primary" : ""}`}
+                onClick={() => choose(p.id)}
+                disabled={signingIn !== null}
+                aria-busy={signingIn === p.id}
+              >
                 <span className="provider-logo">{p.logo ? <Logo name={p.logo} size={21} /> : <Server size={20} />}</span>
                 <span>
                   <span className="provider-name" style={{ display: "block" }}>{p.name}</span>
                   <span className="provider-sub" style={{ display: "block" }}>{p.sub}</span>
                 </span>
-                <span className="provider-arrow"><ArrowRight size={18} /></span>
+                <span className="provider-arrow">
+                  {signingIn === p.id ? <span className="spinner"><LoaderCircle size={18} /></span> : <ArrowRight size={18} />}
+                </span>
               </button>
             ))}
           </div>
-          <p className="small-note"><Lock size={14} />As outras contas você adiciona depois, quando quiser.</p>
+          {signingIn === "google" ? (
+            <p className="small-note" role="status">
+              <LoaderCircle size={14} />
+              Termine o login na janela do navegador que abriu. Depois, volte para cá.
+            </p>
+          ) : loginError ? (
+            <p className="small-note" role="alert" style={{ color: "var(--danger, #c2453d)" }}>{loginError}</p>
+          ) : (
+            <p className="small-note"><Lock size={14} />As outras contas você adiciona depois, quando quiser.</p>
+          )}
         </>
       );
       footer = <button className="btn glass lg" onClick={back}>Voltar</button>;
@@ -258,12 +299,26 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
       content = (
         <>
           <span className="eyebrow"><CircleCheck size={14} />Quase lá</span>
-          <h1 className="ob-title">{waiting ? "Suas contas estão chegando." : "Tudo pronto."}</h1>
+          <h1 className="ob-title">{isTauri ? "Conta conectada." : waiting ? "Suas contas estão chegando." : "Tudo pronto."}</h1>
           <p className="ob-lead">Os e-mails mais recentes já aparecem. O resto vai baixando em segundo plano.</p>
           <ul className="conn-list">
-            <ConnRow logo="gmail" name="Pessoal" mail="voce@gmail.com" ok />
-            <ConnRow logo="gmail" name="Moradah" mail="projeto@gmail.com" ok />
-            <ConnRow logo="inchurch" name="inchurch" mail="voce@empresa.com.br" ok={!waiting} />
+            {isTauri ? (
+              connected.map((a) => (
+                <ConnRow
+                  key={a.email}
+                  logo={a.email.includes("inchurch") ? "inchurch" : "gmail"}
+                  name={a.email.endsWith("@gmail.com") ? a.email.split("@")[0] : a.email.split("@")[1].split(".")[0]}
+                  mail={a.email}
+                  ok
+                />
+              ))
+            ) : (
+              <>
+                <ConnRow logo="gmail" name="Pessoal" mail="voce@gmail.com" ok />
+                <ConnRow logo="gmail" name="Moradah" mail="projeto@gmail.com" ok />
+                <ConnRow logo="inchurch" name="inchurch" mail="voce@empresa.com.br" ok={!waiting} />
+              </>
+            )}
           </ul>
         </>
       );

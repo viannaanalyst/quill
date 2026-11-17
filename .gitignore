@@ -25,3 +25,6 @@ dist/
 # Tauri / Rust
 src-tauri/target/
 src-tauri/gen/schemas/
+
+# credenciais locais do Google (vêm do Infisical)
+src-tauri/oauth.local.env
