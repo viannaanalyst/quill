@@ -681,6 +681,25 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            // A janela principal é criada aqui (no tauri.conf.json está com "create": false) para pegar os
+            // links dos e-mails: o quadro do e-mail não roda script, e no Mac (WebKit) ele também ignora o
+            // clique que a tela tenta capturar. Os links (target=_blank) viram pedido de janela nova, e
+            // aqui eles abrem no navegador padrão em vez de abrir dentro do app.
+            let main_cfg = app
+                .config()
+                .app
+                .windows
+                .iter()
+                .find(|w| w.label == "main")
+                .cloned()
+                .ok_or("janela principal sem configuração")?;
+            tauri::WebviewWindowBuilder::from_config(app.handle(), &main_cfg)?
+                .on_new_window(|url, _features| {
+                    let _ = quill_core::files::open_link(url.as_str());
+                    tauri::webview::NewWindowResponse::Deny
+                })
+                .build()?;
+
             let data_dir = app.path().app_data_dir()?;
             let accounts_file = data_dir.join("accounts.json");
             // um só item nas Chaves para todas as contas, aberto uma vez (o macOS pede a senha uma vez só)

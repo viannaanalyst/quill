@@ -25,7 +25,9 @@ fi
 export TAURI_SIGNING_PRIVATE_KEY="$(cat "$KEY")"
 export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$( [ -f "$PASS_FILE" ] && cat "$PASS_FILE" || echo "")"
 npm ci
-npm run tauri build
+# CI=true: o empacotador do .dmg pula a etapa que abre o disco no Finder para arrumar os ícones
+# (senão a janela "Quill" com "Applications" fica aberta na tela do Gabriel depois da montagem)
+CI=true npm run tauri build
 
 BUNDLE=src-tauri/target/release/bundle
 TARBALL="$BUNDLE/macos/Quill.app.tar.gz"

@@ -364,3 +364,17 @@ Pedido do Gabriel: apagar de vez o que está na Lixeira e no Spam, e cada conta 
   (`NSDockTilePlugIn`).
 - Rodapé de Ajustes mostra a versão de verdade (lida do `package.json`); antes estava fixo "Quill 0.1".
 - Versão **0.2.1**.
+
+### Links dos e-mails abrindo no Mac e aviso de login mais arrumado
+- **Links e botões dentro dos e-mails não abriam no app do Mac.** O quadro do e-mail roda sem scripts
+  (`sandbox` sem `allow-scripts`). No WebKit, isso também desliga o "ouvinte" de clique que a tela coloca no quadro,
+  então o clique não chegava ao Quill (na prévia, no Chrome, funcionava). Agora a janela principal é criada no
+  `setup` do `src-tauri/src/lib.rs` (no `tauri.conf.json` ela tem `"create": false`) com `on_new_window`: os links
+  do e-mail (`target=_blank`) viram pedido de janela nova, que abre no navegador padrão (`files::open_link`, só
+  http, https e mailto) e é negado dentro do app.
+- Aviso "Termine o login na janela que abriu": os três botões ficam lado a lado numa linha só ("Abrir de novo" virou
+  "Reabrir"); no menu da conta o aviso vira um cartãozinho.
+- `scripts/release-mac.sh` monta com `CI=true`: o empacotador do .dmg não abre mais o disco "Quill" no Finder (a
+  janela "arraste para Applications" que aparecia sozinha durante a publicação da 0.2.1). O .dmg fica sem a
+  arrumação dos ícones, o que só importa para quem instala do zero.
+- Versão **0.2.2**.

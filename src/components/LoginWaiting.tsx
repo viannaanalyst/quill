@@ -29,7 +29,7 @@ export function LoginWaiting({ className = "" }: { className?: string }) {
       </p>
       <div className="lw-actions">
         <button type="button" onClick={() => void api.googleSignInReopen().catch(() => undefined)}>
-          Abrir de novo
+          Reabrir
         </button>
         <button type="button" onClick={() => void copy()}>
           Copiar link
