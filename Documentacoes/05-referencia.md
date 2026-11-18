@@ -1,7 +1,7 @@
 ---
 type: referencia
 tags: [quill, glossario, dicionario-de-dados, tokens, previa]
-updated: 2026-11-17
+updated: 2026-11-18
 ---
 
 # Referência
@@ -117,9 +117,9 @@ dados deste Mac" (Ajustes → Privacidade) apaga todas. Nunca guardam senha nem 
 própria do Quill (`askConfirm`, em `src/components/ConfirmHost.tsx`), porque o `window.confirm` do navegador não
 funciona dentro do app.
 
-**`dockIcon`:** ícone do Dock escolhido em Ajustes → Aparência. Valores: `default` (Clássico), `escuro`, `azul`,
+**`dockIcon`:** ícone do Dock escolhido em Ajustes → Aparência. Valores: `default` (Escuro, o ícone do app), `classico` (creme), `azul`,
 `salvia`, `grafite`, `branco`, `noite`, `papel`. Imagens em `src/assets/dock/` (512 px, formato do macOS); originais do
-Codex em `assets/icon/variants/`.
+Codex em `assets/icon/variants/`. O antigo `escuro` vale como `default`.
 
 ### `accounts.json`
 

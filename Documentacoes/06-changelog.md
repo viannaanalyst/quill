@@ -1,7 +1,7 @@
 ---
 type: changelog
 tags: [quill]
-updated: 2026-11-17
+updated: 2026-11-18
 ---
 
 # Changelog
@@ -351,3 +351,16 @@ Pedido do Gabriel: apagar de vez o que está na Lixeira e no Spam, e cada conta 
   ids inválidos e esvaziar); `npm test` com 70 (4 novos).
 - Conferido na prévia (claro e escuro), com prints. Falta conferir no Mac com conta real, depois de entrar de novo
   com cada conta Google.
+
+## 2026-11-18
+
+### Ícone preto como padrão do app
+- O ícone que vem dentro do app (`src-tauri/icons`, gerado com `npx tauri icon` a partir de
+  `src/assets/brand/app-icon-dark.png`) agora é o **Escuro**. Antes era o creme, então o Dock mostrava o creme com o
+  Quill fechado, mesmo com o preto escolhido.
+- Em Ajustes → Aparência, o Escuro passou a ser o primeiro (`default`) e o creme virou a opção `classico`. Quem tinha
+  escolhido `escuro` continua com o preto (`dockIconId` trata o id antigo).
+- Os outros ícones continuam valendo só com o app aberto. Para valerem fechado, seria preciso um plug-in do Dock
+  (`NSDockTilePlugIn`).
+- Rodapé de Ajustes mostra a versão de verdade (lida do `package.json`); antes estava fixo "Quill 0.1".
+- Versão **0.2.1**.

@@ -38,6 +38,7 @@ import { Select } from "../components/Select";
 import { SliderGroup } from "../components/SliderGroup";
 import { ConfirmDialog, Toggle } from "./parts";
 import { usePref } from "./usePref";
+import { version as APP_VERSION } from "../../package.json";
 import {
   AppearanceSection,
   GeneralSection,
@@ -284,7 +285,7 @@ export default function Settings({ onRestartOnboarding }: { onRestartOnboarding:
             ))}
           </SliderGroup>
           <div className="st-nav-foot">
-            Quill 0.1 · uso pessoal
+            Quill {APP_VERSION} · uso pessoal
             <br />
             Nada sai do seu Mac além das contas que você conectar.
             <br />

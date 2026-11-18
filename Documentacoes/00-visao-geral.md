@@ -1,7 +1,7 @@
 ---
 type: visao-geral
 tags: [quill, email, calendario, mac]
-updated: 2026-11-17
+updated: 2026-11-18
 ---
 
 # Visão geral
@@ -89,7 +89,7 @@ montado (próxima montagem: a do commit da documentação).
 | Fotos dos remetentes | Gravatar e ícones de sites, desligável | Mac (logos); Gravatar só na prévia |
 | Touch ID | Pede a digital (ou a senha do Mac) ao abrir | Prévia (não dá para testar Touch ID fora do Mac) |
 | Google Chat | Conversas, grupos e espaços das contas Workspace; ler, responder na conversa, enviar texto, arquivos (até 200 MB) e áudio gravado; imagem, vídeo, áudio e PDF com prévia; não lidas; fixadas; reações; editar e apagar as suas mensagens | Prévia + testes |
-| Ícone do Dock | 8 opções em Ajustes → Aparência (Clássico, Escuro e 6 variações do Codex); vale com o app aberto | Prévia |
+| Ícone do Dock | 8 opções em Ajustes → Aparência (Escuro, que é o do app, Clássico e 6 variações do Codex); com o app fechado o Dock mostra o Escuro | Prévia |
 
 ## Fora do escopo por enquanto
 

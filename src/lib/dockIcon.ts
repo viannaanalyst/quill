@@ -6,6 +6,8 @@ import defaultDark from "../assets/brand/app-icon-dark.png";
 /**
  * Ícones que a pessoa pode escolher para o Dock (Ajustes → Aparência).
  * As variações ficam em `src/assets/dock/<id>.png` (512 px, já com o formato arredondado do macOS).
+ * O "default" é o ícone que vem dentro do app (`src-tauri/icons`, gerado do Escuro): é ele que o Dock
+ * mostra com o Quill fechado. Os outros só valem com o app aberto.
  */
 const files = import.meta.glob<string>("../assets/dock/*.png", { eager: true, query: "?url", import: "default" });
 
@@ -25,8 +27,8 @@ export interface DockIcon {
 }
 
 export const DOCK_ICONS: DockIcon[] = [
-  { id: "default", label: "Clássico", src: defaultLight },
-  { id: "escuro", label: "Escuro", src: defaultDark },
+  { id: "default", label: "Escuro", src: defaultDark },
+  { id: "classico", label: "Clássico", src: defaultLight },
   ...Object.entries(files)
     .map(([path, src]) => {
       const id = path.split("/").pop()!.replace(".png", "");
@@ -36,6 +38,9 @@ export const DOCK_ICONS: DockIcon[] = [
 ];
 
 export const DOCK_PREF = "dockIcon";
+
+/** Escolha guardada → id da lista ("escuro" era o id do preto antes de ele virar o padrão). */
+export const dockIconId = (id: string) => (id === "escuro" ? "default" : id);
 
 async function toBase64(url: string) {
   const blob = await (await fetch(url)).blob();
@@ -50,7 +55,7 @@ async function toBase64(url: string) {
 /** Aplica o ícone no Dock (no app de verdade; na prévia não faz nada). */
 export async function applyDockIcon(id: string = getPref(DOCK_PREF, "default")) {
   if (!isTauri) return;
-  const icon = DOCK_ICONS.find((i) => i.id === id);
+  const icon = DOCK_ICONS.find((i) => i.id === dockIconId(id));
   const png = !icon || icon.id === "default" ? "" : await toBase64(icon.src);
   const { invoke } = await import("@tauri-apps/api/core");
   await invoke("set_dock_icon", { pngBase64: png });
