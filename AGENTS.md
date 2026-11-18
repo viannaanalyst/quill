@@ -26,7 +26,7 @@ App de e-mail e calendário, **macOS primeiro**, depois Windows. Começou como u
 ## Comandos
 
 - `npm install`: instala as dependências.
-- `npm run dev`: só as telas, no navegador (porta 1420). Parâmetros da prévia: `?theme=dark`, `?step=3` (onboarding), `?screen=inbox|trash|read|compose|day|week|month|settings`, `?native=1` (simula a janela do Mac), `?preload=onboarding` (pega estilos vazando entre telas).
+- `npm run dev`: só as telas, no navegador (porta 1420). Parâmetros da prévia: `?theme=dark`, `?step=3` (onboarding), `?screen=inbox|trash|read|compose|day|week|month|settings`, `?native=1` (simula a janela do Mac), `?preload=onboarding` (pega estilos vazando entre telas), `?update=1` (finge uma versão nova para ver o ícone de atualização).
 - `npm run build`: confere os tipos e gera `dist/`.
 - `npm test`: testes das partes das telas sem React (`src/**/*.test.ts`, rodam direto no Node).
 - `npm run tauri dev`: abre o app de verdade. Precisa de Rust; no Mac, também do Xcode.

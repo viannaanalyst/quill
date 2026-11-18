@@ -11,7 +11,7 @@ import { Toasts } from "../components/Toasts";
 import { UndoSendBar } from "../components/UndoSendBar";
 import { AttachmentPreview } from "../components/AttachmentPreview";
 import { ConfirmHost } from "../components/ConfirmHost";
-import { UpdateBanner } from "../components/UpdateBanner";
+import { UpdateButton } from "./UpdateButton";
 import { usePalette } from "../components/paletteState";
 import { useShortcuts } from "./shortcuts";
 import { unreadSpaces, useChat } from "../state/chat";
@@ -128,6 +128,7 @@ export default function AppShell({ onRestartOnboarding }: { onRestartOnboarding:
           <RailButton item={chatItem} view={view} />
         </nav>
         <div className="rail-bottom">
+          <UpdateButton />
           <RailButton item={settingsItem} view={view} />
         </div>
       </aside>
@@ -144,7 +145,6 @@ export default function AppShell({ onRestartOnboarding }: { onRestartOnboarding:
       <UndoSendBar />
       <AttachmentPreview />
       <ConfirmHost />
-      <UpdateBanner />
     </div>
   );
 }

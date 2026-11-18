@@ -378,3 +378,12 @@ Pedido do Gabriel: apagar de vez o que está na Lixeira e no Spam, e cada conta 
   janela "arraste para Applications" que aparecia sozinha durante a publicação da 0.2.1). O .dmg fica sem a
   arrumação dos ícones, o que só importa para quem instala do zero.
 - Versão **0.2.2**.
+
+### Ícone de atualização na barra lateral
+- Com versão nova disponível, aparece um ícone de download com um pontinho azul na barra lateral, logo acima de
+  Ajustes (igual ao runelay). Ele abre uma janelinha com "Quill X disponível", a versão instalada, as novidades e os
+  botões "Agora não" e "Atualizar". Durante a atualização, o ícone gira e a janelinha mostra a barra de progresso.
+  O ícone some quando não há versão nova (`src/shell/UpdateButton.tsx`).
+- Sai o aviso do canto (`UpdateBanner`).
+- Prévia: `?update=1` finge uma versão nova.
+- Versão **0.2.3**.

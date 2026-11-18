@@ -1,6 +1,6 @@
 [package]
 name = "quill"
-version = "0.2.2"
+version = "0.2.3"
 description = "Quill: e-mail e agenda num lugar só"
 authors = ["Gabriel Vianna"]
 license = ""

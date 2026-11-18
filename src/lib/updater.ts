@@ -17,6 +17,10 @@ interface UpdateState {
 }
 
 let state: UpdateState = { phase: "idle" };
+// prévia no navegador: `?update=1` finge uma versão nova, para ver o ícone na barra lateral
+if (!isTauri && typeof location !== "undefined" && new URLSearchParams(location.search).has("update")) {
+  state = { phase: "available", version: "9.9.9", notes: "Exemplo de novidades desta versão." };
+}
 const listeners = new Set<() => void>();
 const set = (patch: Partial<UpdateState>) => {
   state = { ...state, ...patch };
