@@ -28,6 +28,7 @@ import {
 import { friendlyError, type ChatMessageDto, type ChatSpaceDto } from "../lib/api";
 import { isTauri } from "../lib/platform";
 import { getPref, setPref } from "../lib/storage";
+import { plainChat } from "./format";
 import { accountName, getMailbox, signInWithGoogle, useMailbox } from "../state/mailbox";
 import { navigate } from "../state/store";
 import { now as clockNow } from "../state/calendar";
@@ -120,11 +121,13 @@ function listTime(ms: number, now: number) {
 /** Prévia da última mensagem: anexo vira "Foto", "Mensagem de voz", "Vídeo" ou o nome do arquivo, com ícone. */
 function Preview({ s }: { s: ChatSpaceDto }) {
   const m = s.lastMessage;
+  const members = useChat((st) => st.members[s.name]);
   if (!m) return <span className="chat-crp">{s.kind === "dm" ? "Conversa direta" : s.memberCount ? `${s.memberCount} pessoas` : "Sem mensagens"}</span>;
   const who = m.mine ? "Você: " : m.senderName ? `${m.senderName}: ` : "";
   const att = m.text.startsWith("Anexo: ") ? m.text.slice(7) : null;
   let icon = null;
-  let text = m.text;
+  // sem a marcação do Chat (menções viram "@Nome", em vez de "<users/…>")
+  let text = att ? m.text : plainChat(m.text, (id) => members?.find((p) => p.id === id)?.name);
   if (att) {
     const k = kindOf({ name: att, contentType: null });
     icon = k === "image" ? <ImageIcon size={14} aria-hidden /> : k === "audio" ? <Mic size={14} aria-hidden /> : k === "video" ? <Video size={14} aria-hidden /> : <Paperclip size={14} aria-hidden />;

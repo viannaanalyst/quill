@@ -5,7 +5,8 @@
  * Marcação do Google Chat (a mesma do `formattedText` da API):
  * - `*negrito*`, `_itálico_`, `~tachado~` (um dentro do outro vale);
  * - `` `código` `` e blocos com três crases;
- * - links `<url|texto>` e `<url>`, URLs soltas, menções `<users/123>` e `<users/all>`;
+ * - links `<url|texto>` e `<url>`, URLs soltas, menções `<users/123>`, `<users/all>` e
+ *   `<chat-user data-user="users/123"></chat-user>`;
  * - listas com "- ", "* " ou "• " no começo da linha;
  * - emoji próprio da empresa como `:nome:` (a imagem vem da API).
  *
@@ -53,6 +54,8 @@ const SAFE_URL = /^(?:https?:\/\/|mailto:)\S+$/;
 
 const LINK_RE = /^<((?:https?:\/\/|mailto:)[^|>\s]+)(?:\|([^>\n]+))?>/;
 const MENTION_RE = /^<(users\/(?:all|[A-Za-z0-9_-]+))>/;
+/** Menção no formato que alguns aplicativos do Google mandam: `<chat-user data-user="users/123"></chat-user>`. */
+const CHAT_USER_RE = /^<chat-user\s+data-user=["'](users\/(?:all|[A-Za-z0-9_-]+))["']\s*>[^<]{0,200}<\/chat-user>/;
 const URL_RE = /^https?:\/\/[^\s<>"']+/;
 const UL_RE = /^([ \t]*)[-*+•][ \t]+(.*)$/;
 const OL_RE = /^([ \t]*)(\d{1,9})[.)][ \t]+(.*)$/;
@@ -209,7 +212,7 @@ function inline(s: string, custom: CustomEmojiRef[], links = true): Inline[] {
         i += link[0].length;
         continue;
       }
-      const mention = MENTION_RE.exec(rest);
+      const mention = MENTION_RE.exec(rest) ?? CHAT_USER_RE.exec(rest);
       if (mention) {
         flush();
         out.push({ t: "mention", id: mention[1] });

@@ -99,3 +99,9 @@ test("mensagem só de emoji (até 3) aparece maior", () => {
   assert.equal(emojiOnly(parseChat(":festa:", [{ name: ":festa:", url: "https://x.googleusercontent.com/f" }])), true);
   assert.equal(emojiOnly(parseChat("")), false);
 });
+
+test("menção no formato novo do Google (<chat-user>) vira menção, e não texto cru", () => {
+  assert.deepEqual(parseChat('oi <chat-user data-user="users/115"></chat-user>!'), [p(t("oi "), { t: "mention", id: "users/115" }, t("!"))]);
+  assert.deepEqual(parseChat("<chat-user data-user='users/7'>@Ana</chat-user>"), [p({ t: "mention", id: "users/7" })]);
+  assert.equal(plainChat('<chat-user data-user="users/1"></chat-user> veja', (id) => (id === "users/1" ? "Ana" : null)), "@Ana veja");
+});

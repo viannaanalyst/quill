@@ -1,5 +1,5 @@
 import * as Popover from "@radix-ui/react-popover";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { chatUpload, friendlyError, type ChatAttachmentRef, type ChatMessageDto } from "../lib/api";
 import { devParams, isTauri } from "../lib/platform";
 import { fileSize, mimeFor } from "../lib/files";
@@ -7,10 +7,11 @@ import { FileIcon } from "../components/FileIcon";
 import { previewAttachment } from "../components/AttachmentPreview";
 import { toast } from "../components/Toasts";
 import { Check, LoaderCircle, Mic, Paperclip, Pause, Play, RotateCcw, SendHorizontal, Smile, Trash2, X } from "../components/icons";
-import { pendingFile, quoteOf, sendChat, type PendingFile } from "../state/chat";
-import { AudioPlayer, QuoteBody } from "./Messages";
+import { pendingFile, quoteOf, sendChat, useChat, type PendingFile } from "../state/chat";
+import { AudioPlayer, ChatAvatar, QuoteBody } from "./Messages";
 import { blobToBase64, clock, kindOf } from "./media";
 import { plainChat } from "./format";
+import { applyMentions, filterPeople, mentionAt, type Mentionable } from "./mentions";
 
 const MAX_FILE = 200 * 1024 * 1024;
 const EMOJIS = ["😀", "😂", "😊", "😍", "🤔", "😅", "😢", "😮", "👍", "👎", "👏", "🙏", "🙌", "💪", "🎉", "🔥", "✅", "❌", "⚠️", "❤️", "💙", "💚", "⭐", "☕", "🚀", "📌", "📎", "📅", "⏰", "👀", "🤝", "💡"];
@@ -229,6 +230,35 @@ export function Composer({
   const [note, setNote] = useState<string | null>(null);
   const area = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  // menções (@): pessoas da conversa (sem você e sem robôs), o "@" sendo digitado e quem já foi escolhido
+  const members = useChat((s) => s.members[space]);
+  const people = useMemo(() => (members ?? []).filter((p) => !p.bot && p.email?.toLowerCase() !== account.toLowerCase()), [members, account]);
+  const [mention, setMention] = useState<{ start: number; query: string } | null>(null);
+  const [mentionActive, setMentionActive] = useState(0);
+  const picked = useRef<Mentionable[]>([]);
+  const mentionList = mention ? filterPeople(people, mention.query).slice(0, 6) : [];
+  const mentionOpen = mentionList.length > 0;
+  const listId = useId();
+  const watchMention = (el: HTMLTextAreaElement) => {
+    const next = el.selectionStart === el.selectionEnd ? mentionAt(el.value, el.selectionStart) : null;
+    setMention((cur) => (cur?.start === next?.start && cur?.query === next?.query ? cur : next));
+    if (next?.query !== mention?.query) setMentionActive(0);
+  };
+  function pickMention(p: Mentionable) {
+    const el = area.current;
+    if (!el || !mention) return;
+    const caret = el.selectionStart;
+    const name = `@${p.name} `;
+    const next = text.slice(0, mention.start) + name + text.slice(caret);
+    if (!picked.current.some((x) => x.id === p.id)) picked.current.push({ id: p.id, name: p.name });
+    setText(next);
+    setMention(null);
+    requestAnimationFrame(() => {
+      el.focus();
+      const at = mention.start + name.length;
+      el.setSelectionRange(at, at);
+    });
+  }
   const { rec, start, stop, review, cancel, runningFor, ext } = useRecorder((msg) => {
     setNote(msg);
     toast(msg, "error");
@@ -253,6 +283,8 @@ export function Composer({
       return previewStaged();
     });
     setNote(null);
+    setMention(null);
+    picked.current = [];
   }, [space]);
 
   const patch = (id: string, p: Partial<Staged>) => setStaged((list) => list.map((f) => (f.id === id ? { ...f, ...p } : f)));
@@ -314,7 +346,10 @@ export function Composer({
   function doSend() {
     // os arquivos já subiram: a mensagem só referencia
     // a miniatura vai junto (a mensagem que está saindo mostra e libera no fim)
-    sendChat(space, text, staged, thread, quote);
+    // "@Nome" escolhido na lista vira menção de verdade (<users/id>)
+    sendChat(space, applyMentions(text, picked.current), staged, thread, quote);
+    picked.current = [];
+    setMention(null);
     setText("");
     setStaged([]);
     onClearReply();
@@ -500,6 +535,28 @@ export function Composer({
               ))}
             </div>
           )}
+          {mentionOpen && (
+            <div className="chat-mnt" role="listbox" id={listId} aria-label="Mencionar alguém">
+              {mentionList.map((p, i) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  role="option"
+                  id={`${listId}-${i}`}
+                  aria-selected={i === mentionActive}
+                  className="chat-mnt-item"
+                  tabIndex={-1}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onMouseEnter={() => setMentionActive(i)}
+                  onClick={() => pickMention(p)}
+                >
+                  <ChatAvatar name={p.name} photo={p.photo} size={26} seed={p.id} />
+                  <span className="chat-mnt-name">{p.name}</span>
+                  {p.email && <span className="chat-mnt-mail">{p.email}</span>}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="chat-arow">
             {fileButton}
             <textarea
@@ -508,14 +565,40 @@ export function Composer({
               rows={1}
               value={text}
               aria-label="Mensagem"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded={mentionOpen}
+              aria-controls={mentionOpen ? listId : undefined}
+              aria-activedescendant={mentionOpen ? `${listId}-${mentionActive}` : undefined}
+              onSelect={(e) => watchMention(e.currentTarget)}
               placeholder={staged.length ? "Adicione uma mensagem (opcional)" : "Escreva uma mensagem"}
               onChange={(e) => {
                 setText(e.target.value);
                 const el = e.currentTarget;
+                watchMention(el);
                 el.style.height = "";
                 el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
               }}
               onKeyDown={(e) => {
+                if (mentionOpen && !e.nativeEvent.isComposing) {
+                  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                    e.preventDefault();
+                    const d = e.key === "ArrowDown" ? 1 : -1;
+                    setMentionActive((i) => (i + d + mentionList.length) % mentionList.length);
+                    return;
+                  }
+                  if (e.key === "Enter" || e.key === "Tab") {
+                    e.preventDefault();
+                    pickMention(mentionList[Math.min(mentionActive, mentionList.length - 1)]);
+                    return;
+                  }
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setMention(null);
+                    return;
+                  }
+                }
                 if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault();
                   send();

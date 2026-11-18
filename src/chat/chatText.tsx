@@ -23,7 +23,7 @@ export interface TextContext {
   nameOf?: (id: string) => string | null | undefined;
   /** id da própria conta: a menção a você fica destacada */
   myId?: string | null;
-  /** mensagem só de emoji: emojis grandes e animados (no meio do texto, continuam texto) */
+  /** mensagem só de emoji: emojis grandes (no meio do texto ficam do tamanho da letra, também animados) */
   jumbo?: boolean;
 }
 
@@ -44,12 +44,8 @@ function inlines(list: Inline[], ctx: TextContext, key: string): ReactNode[] {
       case "code":
         return <code key={k}>{n.v}</code>;
       case "emoji":
-        if (ctx.jumbo) return <NotoEmoji key={k} emoji={n.v} animate="always" />;
-        return (
-          <span key={k} className="chat-emo">
-            {n.v}
-          </span>
-        );
+        // como no Google Chat: animado também no meio do texto (só a mensagem só de emoji fica grande)
+        return <NotoEmoji key={k} emoji={n.v} animate="always" />;
       case "custom":
         return <img key={k} className="chat-cemo" src={n.url} alt={n.name} draggable={false} referrerPolicy="no-referrer" />;
       case "mention": {

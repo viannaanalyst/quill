@@ -1494,6 +1494,7 @@ button.chat-quote:focus-visible {
   text-overflow: ellipsis;
 }
 .chat-box {
+  position: relative;
   display: flex;
   flex-direction: column;
   border-radius: 22px;
@@ -1990,4 +1991,56 @@ button.chat-th {
 .chat-cmp [data-tip-pos="top-end"]:hover::after,
 .chat-cmp [data-tip-pos="top-end"]:focus-visible::after {
   transform: none;
+}
+
+/* ---------- menções (@) na caixa de escrever ---------- */
+.chat-mnt {
+  position: absolute;
+  left: 40px;
+  bottom: calc(100% + 8px);
+  z-index: 20;
+  width: min(340px, calc(100% - 48px));
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow:
+    0 0 0 1px var(--line),
+    0 18px 40px -16px rgba(0, 0, 0, 0.3),
+    0 2px 6px rgba(0, 0, 0, 0.06);
+  transform-origin: bottom left;
+  animation: q-pop-in 0.16s var(--ease-out-soft) both;
+}
+.chat-mnt-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: 10px;
+  text-align: left;
+  color: var(--ink);
+}
+.chat-mnt-item[aria-selected="true"] {
+  background: var(--surface2);
+}
+.chat-mnt-name {
+  font-size: 13.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.chat-mnt-mail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--ink3);
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-mnt {
+    animation: none;
+  }
 }

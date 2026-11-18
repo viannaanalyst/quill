@@ -387,3 +387,16 @@ Pedido do Gabriel: apagar de vez o que está na Lixeira e no Spam, e cada conta 
 - Sai o aviso do canto (`UpdateBanner`).
 - Prévia: `?update=1` finge uma versão nova.
 - Versão **0.2.3**.
+
+### Chat: menções com @, emojis animados no texto e barra de reação em mensagem longa
+- **@ para mencionar**: digitar "@" na caixa de escrever abre a lista das pessoas da conversa (sem você e sem robôs),
+  filtrando pelo começo do nome ou sobrenome, sem acento. Setas escolhem, Enter ou Tab confirmam, Esc fecha. A
+  pessoa entra como "@Nome" e, ao enviar, vira `<users/id>`, que a API do Chat transforma em menção de verdade
+  (`src/chat/mentions.ts`, com testes).
+- Menções no formato `<chat-user data-user="users/…"></chat-user>`, que alguns aplicativos do Google mandam,
+  apareciam como texto cru. Agora viram "@Nome" (`format.ts`). Os nomes das menções também vêm da lista de membros
+  da conversa, e a prévia da última mensagem na lista de conversas mostra "@Nome" em vez da marcação.
+- Emojis no meio do texto agora são animados, como no Google Chat (antes só a mensagem só de emoji animava).
+- Mensagem comprida com o começo fora da tela: a barra de reações desce para a parte à vista (no canto direito do
+  balão), em vez de ficar escondida lá em cima.
+- Versão **0.2.4**.

@@ -911,6 +911,7 @@ function OutgoingFile({ f }: { f: PendingFile }) {
 }
 
 function OutgoingItem({ o }: { o: Outgoing }) {
+  const people = useContext(ListCtx)?.people;
   return (
     <div className="chat-mine is-out">
       <div className="chat-mmeta" role="status">
@@ -930,7 +931,7 @@ function OutgoingItem({ o }: { o: Outgoing }) {
               <QuoteBody name={o.quote.preview.sender?.name ?? "Mensagem citada"} text={plainChat(o.quote.preview.text)} />
             </div>
           )}
-          <ChatText text={o.text} />
+          <ChatText text={o.text} ctx={{ nameOf: (id) => people?.get(id) }} />
         </div>
       )}
       {o.files.filter((f) => !f.sent).map((f) => (
@@ -1011,14 +1012,17 @@ export function MessageList({
   }, [items, outgoing.length, firstName]);
 
   const byName = useMemo(() => new Map(messages.map((m) => [m.name, m])), [messages]);
+  // nomes para as menções: pessoas da conversa (lista de membros) e quem aparece nas mensagens
+  const members = useChat((s) => s.members[space]);
   const people = useMemo(() => {
     const map = new Map<string, string>();
+    for (const p of members ?? []) if (p.name) map.set(p.id, p.name);
     for (const m of messages) {
       if (!m.sender.bot && m.sender.name !== "Sem nome") map.set(m.sender.id, m.mine ? "você" : m.sender.name);
       for (const x of m.mentions ?? []) if (x.name) map.set(x.id, x.name);
     }
     return map;
-  }, [messages]);
+  }, [messages, members]);
   const myId = useMemo(() => messages.find((m) => m.mine)?.sender.id ?? null, [messages]);
 
   const ctx = useMemo<ListContext>(() => {
@@ -1099,11 +1103,13 @@ export function MessageList({
    * (nas suas, antes de "Você"), para não cobrir o nome. Medido quando o mouse (ou o Tab) chega na mensagem.
    */
   const lastBar = useRef<HTMLElement | null>(null);
+  const lastScroll = useRef(0);
   const placeBar = (e: SyntheticEvent) => {
     const msg = (e.target as Element).closest?.<HTMLElement>(".chat-msg");
     const list = box.current;
-    if (!msg || !list || (e.type !== "focus" && lastBar.current === msg)) return;
+    if (!msg || !list || (e.type !== "focus" && lastBar.current === msg && lastScroll.current === list.scrollTop)) return;
     lastBar.current = msg;
+    lastScroll.current = list.scrollTop;
     const bar = msg.querySelector<HTMLElement>(":scope > .chat-bar");
     const content = msg.firstElementChild as HTMLElement | null;
     if (!bar || !content || content === bar) return;
@@ -1137,6 +1143,13 @@ export function MessageList({
         x = ar.left - mr.left - bw - 10;
         onHeader();
       }
+    }
+    // mensagem comprida com o começo fora da tela: a barra desce para a parte que está à vista
+    // (no canto direito do balão, onde costuma haver espaço), em vez de ficar escondida lá em cima
+    const top = lr.top - mr.top + 8;
+    if (y < top) {
+      y = Math.min(top, Math.max(0, Math.min(lr.bottom, mr.bottom) - mr.top - bh - 8));
+      x = cr.right - mr.left - bw - 8;
     }
     // sem passar das bordas da lista (ela rola e cortaria a barra)
     x = Math.max(lr.left + 8 - mr.left, Math.min(x, lr.right - 14 - bw - mr.left));

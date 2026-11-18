@@ -3,7 +3,7 @@ import { notoCode, notoUrl } from "./noto";
 
 /**
  * Emoji do Google (Noto Animated Emoji), como no Google Chat:
- * - `always`: mensagem só de emoji, grande e animada;
+ * - `always`: emojis das mensagens, animados (grandes na mensagem só de emoji, do tamanho da letra no texto);
  * - `hover`: chips de reação e reações rápidas, parado e animando só com o mouse em cima (`playing`).
  * O desenho parado fica embaixo enquanto o animado carrega. Se o Google não tiver a animação, fica o
  * parado; se nem ele abrir (sem internet), volta o caractere. Com "reduzir movimento", nunca anima.
