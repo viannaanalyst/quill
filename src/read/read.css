@@ -216,8 +216,9 @@
 }
 .rd-r-to {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px 8px;
   padding: 8px 8px 8px 14px;
   border-bottom: 1px solid var(--line2);
   font-size: 13px;
@@ -225,6 +226,13 @@
 }
 .rd-r-mode {
   color: var(--ink2);
+}
+/* destinatário sem foto: a pílula fica com o mesmo respiro dos dois lados */
+.rd-r-to .person-chip:not(:has(.av, img)) {
+  padding-left: 9px;
+}
+.rd-r-cc {
+  margin-left: 4px;
 }
 .rd-r-x {
   margin-left: auto;
@@ -237,6 +245,7 @@
   background: var(--gfill);
 }
 .rd-r-body {
+  position: relative;
   min-height: 96px;
   max-height: 46vh;
   overflow-y: auto;
@@ -254,6 +263,10 @@
   color: var(--ink3);
   pointer-events: none;
   position: absolute;
+  /* preso ao começo da caixa (sem isso ele podia cair lá embaixo, atrás dos botões) */
+  top: 12px;
+  left: 16px;
+  right: 16px;
 }
 .rd-r-body ul,
 .rd-r-body ol {

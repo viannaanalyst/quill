@@ -40,6 +40,10 @@ export interface Message {
   /** destinatário (Enviados e Rascunhos) */
   toName?: string;
   toEmail?: string;
+  /** todos do Para e do Cc, e o Reply-To (para Responder e Responder a todos) */
+  recipients?: { name: string; email: string }[];
+  cc?: { name: string; email: string }[];
+  replyTo?: { name: string; email: string } | null;
   threadId?: string;
   starred?: boolean;
 }

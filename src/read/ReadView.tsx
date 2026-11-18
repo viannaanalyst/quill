@@ -60,7 +60,7 @@ function threadFor(m: Message, account: Account | undefined, body: string | unde
   const text = m.accountEmail ? (body ?? "Carregando o e-mail…") : m.preview;
   return {
     email: m.fromEmail ?? `${m.from.toLowerCase().replace(/[^a-z]/g, "")}@exemplo.com`,
-    to: m.accountEmail ? `para ${m.accountEmail}` : "para mim",
+    to: toLine(m),
     date: m.date,
     labels: [],
     earlier: [],
@@ -70,6 +70,16 @@ function threadFor(m: Message, account: Account | undefined, body: string | unde
     senderRole: account?.name ?? "",
     history: [],
   };
+}
+
+/** "para Ana, Pedro · cc Carla", com "mim" no lugar do endereço da conta (como no Gmail). */
+function toLine(m: Message) {
+  if (!m.accountEmail) return "para mim";
+  const me = m.accountEmail.toLowerCase();
+  const names = (list: { name: string; email: string }[]) =>
+    list.map((p) => (p.email.toLowerCase() === me ? "mim" : p.name || p.email)).join(", ");
+  const to = m.recipients?.length ? names(m.recipients) : m.accountEmail;
+  return m.cc?.length ? `para ${to} · cc ${names(m.cc)}` : `para ${to}`;
 }
 
 /** Texto simples com links clicáveis (e-mails sem versão formatada). Links longos viram "domínio…". */

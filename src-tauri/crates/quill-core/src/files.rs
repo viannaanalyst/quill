@@ -36,6 +36,16 @@ pub fn is_safe_link(url: &str) -> bool {
     lower.starts_with("https://") || lower.starts_with("http://") || lower.starts_with("mailto:")
 }
 
+/// Pacote `.app` de um executável do Mac (`…/Quill.app/Contents/MacOS/quill` → `…/Quill.app`).
+/// Fora de um pacote (modo de desenvolvimento, Windows), `None`.
+pub fn app_bundle_root(exe: &std::path::Path) -> Option<std::path::PathBuf> {
+    let macos = exe.parent()?;
+    let contents = macos.parent()?;
+    let bundle = contents.parent()?;
+    let named = |p: &std::path::Path, n: &str| p.file_name().is_some_and(|f| f == n);
+    (named(macos, "MacOS") && named(contents, "Contents") && bundle.extension().is_some_and(|e| e == "app")).then(|| bundle.to_path_buf())
+}
+
 /// Abre um link da web (ou mailto) no navegador padrão.
 #[cfg(feature = "desktop")]
 pub fn open_link(url: &str) -> Result<(), String> {
@@ -74,6 +84,15 @@ pub fn quick_look(path: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn acha_o_pacote_app_a_partir_do_executavel() {
+        use std::path::Path;
+        assert_eq!(app_bundle_root(Path::new("/Applications/Quill.app/Contents/MacOS/quill")).as_deref(), Some(Path::new("/Applications/Quill.app")));
+        // fora de um pacote .app (npm run tauri dev, Windows) não há pacote para reabrir
+        assert_eq!(app_bundle_root(Path::new("/Users/x/quill/target/debug/quill")), None);
+        assert_eq!(app_bundle_root(Path::new("/Applications/Quill.app/Contents/Resources/quill")), None);
+    }
 
     #[test]
     fn nome_seguro_tira_pastas_e_caracteres_proibidos() {

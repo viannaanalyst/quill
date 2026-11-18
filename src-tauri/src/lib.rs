@@ -610,6 +610,40 @@ async fn chat_delete(state: State<'_, AppState>, email: String, message: String)
     chat.delete(&token, &message).await.map_err(chat_err)
 }
 
+/// Espera o Quill antigo fechar (até ~10 s) e só então abre o pacote de novo, pelo sistema.
+#[cfg(target_os = "macos")]
+const RELAUNCH_SCRIPT: &str = r#"i=0; while kill -0 "$1" 2>/dev/null && [ $i -lt 100 ]; do sleep 0.1; i=$((i+1)); done; exec /usr/bin/open "$2""#;
+
+/// Reabre o Quill depois de instalar uma atualização.
+/// O `relaunch` padrão do Tauri usa `open -n` com o app antigo ainda aberto: o Mac vê duas cópias rodando
+/// e a nova ganha um segundo ícone no Dock, fora do ícone fixado. Aqui um ajudante pequeno espera o
+/// processo antigo terminar e abre o app normalmente, então ele volta para o mesmo ícone do Dock.
+#[tauri::command]
+fn relaunch_app(app: tauri::AppHandle) {
+    #[cfg(target_os = "macos")]
+    if let Some(bundle) = std::env::current_exe().ok().and_then(|e| quill_core::files::app_bundle_root(&e)).filter(|b| b.exists()) {
+        use std::os::unix::process::CommandExt;
+        use std::process::{Command, Stdio};
+        let spawned = Command::new("/bin/sh")
+            .arg("-c")
+            .arg(RELAUNCH_SCRIPT)
+            .arg("quill-relaunch")
+            .arg(std::process::id().to_string())
+            .arg(&bundle)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            // grupo próprio: o ajudante continua vivo quando o app antigo fecha
+            .process_group(0)
+            .spawn();
+        if spawned.is_ok() {
+            app.exit(0);
+            return;
+        }
+    }
+    app.restart();
+}
+
 /// Troca o ícone do Dock (PNG em base64); vazio volta ao ícone padrão.
 #[tauri::command]
 async fn set_dock_icon(app: tauri::AppHandle, png_base64: String) -> Result<(), String> {
@@ -750,6 +784,7 @@ pub fn run() {
             open_link,
             touch_id_available,
             set_dock_icon,
+            relaunch_app,
             touch_id_authenticate,
             chat_spaces,
             chat_messages,

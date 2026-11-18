@@ -400,3 +400,24 @@ Pedido do Gabriel: apagar de vez o que está na Lixeira e no Spam, e cada conta 
 - Mensagem comprida com o começo fora da tela: a barra de reações desce para a parte à vista (no canto direito do
   balão), em vez de ficar escondida lá em cima.
 - Versão **0.2.4**.
+
+### Responder vai para as pessoas certas
+- **Correção:** responder um e-mail que você mesmo mandou enviava a resposta para você. Agora segue a regra do
+  Gmail: e-mail seu responde para quem estava no "Para"; e-mail de outra pessoa responde para ela (ou para o
+  endereço do Reply-To, quando ela pede).
+- **Responder a todos** de verdade: junta todo mundo do Para e do Cc, sem você e sem repetir (antes ia só para quem
+  mandou). A caixa de resposta mostra cada pessoa no Para e no Cc, e o "Editor completo" leva os dois campos.
+- A lista de e-mails passou a guardar todos os destinatários (Para, Cc e Reply-To), no Gmail e no IMAP
+  (`quill-core`: `MessageSummary.recipients`, `cc`, `reply_to`; regra em `src/read/replyRecipients.ts`, com testes).
+- A linha "para …" no topo do e-mail mostra os destinatários reais ("para mim, Ana · cc Pedro") em vez de sempre o
+  endereço da conta.
+- O texto "Responder para…" da caixa de resposta podia aparecer lá embaixo, atrás dos botões; agora fica no começo.
+
+### Atualização sem ícone repetido no Dock
+- **Correção:** depois de cada atualização aparecia mais um ícone do Quill no Dock. O `relaunch` do Tauri reabre o
+  app com `open -n` enquanto a versão antiga ainda está aberta; o Mac vê duas cópias e a nova ganha um ícone separado
+  do fixado. Agora o comando `relaunch_app` (`src-tauri/src/lib.rs`) deixa um ajudante pequeno esperando o app
+  antigo fechar e só então abre o `Quill.app` pelo sistema, sem o `-n`, e ele volta para o mesmo ícone
+  (`quill_core::files::app_bundle_root`, com teste).
+- Vale a partir da próxima atualização depois da 0.2.5 (a troca da 0.2.4 para a 0.2.5 ainda usa o jeito antigo).
+- Versão **0.2.5**.

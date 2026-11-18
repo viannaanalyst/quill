@@ -464,6 +464,19 @@ fn first_sender(list: Option<mail_parser::AddressList<'_>>) -> Option<Sender> {
     (!email.is_empty() || !name.is_empty()).then_some(Sender { name, email })
 }
 
+fn all_senders(list: Option<mail_parser::AddressList<'_>>) -> Vec<Sender> {
+    list.map(|l| {
+        l.mailboxes()
+            .filter_map(|m| {
+                let email = m.address()?.trim().to_string();
+                let name = m.name().map(str::trim).filter(|n| !n.is_empty()).map(str::to_string).unwrap_or_else(|| email.clone());
+                (!email.is_empty()).then_some(Sender { name, email })
+            })
+            .collect()
+    })
+    .unwrap_or_default()
+}
+
 fn address_strings(list: Option<mail_parser::AddressList<'_>>) -> Vec<String> {
     list.map(|l| {
         l.mailboxes()
@@ -510,7 +523,10 @@ pub fn summary_from_parts(
     let parsed = MessageParser::default().parse(&raw);
 
     let from = parsed.as_ref().and_then(|m| first_sender(m.from())).unwrap_or(Sender { name: String::new(), email: String::new() });
-    let to = parsed.as_ref().and_then(|m| first_sender(m.to()));
+    let recipients = parsed.as_ref().map(|m| all_senders(m.to())).unwrap_or_default();
+    let cc = parsed.as_ref().map(|m| all_senders(m.cc())).unwrap_or_default();
+    let reply_to = parsed.as_ref().and_then(|m| first_sender(m.reply_to()));
+    let to = recipients.first().cloned();
     let subject = parsed
         .as_ref()
         .and_then(|m| m.subject())
@@ -532,6 +548,9 @@ pub fn summary_from_parts(
         initials: initials(&from.name),
         from,
         to,
+        recipients,
+        cc,
+        reply_to,
         subject,
         preview,
         date: format_list_date(internal_date, now_ms, tz_offset_min),
@@ -940,7 +959,7 @@ mod tests {
 
     #[test]
     fn summary_reads_encoded_headers_and_preview() {
-        let header = b"From: =?UTF-8?Q?Jo=C3=A3o_Silva?= <joao@exemplo.com>\r\nTo: Ana <ana@icloud.com>, b@x.com\r\nSubject: =?UTF-8?B?UmV1bmnDo28=?=\r\nDate: Mon, 17 Nov 2025 09:00:00 -0300\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n";
+        let header = b"From: =?UTF-8?Q?Jo=C3=A3o_Silva?= <joao@exemplo.com>\r\nTo: Ana <ana@icloud.com>, b@x.com\r\nCc: Carla <carla@x.com>\r\nReply-To: lista@x.com\r\nSubject: =?UTF-8?B?UmV1bmnDo28=?=\r\nDate: Mon, 17 Nov 2025 09:00:00 -0300\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n";
         let s = summary_from_parts(
             "inbox:5".into(),
             Flags { seen: false, flagged: true, deleted: false },
@@ -954,6 +973,9 @@ mod tests {
         assert_eq!(s.thread_id, "inbox:5");
         assert_eq!(s.from, Sender { name: "João Silva".into(), email: "joao@exemplo.com".into() });
         assert_eq!(s.to, Some(Sender { name: "Ana".into(), email: "ana@icloud.com".into() }));
+        assert_eq!(s.recipients.iter().map(|r| r.email.as_str()).collect::<Vec<_>>(), ["ana@icloud.com", "b@x.com"]);
+        assert_eq!(s.cc, [Sender { name: "Carla".into(), email: "carla@x.com".into() }]);
+        assert_eq!(s.reply_to.map(|r| r.email), Some("lista@x.com".into()));
         assert_eq!(s.initials, "JS");
         assert_eq!(s.subject, "Reunião");
         assert_eq!(s.preview, "Olá, vamos marcar?");

@@ -1,7 +1,7 @@
 ---
 type: tutorial
 tags: [quill, uso, diataxis, email, calendario]
-updated: 2026-11-17
+updated: 2026-11-18
 ---
 
 # Como usar o Quill
@@ -44,7 +44,8 @@ lidos cada conta tem.
 ### Passo 3 — Ler e responder
 1. Clique num e-mail. Ele abre formatado e fica marcado como lido.
 2. Se aparecer "Mostrar imagens", clique para ver as imagens externas (elas vêm bloqueadas por privacidade).
-3. Clique em **Responder**, escreva e clique em **Enviar**.
+3. Clique em **Responder**, escreva e clique em **Enviar**. Para incluir todo mundo do Para e do Cc, use
+   **Responder a todos**. Num e-mail que você mesmo mandou, a resposta vai para quem o recebeu (como no Gmail).
 4. No topo aparece "Enviando em … s · Desfazer". Se perceber um erro, clique em **Desfazer**: o e-mail volta para a
    tela de escrever com tudo preenchido.
 

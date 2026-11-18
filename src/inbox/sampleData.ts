@@ -24,6 +24,12 @@ export const MESSAGES: Message[] = [
     date: "09:12",
     unread: true,
     attachment: "fechamento-outubro.xlsx",
+    // para a prévia do "Responder a todos"
+    recipients: [
+      { name: "Gabriel Vianna", email: "gabriel@inchurch.com.br" },
+      { name: "Pedro Assis", email: "pedro.assis@inchurch.com.br" },
+    ],
+    cc: [{ name: "Financeiro", email: "financeiro@inchurch.com.br" }],
   },
   {
     id: "m2",

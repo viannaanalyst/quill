@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { isTauri } from "./platform";
+import { api } from "./api";
 
 /**
  * Atualização automática: confere no GitHub (releases do Quill) se há versão nova, assinada com a chave do app.
@@ -65,8 +66,8 @@ export async function installUpdate() {
         set({ progress: total ? Math.min(1, got / total) : undefined });
       } else if (ev.event === "Finished") set({ phase: "ready", progress: 1 });
     });
-    const { relaunch } = await import("@tauri-apps/plugin-process");
-    await relaunch();
+    // reabre pelo Quill (espera o antigo fechar), para não aparecer um segundo ícone no Dock
+    await api.relaunchApp();
   } catch (e) {
     set({ phase: "error", error: String((e as Error)?.message ?? e) });
   }

@@ -24,6 +24,14 @@ pub fn parse_from(value: &str) -> Sender {
     Sender { name: value.to_string(), email: value.to_string() }
 }
 
+/// Lista de endereços de um cabeçalho (To, Cc, Reply-To), respeitando vírgula dentro de nome entre aspas.
+pub fn address_list(value: &str) -> Vec<Sender> {
+    crate::contacts::parse_address_list(value)
+        .into_iter()
+        .map(|(name, email)| Sender { name: name.unwrap_or_else(|| email.clone()), email })
+        .collect()
+}
+
 /// Iniciais para o avatar: primeira letra do primeiro e do último nome.
 pub fn initials(name: &str) -> String {
     let words: Vec<&str> = name.split_whitespace().filter(|w| w.chars().next().is_some_and(char::is_alphanumeric)).collect();
@@ -119,6 +127,12 @@ pub struct MessageSummary {
     pub from: Sender,
     /// primeiro destinatário (útil em Enviados e Rascunhos)
     pub to: Option<Sender>,
+    /// todos do "Para" (para o Responder e o Responder a todos)
+    pub recipients: Vec<Sender>,
+    /// todos do "Cc"
+    pub cc: Vec<Sender>,
+    /// cabeçalho Reply-To: para onde a resposta deve ir, quando o remetente pede
+    pub reply_to: Option<Sender>,
     pub initials: String,
     pub subject: String,
     pub preview: String,
@@ -162,13 +176,19 @@ pub fn parse_message_metadata(json: &str, now_ms: i64, tz_offset_min: i32) -> Re
     let raw: RawMessage = serde_json::from_str(json).map_err(|e| e.to_string())?;
     let header = |n: &str| raw.payload.headers.iter().find(|h| h.name.eq_ignore_ascii_case(n)).map(|h| h.value.clone());
     let from = parse_from(&header("From").unwrap_or_default());
-    let to = header("To").and_then(|v| v.split(',').map(str::trim).find(|p| !p.is_empty()).map(parse_from));
+    let recipients = address_list(&header("To").unwrap_or_default());
+    let cc = address_list(&header("Cc").unwrap_or_default());
+    let reply_to = address_list(&header("Reply-To").unwrap_or_default()).into_iter().next();
+    let to = recipients.first().cloned();
     let subject = header("Subject").filter(|s| !s.trim().is_empty()).unwrap_or_else(|| "(sem assunto)".into());
     let internal_date = raw.internal_date.parse::<i64>().map_err(|e| e.to_string())?;
     Ok(MessageSummary {
         initials: initials(&from.name),
         from,
         to,
+        recipients,
+        cc,
+        reply_to,
         subject,
         preview: decode_entities(&raw.snippet),
         date: format_list_date(internal_date, now_ms, tz_offset_min),
@@ -758,6 +778,24 @@ mod tests {
         assert!(!m.starred);
         assert!(m.has_attachment);
         assert_eq!(m.date, "09:12");
+    }
+
+    #[test]
+    fn metadata_keeps_every_recipient_for_reply_all() {
+        let json = r#"{"id":"1","threadId":"1","labelIds":["SENT"],"snippet":"","internalDate":"1794917520000",
+          "payload":{"mimeType":"text/plain","headers":[
+            {"name":"From","value":"Moradah <appmoradah@gmail.com>"},
+            {"name":"To","value":"\"Compliance, Cakto\" <compliance@cakto.com.br>, suporte@cakto.com.br"},
+            {"name":"Cc","value":"Ana <ana@x.com>"},
+            {"name":"Reply-To","value":"Respostas <respostas@moradah.com.br>"}
+          ]}}"#;
+        let m = parse_message_metadata(json, NOW, SP).unwrap();
+        let emails = |l: &[Sender]| l.iter().map(|s| s.email.clone()).collect::<Vec<_>>();
+        assert_eq!(emails(&m.recipients), ["compliance@cakto.com.br", "suporte@cakto.com.br"]);
+        assert_eq!(m.recipients[0].name, "Compliance, Cakto");
+        assert_eq!(m.to.as_ref().map(|s| s.email.as_str()), Some("compliance@cakto.com.br"));
+        assert_eq!(emails(&m.cc), ["ana@x.com"]);
+        assert_eq!(m.reply_to.as_ref().map(|s| s.email.as_str()), Some("respostas@moradah.com.br"));
     }
 
     #[test]

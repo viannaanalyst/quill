@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { RichToolbar } from "../compose/RichToolbar";
 import { FileIcon } from "../components/FileIcon";
 import { MessageAvatar } from "../components/MessageAvatar";
@@ -13,6 +13,7 @@ import { getMailbox } from "../state/mailbox";
 import { queueSend } from "../state/outbox";
 import { clearReplyDraft, getReplyDraft, hasText, setReplyDraft, type ReplyFile } from "../state/replyDrafts";
 import { navigate } from "../state/store";
+import { replyRecipients, type Person } from "./replyRecipients";
 
 export const withPrefix = (prefix: string, subject: string) => (subject.toLowerCase().startsWith(prefix.toLowerCase()) ? subject : `${prefix} ${subject}`);
 
@@ -55,7 +56,15 @@ export function InlineReply({
 
   const live = isTauri && !!m.accountEmail;
   const subject = withPrefix("Re:", m.subject);
-  const firstName = m.from.split(" ")[0];
+  // quem recebe (como no Gmail): e-mail seu responde para quem estava no Para; "a todos" junta Para e Cc
+  // (muda junto quando trocam de "Responder" para "Responder a todos" com a caixa aberta)
+  const who = useMemo(() => {
+    const mine = [...getMailbox().connected.map((a) => a.email), ...(m.accountEmail ? [m.accountEmail] : [])];
+    return replyRecipients({ from: { name: m.from, email: senderEmail }, recipients: m.recipients ?? [], cc: m.cc ?? [], replyTo: m.replyTo }, mine, mode);
+  }, [m, senderEmail, mode]);
+  const toNames = who.to.map((p) => p.name || p.email);
+  const firstName = (toNames[0] ?? m.from).split(" ")[0];
+  const label = toNames.join(", ") || m.from;
 
   // ---------- rascunho no Gmail (3 s depois da última mudança) ----------
   const htmlRef = useRef(initialHtml);
@@ -74,8 +83,8 @@ export function InlineReply({
   const buildMessage = (html: string): OutgoingMessage => ({
     from: m.accountEmail ?? "",
     fromName: m.accountEmail ? (getMailbox().profiles[m.accountEmail]?.name ?? null) : null,
-    to: [senderEmail],
-    cc: [],
+    to: who.to.map((p) => p.email),
+    cc: who.cc.map((p) => p.email),
     bcc: [],
     subject,
     html,
@@ -213,7 +222,8 @@ export function InlineReply({
       m.threadId,
       {
         from: m.accountEmail,
-        to: [{ name: m.from, email: senderEmail }],
+        to: who.to,
+        cc: who.cc,
         subject,
         body: html,
         threadId: m.threadId,
@@ -249,7 +259,8 @@ export function InlineReply({
       name: "compose",
       draft: {
         from: m.accountEmail,
-        to: [{ name: m.from, email: senderEmail }],
+        to: who.to,
+        cc: who.cc,
         subject,
         body: hasText(html) ? html : "",
         threadId: m.threadId,
@@ -263,14 +274,21 @@ export function InlineReply({
   const ModeIcon = mode === "replyAll" ? ReplyAll : Reply;
 
   return (
-    <section ref={rootRef} className="rd-r" aria-label={`Responder para ${m.from}`}>
+    <section ref={rootRef} className="rd-r" aria-label={`Responder para ${label}`}>
       <div className="rd-r-to">
         <ModeIcon size={15} aria-hidden className="rd-r-mode" />
         Para
-        <span className="person-chip">
-          <MessageAvatar message={m} size={20} />
-          {m.from}
-        </span>
+        {who.to.map((p) => (
+          <PersonChip key={p.email} p={p} m={m} senderEmail={senderEmail} />
+        ))}
+        {who.cc.length > 0 && (
+          <>
+            <span className="rd-r-cc">Cc</span>
+            {who.cc.map((p) => (
+              <PersonChip key={p.email} p={p} m={m} senderEmail={senderEmail} />
+            ))}
+          </>
+        )}
         <button className="btn ic rd-r-x" aria-label="Descartar resposta" data-tip="Descartar" onClick={() => void discard()}>
           <Trash2 size={15} aria-hidden />
         </button>
@@ -283,7 +301,7 @@ export function InlineReply({
         suppressContentEditableWarning
         role="textbox"
         aria-multiline="true"
-        aria-label={`Resposta para ${m.from}`}
+        aria-label={`Resposta para ${label}`}
         data-placeholder={`Responder para ${firstName}…`}
         data-empty={empty ? "" : undefined}
         dangerouslySetInnerHTML={{ __html: initialHtml }}
@@ -377,5 +395,16 @@ export function InlineReply({
         </button>
       </div>
     </section>
+  );
+}
+
+/** Destinatário da resposta; a foto só aparece para quem mandou o e-mail (as outras pessoas ficam só com o nome). */
+function PersonChip({ p, m, senderEmail }: { p: Person; m: Message; senderEmail: string }) {
+  const isSender = p.email.toLowerCase() === senderEmail.toLowerCase();
+  return (
+    <span className="person-chip" title={p.email}>
+      {isSender && <MessageAvatar message={m} size={20} />}
+      {p.name || p.email}
+    </span>
   );
 }

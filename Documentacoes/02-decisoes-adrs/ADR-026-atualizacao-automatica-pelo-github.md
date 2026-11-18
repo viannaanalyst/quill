@@ -10,7 +10,9 @@ Gabriel preferiu tornar o próprio repositório público (antes disso o históri
 O `quill-releases` ficou arquivado.
 
 **Decisão**
-- Plugin oficial `tauri-plugin-updater` (+ `tauri-plugin-process` para reabrir). O app consulta
+- Plugin oficial `tauri-plugin-updater`. Para reabrir, o comando próprio `relaunch_app` (desde a 0.2.5): o
+  `relaunch` do `tauri-plugin-process` usa `open -n` com o app antigo aberto e criava um segundo ícone no Dock.
+  O app consulta
   `https://github.com/viannaanalyst/quill/releases/latest/download/latest.json` ao abrir (10 s depois) e a cada 6 h.
 - Cada versão é assinada com uma chave própria de atualização (não é a assinatura da Apple). A chave privada fica só
   no Mac (`~/.tauri/quill-updater.key`) e no Infisical; a chave pública vai no `tauri.conf.json`

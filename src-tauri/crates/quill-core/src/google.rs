@@ -210,7 +210,7 @@ impl GoogleClient {
             for (i, id) in chunk.iter().enumerate() {
                 let this = self.clone();
                 let token = token.to_string();
-                let path = format!("/messages/{id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject");
+                let path = format!("/messages/{id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Reply-To&metadataHeaders=Subject");
                 set.spawn(async move { (i, this.get(&token, &path).await) });
             }
             let mut got = Vec::new();

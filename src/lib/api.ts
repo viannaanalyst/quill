@@ -13,6 +13,10 @@ export interface MessageSummaryDto {
   threadId: string;
   from: { name: string; email: string };
   to?: { name: string; email: string } | null;
+  /** todos do Para e do Cc, e o Reply-To (para Responder e Responder a todos) */
+  recipients?: { name: string; email: string }[];
+  cc?: { name: string; email: string }[];
+  replyTo?: { name: string; email: string } | null;
   initials: string;
   subject: string;
   preview: string;
@@ -210,6 +214,8 @@ export const api = {
   body: (email: string, id: string) => call<{ text: string; html?: string | null; attachments: AttachmentInfo[] }>("message_body", { email, id }),
   /** abre link (http, https, mailto) no navegador */
   openLink: (url: string) => call<void>("open_link", { url }),
+  /** reabre o Quill depois de atualizar, sem criar um segundo ícone no Dock */
+  relaunchApp: () => call<void>("relaunch_app"),
   /** baixa um anexo: "save" (Downloads), "open" (app padrão) ou "preview" (Quick Look) */
   attachment: (email: string, messageId: string, attachmentId: string, name: string, action: "save" | "open" | "preview") =>
     call<string>("attachment_get", { email, messageId, attachmentId, name, action }),
